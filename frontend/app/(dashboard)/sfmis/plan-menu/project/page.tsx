@@ -14,50 +14,69 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiGet, apiPost } from '@/lib/api'
-import type { PaginatedResponse } from '@/lib/types'
 
-interface Project {
-  ppa_id: number
+// ── Types ─────────────────────────────────────────────────────────────────────
+// field names ตรงกับสิ่งที่ backend project.service.ts map ออกมา
+
+interface ProjectRow {
+  proj_id: number
+  project_code: string       // auto-gen PROJ-XXXXXX จาก backend
+  proj_name: string
+  proj_detail: string | null
+  proj_budget: number
+  proj_status: number
   sc_id: number
   sy_id: number
-  project_name: string
-  project_code: string
-  budget_amount: number
-  budget_used: number
-  budget_remain: number
-  status: number
-  del: number
-  up_by: string
-  up_date: string
+  up_by: number | null
+  update_date: string | null
 }
 
+interface ProjectResponse {
+  data: ProjectRow[]
+  count: number
+  page: number
+  pageSize: number
+}
+
+// ── Schema ────────────────────────────────────────────────────────────────────
+
 const projectSchema = z.object({
-  project_name: z.string().min(1, 'กรุณากรอกชื่อโครงการ'),
-  project_code: z.string().min(1, 'กรุณากรอกรหัสโครงการ'),
-  budget_amount: z.number().min(0, 'กรุณากรอกวงเงินงบประมาณ'),
+  proj_name:   z.string().min(1, 'กรุณากรอกชื่อโครงการ'),
+  proj_detail: z.string().optional(),
+  proj_budget: z.number().min(0, 'กรุณากรอกวงเงิน'),
 })
 type ProjectForm = z.infer<typeof projectSchema>
 
-const statusLabel: Record<number, string> = {
-  0: 'รอดำเนินการ',
-  1: 'อนุมัติแล้ว',
-  2: 'ไม่อนุมัติ',
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const STATUS_LABEL: Record<number, { text: string; color: string }> = {
+  0: { text: 'รอดำเนินการ',  color: 'text-yellow-600' },
+  1: { text: 'อนุมัติแล้ว',  color: 'text-green-600'  },
+  2: { text: 'ไม่อนุมัติ',   color: 'text-red-500'    },
 }
+
+const fmt = (n: number) =>
+  Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ProjectPage() {
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
-  const [editing, setEditing] = useState<Project | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ProjectRow | null>(null)
+  const [editing, setEditing] = useState<ProjectRow | null>(null)
+
   const [scId, setScId] = useState(0)
   const [syId, setSyId] = useState(0)
+  const [userId, setUserId] = useState(0)
 
   useEffect(() => {
     try {
       const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
+      if (userData?.sc_id)   setScId(Number(userData.sc_id))
+      if (userData?.admin_id) setUserId(Number(userData.admin_id))
     } catch {}
     try {
       const years = JSON.parse(localStorage.getItem('years') || '{}')
@@ -65,113 +84,133 @@ export default function ProjectPage() {
     } catch {}
   }, [])
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['project', scId, syId, page, pageSize],
+  // ── Query ─────────────────────────────────────────────────────────────────
+  // endpoint: GET project/load_project/:scId/:userId/:page/:pageSize/:syId
+
+  const { data: resp, isLoading } = useQuery({
+    queryKey: ['project', scId, userId, syId, page, pageSize],
     queryFn: () =>
-      apiGet<PaginatedResponse<Project>>(
-        `Project_approve/loadProjectApprove/${scId}/${syId}/${page}/${pageSize}`
+      apiGet<ProjectResponse>(
+        `project/load_project/${scId}/${userId}/${page}/${pageSize}/${syId}`
       ),
     enabled: scId > 0 && syId > 0,
   })
 
+  const rows = resp?.data ?? []
+
+  // ── Form ──────────────────────────────────────────────────────────────────
+
   const { register, handleSubmit, reset, formState: { errors } } = useForm<ProjectForm>({
     resolver: zodResolver(projectSchema),
-    defaultValues: { budget_amount: 0 },
+    defaultValues: { proj_name: '', proj_detail: '', proj_budget: 0 },
   })
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
 
   const saveMutation = useMutation({
     mutationFn: (form: ProjectForm) => {
-      const payload = { ...form, sc_id: scId, sy_id: syId }
+      const payload = { ...form, sc_id: scId, sy_id: syId, up_by: userId }
       if (editing) {
-        return apiPost('Project_approve/updateProjectApprove', {
-          ...payload,
-          ppa_id: editing.ppa_id,
-        })
+        return apiPost('Project/updateProject', { ...payload, proj_id: editing.proj_id })
       }
-      return apiPost('Project_approve/addProjectApprove', payload)
+      return apiPost('Project/addProject', payload)
     },
     onSuccess: (res: any) => {
-      if (res.flag) {
+      if (res?.flag) {
         toast.success('บันทึกเรียบร้อยแล้ว')
         qc.invalidateQueries({ queryKey: ['project'] })
         setDialogOpen(false)
         reset()
       } else {
-        toast.error(res.ms || 'มีปัญหาในการบันทึก')
+        toast.error(res?.ms || 'มีปัญหาในการบันทึก')
       }
     },
     onError: () => toast.error('เกิดข้อผิดพลาด'),
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (item: Project) =>
-      apiPost('Project_approve/removeParcelOrder', { ppa_id: item.ppa_id, del: 1 }),
-    onSuccess: () => {
-      toast.success('ลบเรียบร้อยแล้ว')
-      qc.invalidateQueries({ queryKey: ['project'] })
+    mutationFn: (item: ProjectRow) =>
+      apiPost('Project/removeProject', { proj_id: item.proj_id }),
+    onSuccess: (res: any) => {
+      if (res?.flag) {
+        toast.success('ลบเรียบร้อยแล้ว')
+        qc.invalidateQueries({ queryKey: ['project'] })
+      } else {
+        toast.error(res?.ms || 'มีปัญหาในการลบ')
+      }
       setDeleteTarget(null)
     },
     onError: () => toast.error('เกิดข้อผิดพลาด'),
   })
 
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
   function openAdd() {
     setEditing(null)
-    reset({ project_name: '', project_code: '', budget_amount: 0 })
+    reset({ proj_name: '', proj_detail: '', proj_budget: 0 })
     setDialogOpen(true)
   }
 
-  function openEdit(item: Project) {
+  function openEdit(item: ProjectRow) {
     setEditing(item)
     reset({
-      project_name: item.project_name,
-      project_code: item.project_code,
-      budget_amount: item.budget_amount,
+      proj_name:   item.proj_name ?? '',
+      proj_detail: item.proj_detail ?? '',
+      proj_budget: Number(item.proj_budget),
     })
     setDialogOpen(true)
   }
 
-  const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })
+  // ── Columns ───────────────────────────────────────────────────────────────
 
   const columns = [
     {
       header: 'จัดการ',
-      render: (item: Project) => (
+      render: (item: ProjectRow) => (
         <div className="flex gap-1">
-          <Button size="sm" variant="warning" onClick={() => openEdit(item)}>
+          <Button size="sm" variant="warning" onClick={() => openEdit(item)} title="แก้ไข">
             <Pencil className="h-3 w-3" />
           </Button>
-          <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(item)}>
+          <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(item)} title="ลบ">
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>
       ),
       headerClassName: 'w-20',
     },
-    { header: 'รหัสโครงการ', key: 'project_code' as keyof Project },
-    { header: 'ชื่อโครงการ', key: 'project_name' as keyof Project },
+    {
+      header: 'รหัสโครงการ',
+      render: (item: ProjectRow) => (
+        <span className="font-mono text-xs text-gray-500">{item.project_code}</span>
+      ),
+    },
+    {
+      header: 'ชื่อโครงการ',
+      render: (item: ProjectRow) => (
+        <div>
+          <p className="font-medium">{item.proj_name}</p>
+          {item.proj_detail && (
+            <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{item.proj_detail}</p>
+          )}
+        </div>
+      ),
+    },
     {
       header: 'วงเงิน (บาท)',
-      render: (item: Project) => <span>{fmt(item.budget_amount)}</span>,
-    },
-    {
-      header: 'ใช้ไป (บาท)',
-      render: (item: Project) => <span>{fmt(item.budget_used)}</span>,
-    },
-    {
-      header: 'คงเหลือ (บาท)',
-      render: (item: Project) => (
-        <span className={item.budget_remain < 0 ? 'text-red-600 font-semibold' : ''}>
-          {fmt(item.budget_remain)}
-        </span>
+      render: (item: ProjectRow) => (
+        <span className="font-mono">{fmt(item.proj_budget)}</span>
       ),
     },
     {
       header: 'สถานะ',
-      render: (item: Project) => (
-        <span>{statusLabel[item.status] ?? item.status}</span>
-      ),
+      render: (item: ProjectRow) => {
+        const s = STATUS_LABEL[item.proj_status] ?? { text: String(item.proj_status), color: 'text-gray-500' }
+        return <span className={s.color}>{s.text}</span>
+      },
     },
   ]
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col flex-auto min-w-0">
@@ -187,8 +226,8 @@ export default function ProjectPage() {
       <div className="p-4">
         <DataTable
           columns={columns}
-          data={data?.data ?? []}
-          total={data?.count ?? 0}
+          data={rows}
+          total={resp?.count ?? 0}
           page={page}
           pageSize={pageSize}
           onPageChange={setPage}
@@ -196,6 +235,7 @@ export default function ProjectPage() {
         />
       </div>
 
+      {/* ── Add / Edit Dialog ──────────────────────────────────────────────── */}
       <FormDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
@@ -205,40 +245,39 @@ export default function ProjectPage() {
       >
         <div className="space-y-3">
           <div>
-            <Label>รหัสโครงการ *</Label>
-            <Input {...register('project_code')} placeholder="รหัสโครงการ" />
-            {errors.project_code && (
-              <p className="text-red-500 text-xs mt-1">{errors.project_code.message}</p>
+            <Label>ชื่อโครงการ *</Label>
+            <Input {...register('proj_name')} placeholder="ชื่อโครงการ" />
+            {errors.proj_name && (
+              <p className="text-red-500 text-xs mt-1">{errors.proj_name.message}</p>
             )}
           </div>
           <div>
-            <Label>ชื่อโครงการ *</Label>
-            <Input {...register('project_name')} placeholder="ชื่อโครงการ" />
-            {errors.project_name && (
-              <p className="text-red-500 text-xs mt-1">{errors.project_name.message}</p>
-            )}
+            <Label>รายละเอียด</Label>
+            <Input {...register('proj_detail')} placeholder="รายละเอียดโครงการ (ไม่บังคับ)" />
           </div>
           <div>
             <Label>วงเงินงบประมาณ (บาท) *</Label>
             <Input
               type="number"
               step="0.01"
-              {...register('budget_amount', { valueAsNumber: true })}
-              placeholder="วงเงินงบประมาณ"
+              min="0"
+              {...register('proj_budget', { valueAsNumber: true })}
+              placeholder="0.00"
             />
-            {errors.budget_amount && (
-              <p className="text-red-500 text-xs mt-1">{errors.budget_amount.message}</p>
+            {errors.proj_budget && (
+              <p className="text-red-500 text-xs mt-1">{errors.proj_budget.message}</p>
             )}
           </div>
         </div>
       </FormDialog>
 
+      {/* ── Delete Confirm ─────────────────────────────────────────────────── */}
       <ConfirmDialog
         open={!!deleteTarget}
         onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
         onCancel={() => setDeleteTarget(null)}
         title="ยืนยันการลบ"
-        description={`ต้องการลบโครงการ "${deleteTarget?.project_name}" หรือไม่?`}
+        description={`ต้องการลบโครงการ "${deleteTarget?.proj_name}" หรือไม่?`}
         confirmLabel="ลบ"
         variant="destructive"
       />

@@ -150,6 +150,86 @@ Angular frontend API base URL in `src/environments/environment.ts` → `http://l
 - Controllers use `@HttpCode(HttpStatus.OK)` on POST endpoints
 - Path params validated with `ParseIntPipe`
 
+## UI Components (Next.js)
+
+### ThaiDatePicker
+- ไฟล์: `frontend/components/ui/thai-date-picker.tsx`
+- รับ `value: string` (YYYY-MM-DD, CE) / คืน `string` (YYYY-MM-DD, CE)
+- แสดงปีเป็น **พ.ศ.** เช่น `15 เม.ย. 2569`
+- ใช้กับ react-hook-form ผ่าน `watch` + `setValue`:
+  ```tsx
+  const dateVal = watch('field_name')
+  <ThaiDatePicker value={dateVal} onChange={(v) => setValue('field_name', v, { shouldValidate: true })} />
+  ```
+- **ห้าม** ใช้ `{...register('field')}` — ต้องใช้ controlled pattern ข้างต้นเท่านั้น
+
+### Date Formatting (utils.ts)
+- `fmtDateTH(date)` — แปลงวันที่ทุกรูปแบบ → ภาษาไทย พ.ศ. เต็ม
+  - `"2026-04-15"` → `"15 เม.ย. 2569"`
+  - `"2026-04-15T04:29:15.256Z"` → `"15 เม.ย. 2569 04:29 น."`
+  - รองรับ ISO (T), SQL (space), ตัด timezone อัตโนมัติ
+- `getThaiDate` / `getThaiDateTime` — alias ของ `fmtDateTH` (backward-compatible)
+- `toBE(year)` — แปลง CE year เป็น BE (idempotent: ถ้า ≥ 2400 คืนค่าเดิม)
+- **Database/API ยังรับ-ส่ง YYYY-MM-DD (CE) เสมอ** — แปลงเฉพาะตอนแสดงผล
+
+## Known Patterns & Gotchas
+
+### react-hook-form + Zod
+- **ห้ามใช้ `z.coerce.number()`** กับ `zodResolver` — TypeScript error: `Resolver<...field: unknown>` not assignable
+- ใช้ `z.number()` + `valueAsNumber: true` ใน register แทน:
+  ```tsx
+  z.object({ amount: z.number().min(0) })
+  <Input type="number" {...register('amount', { valueAsNumber: true })} />
+  ```
+- Select / ThaiDatePicker ใช้ `setValue('field', value)` ไม่ใช่ `register`
+
+### localStorage structure
+```ts
+// localStorage.getItem('data') — ข้อมูลผู้ใช้
+{ sc_id: number, admin_id: number, name: string, ... }
+
+// localStorage.getItem('years') — ปีการศึกษา/งบประมาณ
+{
+  sy_date:     { sy_id: number, sy_year: number }   // sy_id = auto-increment ID
+  budget_date: { sy_id: number, budget_year: number } // budget_year = ปีจริง เช่น 2569
+}
+```
+
+### sy_id vs budget_year/acad_year ⚠️
+- `sy_id` = auto-increment primary key ของตาราง school_year (เช่น 1, 2, 3)
+- `budget_year` = ปีงบประมาณจริง (เช่น 2568, 2569)
+- `parcel_order.acad_year` เก็บ **ปีจริง** (budget_year) ไม่ใช่ sy_id
+  → endpoint `Project_approve/loadProjectApprove/:sc_id/:sy_id` รับ `budget_year` ไม่ใช่ `sy_id`
+- กฎ: ถ้า endpoint ของ Angular เดิมใช้ชื่อ `:sy_id` แต่ table เก็บเป็นปี ให้ส่ง `budget_year`
+
+### Project vs ProjectApprove (คนละ module!)
+| Module | Table | หน้า | ใช้สำหรับ |
+|---|---|---|---|
+| `Project` | `pln_project` | `plan-menu/project` | CRUD โครงการ (เพิ่ม/แก้/ลบ) |
+| `ProjectApprove` | `parcel_order` | `plan-menu/proj-approve` | workflow จัดซื้อ/จัดจ้าง |
+- `project/load_project/:scId/:userId/:page/:pageSize/:syId` — โหลดโครงการ
+- `Project/addProject`, `Project/updateProject`, `Project/removeProject` — CRUD โครงการ
+
+### NestJS — หลายตัว Controller ใน Module เดียว
+เพิ่ม controller ใหม่เข้า `controllers: [...]` ใน `*.module.ts`:
+```ts
+@Module({
+  controllers: [MainController, ExtraController],
+  providers:   [MainService],
+})
+```
+ตัวอย่าง: `registration-certificate.module.ts` มีทั้ง `RegistrationCertificateController` และ `WithholdingCertificateController`
+
+### Student page (`receive-menu/student`)
+- `Student/checkClassOnYear` — ต้องเรียกก่อน loadStudent เพื่อ auto-init row ทุก class level
+- Response `loadStudent` มี `edit: boolean` — `false` = ล็อกแล้ว (ยืนยันส่งแล้ว) ซ่อนปุ่มแก้ไข
+
+### Withholding Certificate (หักภาษี ณ ที่จ่าย)
+- `cal_vat = 1` → vat = amount−(amount×7/107); deduct = vat×0.01
+- `cal_vat = 0` → deduct = amount×0.01
+- status 100 = กำลังดำเนินการ (แก้ไขได้), status 101 = ออกหนังสือแล้ว (ล็อก)
+- Backend: `Withholding_certificate/` prefix, อยู่ใน `registration-certificate` module
+
 ## Development Rules
 
 - Do not change existing Angular interfaces/APIs unless necessary

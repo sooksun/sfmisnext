@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime } from '@/lib/utils'
+import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 interface InvoiceRow {
   rw_id: number
@@ -151,6 +152,7 @@ export default function InvoicePage() {
   const pId = watch('p_id')
   const rwType = watch('rw_type')
   const userRequest = watch('user_request')
+  const dateRequest = watch('date_request')
 
   const saveMutation = useMutation({
     mutationFn: (form: InvoiceForm) => {
@@ -387,7 +389,10 @@ export default function InvoicePage() {
             </div>
             <div>
               <Label>วันที่ขอเบิก *</Label>
-              <Input type="date" {...register('date_request')} />
+              <ThaiDatePicker
+                value={dateRequest}
+                onChange={(v) => setValue('date_request', v, { shouldValidate: true })}
+              />
               {errors.date_request && <p className="text-red-500 text-xs mt-1">{errors.date_request.message}</p>}
             </div>
           </div>

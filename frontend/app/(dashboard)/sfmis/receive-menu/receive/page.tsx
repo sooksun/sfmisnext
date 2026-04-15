@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime } from '@/lib/utils'
+import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 interface ReceiveRow {
   rw_id: number
@@ -82,10 +83,11 @@ export default function ReceivePage() {
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } =
     useForm<ReceiveForm>({
       resolver: zodResolver(receiveSchema),
-      defaultValues: { budget_type_id: 0, amount: 0 },
+      defaultValues: { budget_type_id: 0, amount: 0, receive_date: '' },
     })
 
   const btId = watch('budget_type_id')
+  const receiveDate = watch('receive_date')
 
   const saveMutation = useMutation({
     mutationFn: (form: ReceiveForm) =>
@@ -191,7 +193,10 @@ export default function ReceivePage() {
           </div>
           <div>
             <Label>วันที่รับ *</Label>
-            <Input type="date" {...register('receive_date')} />
+            <ThaiDatePicker
+              value={receiveDate}
+              onChange={(v) => setValue('receive_date', v, { shouldValidate: true })}
+            />
             {errors.receive_date && (
               <p className="text-red-500 text-xs mt-1">{errors.receive_date.message}</p>
             )}

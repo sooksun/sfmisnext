@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime } from '@/lib/utils'
+import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 interface ReceiptRow {
   r_id: number
@@ -94,6 +95,7 @@ export default function ReceiptPage() {
 
   const prId = watch('pr_id')
   const statusVal = watch('status')
+  const dateGenerate = watch('date_generate')
 
   const saveMutation = useMutation({
     mutationFn: (form: ReceiptForm) => {
@@ -241,7 +243,10 @@ export default function ReceiptPage() {
           </div>
           <div>
             <Label>วันที่ *</Label>
-            <Input type="date" {...register('date_generate')} />
+            <ThaiDatePicker
+              value={dateGenerate}
+              onChange={(v) => setValue('date_generate', v, { shouldValidate: true })}
+            />
             {errors.date_generate && <p className="text-red-500 text-xs mt-1">{errors.date_generate.message}</p>}
           </div>
           <div>

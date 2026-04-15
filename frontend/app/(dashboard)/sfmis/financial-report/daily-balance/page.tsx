@@ -6,6 +6,7 @@ import { DataTable } from '@/components/shared/data-table'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiGet } from '@/lib/api'
+import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 interface DailyBalanceRow {
   id: number
@@ -82,11 +83,10 @@ export default function DailyBalancePage() {
         <div className="flex items-end gap-3">
           <div>
             <Label className="text-sm font-medium">เลือกวันที่</Label>
-            <Input
-              type="date"
+            <ThaiDatePicker
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-44"
+              onChange={setSelectedDate}
+              className="w-52"
             />
           </div>
         </div>

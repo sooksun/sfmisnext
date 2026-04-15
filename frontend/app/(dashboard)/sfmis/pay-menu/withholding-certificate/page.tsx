@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime } from '@/lib/utils'
+import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 // ====== Types ================================================================
 
@@ -143,6 +144,7 @@ export default function WithholdingCertificatePage() {
 
   const ofId = watch('of_id')
   const status = watch('status')
+  const cerDate = watch('cer_date')
 
   // หาข้อมูลเช็คที่เลือก เพื่อแสดงยอดเงินและคำนวณภาษี
   const selectedCheck = useMemo(
@@ -401,9 +403,9 @@ export default function WithholdingCertificatePage() {
             {/* วันที่ออกหนังสือ */}
             <div>
               <Label>วันที่ออกหนังสือรับรอง *</Label>
-              <Input
-                type="date"
-                {...register('cer_date')}
+              <ThaiDatePicker
+                value={cerDate}
+                onChange={(v) => setValue('cer_date', v, { shouldValidate: true })}
                 disabled={isLocked}
               />
               {errors.cer_date && <p className="text-red-500 text-xs mt-1">{errors.cer_date.message}</p>}

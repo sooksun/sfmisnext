@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime } from '@/lib/utils'
+import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 interface CheckRow {
   rw_id: number
@@ -106,6 +107,7 @@ export default function GenerateCheckPage() {
 
   const userOfferCheck = watch('user_offer_check')
   const typeOfferCheck = watch('type_offer_check')
+  const offerCheckDate = watch('offer_check_date')
 
   function openIssue(item: CheckRow) {
     setIssueTarget(item)
@@ -249,7 +251,10 @@ export default function GenerateCheckPage() {
             </div>
             <div>
               <Label>วันที่เช็ค *</Label>
-              <Input type="date" {...register('offer_check_date')} />
+              <ThaiDatePicker
+                value={offerCheckDate}
+                onChange={(v) => setValue('offer_check_date', v, { shouldValidate: true })}
+              />
               {errors.offer_check_date && <p className="text-red-500 text-xs mt-1">{errors.offer_check_date.message}</p>}
             </div>
           </div>

@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime } from '@/lib/utils'
+import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 interface CommitteeOrder {
   order_id: number
@@ -130,6 +131,7 @@ export default function SettingCommitteePage() {
   const committee3 = watch('committee3')
   const pId = watch('p_id')
   const dayDeadline = watch('day_deadline')
+  const dateDeadline = watch('date_deadline')
 
   function handleDayChange(val: number) {
     setValue('day_deadline', val >= 1 ? val : 1)
@@ -321,7 +323,10 @@ export default function SettingCommitteePage() {
             </div>
             <div>
               <Label>วันกำหนดส่ง *</Label>
-              <Input type="date" {...register('date_deadline')} />
+              <ThaiDatePicker
+                value={dateDeadline}
+                onChange={(v) => setValue('date_deadline', v, { shouldValidate: true })}
+              />
               {errors.date_deadline && <p className="text-red-500 text-xs mt-1">{errors.date_deadline.message}</p>}
             </div>
           </div>

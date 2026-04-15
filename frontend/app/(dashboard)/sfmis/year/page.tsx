@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDate } from '@/lib/utils'
+import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 import type { SchoolYear, PaginatedResponse } from '@/lib/types'
 
 const yearSchema = z.object({
@@ -41,9 +42,12 @@ export default function YearPage() {
       ),
   })
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<YearForm>({
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<YearForm>({
     resolver: zodResolver(yearSchema),
   })
+
+  const syStart = watch('sy_start')
+  const syEnd = watch('sy_end')
 
   const saveMutation = useMutation({
     mutationFn: (form: YearForm) => {
@@ -163,12 +167,18 @@ export default function YearPage() {
           </div>
           <div>
             <Label>วันเริ่มต้น *</Label>
-            <Input type="date" {...register('sy_start')} />
+            <ThaiDatePicker
+              value={syStart}
+              onChange={(v) => setValue('sy_start', v, { shouldValidate: true })}
+            />
             {errors.sy_start && <p className="text-red-500 text-xs mt-1">{errors.sy_start.message}</p>}
           </div>
           <div>
             <Label>วันสิ้นสุด *</Label>
-            <Input type="date" {...register('sy_end')} />
+            <ThaiDatePicker
+              value={syEnd}
+              onChange={(v) => setValue('sy_end', v, { shouldValidate: true })}
+            />
             {errors.sy_end && <p className="text-red-500 text-xs mt-1">{errors.sy_end.message}</p>}
           </div>
         </div>

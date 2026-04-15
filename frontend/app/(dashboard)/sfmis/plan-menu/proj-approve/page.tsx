@@ -76,7 +76,7 @@ export default function ProjApprovePage() {
   const pageSize = 25
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null)
   const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
+  const [budgetYear, setBudgetYear] = useState(0)   // ปีงบประมาณจริง เช่น 2569
 
   useEffect(() => {
     try {
@@ -85,17 +85,18 @@ export default function ProjApprovePage() {
     } catch {}
     try {
       const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
+      // parcel_order.acad_year เก็บปีงบประมาณจริง (เช่น 2569) ไม่ใช่ sy_id
+      if (years?.budget_date?.budget_year) setBudgetYear(Number(years.budget_date.budget_year))
     } catch {}
   }, [])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['proj-approve', scId, syId, page, pageSize],
+    queryKey: ['proj-approve', scId, budgetYear, page, pageSize],
     queryFn: () =>
       apiGet<{ data: ParcelOrder[]; count: number }>(
-        `Project_approve/loadProjectApprove/${scId}/${syId}/${page}/${pageSize}`
+        `Project_approve/loadProjectApprove/${scId}/${budgetYear}/${page}/${pageSize}`
       ),
-    enabled: scId > 0 && syId > 0,
+    enabled: scId > 0 && budgetYear > 0,
   })
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<RemarkForm>({

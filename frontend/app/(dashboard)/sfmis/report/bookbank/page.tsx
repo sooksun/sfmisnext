@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { apiGet } from '@/lib/api'
-import { getThaiDateTime } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 
 interface BankAccount {
   ba_id: number
@@ -73,7 +73,7 @@ export default function BookbankPage() {
   const bankList = Array.isArray(bankAccounts) ? bankAccounts : []
 
   const columns = [
-    { header: 'วันที่', key: 'trans_date' as keyof BookbankEntry },
+    { header: 'วันที่', render: (item: BookbankEntry) => <span>{fmtDateTH(item.trans_date)}</span> },
     { header: 'เลขที่อ้างอิง', key: 'trans_no' as keyof BookbankEntry },
     { header: 'รายละเอียด', key: 'detail' as keyof BookbankEntry },
     {

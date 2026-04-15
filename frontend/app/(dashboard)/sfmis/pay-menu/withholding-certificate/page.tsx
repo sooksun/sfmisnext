@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
-import { getThaiDateTime } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 // ====== Types ================================================================
@@ -276,7 +276,7 @@ export default function WithholdingCertificatePage() {
     {
       header: 'วันที่ออก',
       render: (item: WCRow) => (
-        <span>{item.cer_date ? String(item.cer_date).substring(0, 10) : '—'}</span>
+        <span>{fmtDateTH(item.cer_date)}</span>
       ),
     },
     {

@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
-import { getThaiDateTime } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 interface CheckRow {
@@ -193,7 +193,7 @@ export default function GenerateCheckPage() {
     },
     {
       header: 'วันที่เช็ค',
-      render: (item: CheckRow) => <span>{item.offer_check_date ? String(item.offer_check_date).substring(0, 10) : '-'}</span>,
+      render: (item: CheckRow) => <span>{fmtDateTH(item.offer_check_date)}</span>,
     },
     {
       header: 'สถานะ',

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { apiGet } from '@/lib/api'
-import { getThaiDateTime } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 
 interface Certificate {
   cert_id: number
@@ -47,7 +47,7 @@ export default function CertificatePage() {
 
   const columns = [
     { header: 'เลขที่หนังสือรับรอง', key: 'cert_no' as keyof Certificate },
-    { header: 'วันที่', key: 'cert_date' as keyof Certificate },
+    { header: 'วันที่', render: (item: Certificate) => <span>{fmtDateTH(item.cert_date)}</span> },
     {
       header: 'จำนวนเงิน (บาท)',
       render: (item: Certificate) => <span>{fmt(item.cert_amount)}</span>,

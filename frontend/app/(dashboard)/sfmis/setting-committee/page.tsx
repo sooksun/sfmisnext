@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
-import { getThaiDateTime } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 interface CommitteeOrder {

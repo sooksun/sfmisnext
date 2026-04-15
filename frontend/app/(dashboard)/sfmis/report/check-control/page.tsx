@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { apiGet } from '@/lib/api'
-
+import { fmtDateTH } from '@/lib/utils'
 
 interface CheckControl {
   rw_id: number
@@ -59,7 +59,7 @@ export default function CheckControlPage() {
   const columns = [
     { header: 'เลขที่ใบสำคัญ', key: 'no_doc' as keyof CheckControl },
     { header: 'เลขที่เช็ค', key: 'check_no_doc' as keyof CheckControl },
-    { header: 'วันที่ออกเช็ค', key: 'offer_check_date' as keyof CheckControl },
+    { header: 'วันที่ออกเช็ค', render: (item: CheckControl) => <span>{fmtDateTH(item.offer_check_date)}</span> },
     {
       header: 'จำนวนเงิน (บาท)',
       render: (item: CheckControl) => <span>{fmt(item.amount)}</span>,

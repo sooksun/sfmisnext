@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { apiGet } from '@/lib/api'
-import { getThaiDateTime } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 
 interface BudgetType {
   bg_type_id: number
@@ -69,7 +69,7 @@ export default function MoneyTypePage() {
   const typeList = Array.isArray(budgetTypes) ? budgetTypes : []
 
   const columns = [
-    { header: 'วันที่', key: 'receive_date' as keyof MoneyTypeEntry },
+    { header: 'วันที่', render: (item: MoneyTypeEntry) => <span>{fmtDateTH(item.receive_date)}</span> },
     { header: 'รายละเอียด', key: 'detail' as keyof MoneyTypeEntry },
     { header: 'ประเภทงบ', key: 'budget_type_name' as keyof MoneyTypeEntry },
     {

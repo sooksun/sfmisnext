@@ -27,29 +27,35 @@ export function toBE(year: number | string | null | undefined): string {
   return String(n + 543)
 }
 
-// Convert date string "YYYY-MM-DD" to Thai format (short year offset: e.g., "43" not "2543")
-export function getThaiDate(date: string): string {
+/**
+ * fmtDateTH — แปลงวันที่เป็น พ.ศ. ภาษาไทย (ปีเต็ม เช่น 2569)
+ * รองรับ:
+ *   "YYYY-MM-DD"              → "15 เม.ย. 2569"
+ *   "YYYY-MM-DDTHH:mm:ss.sssZ" (ISO) → "15 เม.ย. 2569 11:04 น."
+ *   "YYYY-MM-DD HH:mm:ss"    → "15 เม.ย. 2569 11:04 น."
+ *   null / "" → ""
+ */
+export function fmtDateTH(date: string | null | undefined): string {
   if (!date) return ''
-  const parts = date.split('-')
-  if (parts.length < 3) return ''
-  const day = parts[2]
-  const month = parseInt(parts[1], 10) - 1
-  const yearBE = parseInt(parts[0], 10) + 543 - 2500
-  return `${day} ${THAI_MONTHS[month]} ${yearBE}`
-}
-
-// Convert datetime string "YYYY-MM-DD HH:MM:SS" to Thai format
-export function getThaiDateTime(date: string): string {
-  if (!date) return ''
-  const [datePart, timePart] = date.split(' ')
-  if (!datePart || !timePart) return getThaiDate(datePart || date)
+  // Normalise: แทน T ด้วย space, ตัด timezone suffix (Z, +07:00 ฯลฯ)
+  const normalised = date.replace('T', ' ').replace(/\.\d+Z?$/, '').replace(/[+-]\d{2}:\d{2}$/, '').trim()
+  const spaceIdx = normalised.indexOf(' ')
+  const datePart = spaceIdx !== -1 ? normalised.slice(0, spaceIdx) : normalised
+  const timePart = spaceIdx !== -1 ? normalised.slice(spaceIdx + 1) : ''
   const parts = datePart.split('-')
-  const timeParts = timePart.split(':')
-  const day = parts[2]
+  if (parts.length < 3) return date
+  const day   = parts[2].padStart(2, '0')
   const month = parseInt(parts[1], 10) - 1
   const yearBE = parseInt(parts[0], 10) + 543
-  return `${day} ${THAI_MONTHS[month]} ${yearBE} ${timeParts[0]}:${timeParts[1]} น.`
+  const dateStr = `${day} ${THAI_MONTHS[month]} ${yearBE}`
+  if (!timePart) return dateStr
+  const [hh, mm] = timePart.split(':')
+  return `${dateStr} ${hh}:${mm} น.`
 }
+
+// Alias ที่ใช้งานอยู่เดิม — ชี้ไปที่ fmtDateTH
+export function getThaiDate(date: string): string { return fmtDateTH(date) }
+export function getThaiDateTime(date: string): string { return fmtDateTH(date) }
 
 // Parse date to YYYY-MM-DD format
 export function parseDate(date: string): string {

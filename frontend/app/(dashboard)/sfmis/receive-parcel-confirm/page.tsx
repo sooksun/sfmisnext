@@ -9,7 +9,7 @@ import { FormDialog } from '@/components/shared/form-dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { apiGet, apiPost } from '@/lib/api'
-import { getThaiDateTime } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 
 interface ReceiveParcel {
   receive_id: number
@@ -146,7 +146,7 @@ export default function ReceiveParcelConfirmPage() {
       headerClassName: 'w-16',
     },
     { header: 'โครงการ', key: 'project_name' as keyof ReceiveParcel },
-    { header: 'วันที่รับ', key: 'receive_date' as keyof ReceiveParcel },
+    { header: 'วันที่รับ', render: (item: ReceiveParcel) => <span>{fmtDateTH(item.receive_date)}</span> },
     { header: 'จำนวนรายการ', key: 'total_items' as keyof ReceiveParcel },
     { header: 'หมายเหตุ', key: 'note' as keyof ReceiveParcel },
     {

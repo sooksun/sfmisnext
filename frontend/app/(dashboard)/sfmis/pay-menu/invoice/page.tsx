@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
-import { getThaiDateTime } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 interface InvoiceRow {
@@ -274,7 +274,7 @@ export default function InvoicePage() {
     },
     {
       header: 'วันที่ขอเบิก',
-      render: (item: InvoiceRow) => <span>{item.date_request ? String(item.date_request).substring(0, 10) : ''}</span>,
+      render: (item: InvoiceRow) => <span>{fmtDateTH(item.date_request)}</span>,
     },
     {
       header: 'แก้ไขล่าสุด',

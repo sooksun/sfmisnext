@@ -8,7 +8,7 @@ import { DataTable } from '@/components/shared/data-table'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { apiGet, apiPost } from '@/lib/api'
-import { getThaiDateTime } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 
 interface ReceiveParcel {
   receive_id: number
@@ -88,7 +88,7 @@ export default function ReceiveParcelPage() {
       headerClassName: 'w-16',
     },
     { header: 'โครงการ', key: 'project_name' as keyof ReceiveParcel },
-    { header: 'วันที่รับ', key: 'receive_date' as keyof ReceiveParcel },
+    { header: 'วันที่รับ', render: (item: ReceiveParcel) => <span>{fmtDateTH(item.receive_date)}</span> },
     { header: 'จำนวนรายการ', key: 'total_items' as keyof ReceiveParcel },
     { header: 'หมายเหตุ', key: 'note' as keyof ReceiveParcel },
     {

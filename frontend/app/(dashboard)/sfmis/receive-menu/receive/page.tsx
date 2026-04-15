@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
-import { getThaiDateTime } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 interface ReceiveRow {
@@ -114,7 +114,7 @@ export default function ReceivePage() {
       header: 'จำนวนเงิน (บาท)',
       render: (item: ReceiveRow) => <span>{fmt(item.amount)}</span>,
     },
-    { header: 'วันที่รับ', key: 'receive_date' as keyof ReceiveRow },
+    { header: 'วันที่รับ', render: (item: ReceiveRow) => <span>{fmtDateTH(item.receive_date)}</span> },
     { header: 'หมายเหตุ', key: 'note' as keyof ReceiveRow },
     {
       header: 'แก้ไขล่าสุด',

@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
-import { getThaiDateTime } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 
 interface ReceiptRow {
@@ -174,7 +174,7 @@ export default function ReceiptPage() {
       header: 'จำนวนเงิน',
       render: (item: ReceiptRow) => <span>{fmt(item.total_budget)}</span>,
     },
-    { header: 'วันที่', key: 'date_generate' as keyof ReceiptRow },
+    { header: 'วันที่', render: (item: ReceiptRow) => <span>{fmtDateTH(item.date_generate)}</span> },
     {
       header: 'แก้ไขล่าสุด',
       render: (item: ReceiptRow) => (

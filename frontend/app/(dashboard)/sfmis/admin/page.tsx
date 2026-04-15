@@ -1,0 +1,185 @@
+'use client'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { toast } from 'sonner'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { PageHeader } from '@/components/shared/page-header'
+import { DataTable } from '@/components/shared/data-table'
+import { FormDialog } from '@/components/shared/form-dialog'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { apiGet, apiPost } from '@/lib/api'
+import { getThaiDateTime } from '@/lib/utils'
+import type { Admin, PaginatedResponse } from '@/lib/types'
+
+const adminSchema = z.object({
+  name: z.string().min(1, 'กรุณากรอกชื่อ'),
+  email: z.string().email('รูปแบบอีเมลไม่ถูกต้อง'),
+  password: z.string().optional(),
+  sc_id: z.number().min(1, 'กรุณาเลือกโรงเรียน'),
+})
+type AdminForm = z.infer<typeof adminSchema>
+
+export default function AdminPage() {
+  const qc = useQueryClient()
+  const [page, setPage] = useState(0)
+  const pageSize = 25
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Admin | null>(null)
+  const [editing, setEditing] = useState<Admin | null>(null)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin', page, pageSize],
+    queryFn: () => apiGet<PaginatedResponse<Admin>>(`B_admin/load_admin/${page}/${pageSize}`),
+  })
+
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<AdminForm>({
+    resolver: zodResolver(adminSchema),
+  })
+
+  const saveMutation = useMutation({
+    mutationFn: (form: AdminForm) => {
+      if (editing) {
+        return apiPost('B_admin/updateAdmin', { ...form, admin_id: editing.admin_id })
+      }
+      return apiPost('B_admin/addAdmin', form)
+    },
+    onSuccess: (res: any) => {
+      if (res.flag) {
+        toast.success('บันทึกเรียบร้อยแล้ว')
+        qc.invalidateQueries({ queryKey: ['admin'] })
+        setDialogOpen(false)
+        reset()
+      } else {
+        toast.error(res.ms || 'มีปัญหาในการบันทึก')
+      }
+    },
+    onError: () => toast.error('เกิดข้อผิดพลาด'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (item: Admin) => apiPost('B_admin/remove_admin', { ...item, del: 1 }),
+    onSuccess: () => {
+      toast.success('ลบเรียบร้อยแล้ว')
+      qc.invalidateQueries({ queryKey: ['admin'] })
+      setDeleteTarget(null)
+    },
+    onError: () => toast.error('เกิดข้อผิดพลาด'),
+  })
+
+  function openAdd() {
+    setEditing(null)
+    reset({ name: '', email: '', password: '', sc_id: 0 })
+    setDialogOpen(true)
+  }
+
+  function openEdit(item: Admin) {
+    setEditing(item)
+    reset({ name: item.name, email: item.email, sc_id: item.sc_id })
+    setDialogOpen(true)
+  }
+
+  const columns = [
+    {
+      header: 'จัดการ',
+      render: (item: Admin) => (
+        <div className="flex gap-1">
+          <Button size="sm" variant="warning" onClick={() => openEdit(item)}>
+            <Pencil className="h-3 w-3" />
+          </Button>
+          <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(item)}>
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      ),
+      headerClassName: 'w-20',
+    },
+    { header: 'ID', key: 'admin_id' as keyof Admin },
+    { header: 'ชื่อ', key: 'name' as keyof Admin },
+    { header: 'อีเมล', key: 'email' as keyof Admin },
+    { header: 'โรงเรียน', key: 'sc_name' as keyof Admin },
+    {
+      header: 'แก้ไขล่าสุด',
+      render: (item: Admin) => (
+        <div>
+          <div>{item.up_by}</div>
+          <small className="text-gray-500">{getThaiDateTime(item.up_date)}</small>
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <div className="flex flex-col flex-auto min-w-0">
+      <PageHeader
+        title="ผู้ดูแลระบบ (Administrator)"
+        actions={
+          <Button onClick={openAdd}>
+            <Plus className="h-4 w-4" />
+            เพิ่ม
+          </Button>
+        }
+      />
+      <div className="p-4">
+        <DataTable
+          columns={columns}
+          data={data?.data ?? []}
+          total={data?.count ?? 0}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          loading={isLoading}
+        />
+      </div>
+
+      <FormDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        title={editing ? 'แก้ไขผู้ดูแลระบบ' : 'เพิ่มผู้ดูแลระบบ'}
+        onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
+        loading={saveMutation.isPending}
+      >
+        <div className="space-y-3">
+          <div>
+            <Label>ชื่อ *</Label>
+            <Input {...register('name')} placeholder="ชื่อ-นามสกุล" />
+            {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
+          </div>
+          <div>
+            <Label>อีเมล *</Label>
+            <Input type="email" {...register('email')} placeholder="example@email.com" />
+            {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
+          </div>
+          <div>
+            <Label>รหัสผ่าน</Label>
+            <Input
+              type="password"
+              {...register('password')}
+              placeholder="รหัสผ่านใหม่ (ถ้าต้องการเปลี่ยน)"
+            />
+          </div>
+          <div>
+            <Label>รหัสโรงเรียน *</Label>
+            <Input type="number" {...register('sc_id', { valueAsNumber: true })} placeholder="sc_id" />
+            {errors.sc_id && <p className="text-red-500 text-xs mt-1">{errors.sc_id.message}</p>}
+          </div>
+        </div>
+      </FormDialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
+        onCancel={() => setDeleteTarget(null)}
+        title="ยืนยันการลบ"
+        description={`ต้องการลบ "${deleteTarget?.name}" หรือไม่?`}
+        confirmLabel="ลบ"
+        variant="destructive"
+      />
+    </div>
+  )
+}

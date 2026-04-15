@@ -1,0 +1,81 @@
+# ── node_modules ─────────────────────────────────────────────────────────────
+node_modules/
+*/node_modules/
+
+# ── Build output ──────────────────────────────────────────────────────────────
+dist/
+.next/
+out/
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# ── Angular legacy (src/) — NOT included in this repo ────────────────────────
+src/
+e2e/
+.angular/
+angular.json
+karma.conf.js
+tslint.json
+tsconfig.app.json
+tsconfig.spec.json
+.browserslistrc
+fix-rxjs-subject.js
+migration-collection.json
+
+# ── Angular fix / migration docs ──────────────────────────────────────────────
+upgrade_angular.md
+angular_compilation_fixes_summary.md
+COMPILATION_FIXES.md
+compilation_errors_summary.md
+fix_libraries_summary.md
+fix_progress_summary.md
+fix_summary.md
+quick_fix_summary.md
+library_update_summary.md
+backend_endpoints_check.md
+angular13_update_guide.md
+angular14_update_guide.md
+angular16_update_guide.md
+angular_update_guide.md
+docs/
+
+# ── Archives / large binaries ─────────────────────────────────────────────────
+*.zip
+*.gz
+*.tar
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.suo
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+
+# ── Angular root files (not needed in Next.js-only repo) ─────────────────────
+package.json
+package-lock.json
+tsconfig.json
+tailwind.config.js
+
+# ── Misc reports / temp / Angular CLI artifacts ───────────────────────────────
+report.*.json
+call
+ng
+subscribe
+scripts/
+.cursorrules
+.claude/
+*.md~
+CREDITS
+# Thai-named temp files
+รายงาน*

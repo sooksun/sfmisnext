@@ -1,0 +1,9 @@
+# Ignore artifacts:
+dist
+coverage
+node_modules
+.angular
+e2e
+.github
+.vscode
+src/assets

@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+:root {
+  --primary: 79 70 229; /* indigo-600 */
+  --primary-foreground: 255 255 255;
+  --destructive: 220 38 38; /* red-600 */
+  --destructive-foreground: 255 255 255;
+  --muted: 249 250 251;
+  --muted-foreground: 107 114 128;
+  --border: 229 231 235;
+  --background: 249 250 251;
+  --foreground: 17 24 39;
+  --card: 255 255 255;
+  --card-foreground: 17 24 39;
+  --sidebar: 31 41 55; /* gray-800 */
+  --sidebar-foreground: 243 244 246;
+}
+
+@theme inline {
+  --color-background: rgb(var(--background));
+  --color-foreground: rgb(var(--foreground));
+  --font-sans: var(--font-inter), var(--font-thai), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: rgb(var(--background));
+  color: rgb(var(--foreground));
+}

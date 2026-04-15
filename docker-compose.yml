@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASS:-sfmis_secret}
+      MYSQL_DATABASE: ${DB_NAME:-sfmisystem}
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASS: ${DB_PASS:-sfmis_secret}
+      DB_NAME: ${DB_NAME:-sfmisystem}
+      CORS_ORIGIN: http://localhost:3001
+    ports:
+      - '3000:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api/
+    ports:
+      - '3001:3001'
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:

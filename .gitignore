@@ -14,8 +14,9 @@ out/
 backend/.env
 
 # ── Angular legacy (src/) — NOT included in this repo ────────────────────────
-src/
-e2e/
+# ใช้ /src/ (leading slash) เพื่อ match เฉพาะ root-level เท่านั้น ไม่ครอบ backend/src/
+/src/
+/e2e/
 .angular/
 angular.json
 karma.conf.js
@@ -62,10 +63,11 @@ Thumbs.db
 npm-debug.log*
 
 # ── Angular root files (not needed in Next.js-only repo) ─────────────────────
-package.json
-package-lock.json
-tsconfig.json
-tailwind.config.js
+# ใช้ leading / เพื่อ match เฉพาะ root-level ไม่ครอบ backend/ หรือ frontend/
+/package.json
+/package-lock.json
+/tsconfig.json
+/tailwind.config.js
 
 # ── Misc reports / temp / Angular CLI artifacts ───────────────────────────────
 report.*.json

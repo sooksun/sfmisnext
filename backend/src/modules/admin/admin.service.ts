@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
 import { AddAdminDto } from './dto/add-admin.dto';
@@ -11,22 +11,62 @@ import { UpdateAdminStatusDto } from './dto/update-admin-status.dto';
 import { Admin } from './entities/admin.entity';
 import { MasterLevel } from './entities/master-level.entity';
 import type { JwtPayload } from '../auth/jwt.strategy';
+import { DeleteLogService } from '../delete-log/delete-log.service';
 
 const BCRYPT_ROUNDS = 12;
+/** จำกัดขนาด Base64 ไม่เกิน 2 MB (≈ 2.67 MB base64-encoded) */
+const MAX_BASE64_LENGTH = (2 * 1024 * 1024 * 4) / 3; // ~2.67M chars
+const ALLOWED_MIME_PATTERN =
+  /^data:(image\/(jpeg|png|gif|webp|svg\+xml)|application\/pdf);base64,/;
 
 interface FilePayload {
   valid: boolean;
   data: string;
 }
 
+/**
+ * ดึง base64 data จาก payload พร้อม validate ขนาดและ mime type
+ * คืน base64 string (ไม่มี data-uri prefix) หรือ undefined ถ้าไม่ผ่าน
+ */
+function extractBase64(input: unknown): string | undefined {
+  if (!input) return undefined;
+
+  let raw: string | undefined;
+
+  if (typeof input === 'object') {
+    const fp = input as FilePayload;
+    if (fp.valid && fp.data) raw = fp.data;
+  } else if (typeof input === 'string') {
+    raw = input;
+  }
+
+  if (!raw) return undefined;
+
+  // ตรวจ data-uri: ต้องเป็น image หรือ PDF เท่านั้น
+  const dataUriMatch = raw.match(/^data:[^;]+;base64,(.+)$/);
+  if (dataUriMatch) {
+    if (!ALLOWED_MIME_PATTERN.test(raw)) return undefined; // mime ไม่อนุญาต
+    raw = dataUriMatch[1];
+  }
+
+  // ตรวจขนาด
+  if (raw.length > MAX_BASE64_LENGTH) return undefined;
+
+  return raw;
+}
+
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     @InjectRepository(Admin)
     private readonly adminRepository: Repository<Admin>,
     @InjectRepository(MasterLevel)
     private readonly masterLevelRepository: Repository<MasterLevel>,
     private readonly jwtService: JwtService,
+    private readonly dataSource: DataSource,
+    private readonly deleteLog: DeleteLogService,
   ) {}
 
   async login(payload: LoginDto) {
@@ -37,13 +77,20 @@ export class AdminService {
       ],
     });
 
+    // ใช้ message เดียวกันสำหรับ "ไม่พบ user" และ "password ผิด"
+    // เพื่อกัน user enumeration attack (attacker เดา username ได้จาก response ที่ต่างกัน)
+    const INVALID_CREDENTIALS = {
+      flag: 'error',
+      error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
+    };
+
     if (!admin) {
-      return { flag: 'error', error: 'ไม่พบบัญชีผู้ใช้' };
+      return INVALID_CREDENTIALS;
     }
 
     const passwordMatch = await this.verifyPassword(payload.password, admin);
     if (!passwordMatch) {
-      return { flag: 'error', error: 'รหัสผ่านไม่ถูกต้อง' };
+      return INVALID_CREDENTIALS;
     }
 
     // อัปเดต last_login
@@ -59,9 +106,23 @@ export class AdminService {
     };
     const access_token = this.jwtService.sign(jwtPayload);
 
+    // ดึงชื่อโรงเรียน
+    let scName: string | null = null;
+    if (admin.scId) {
+      try {
+        const [school] = await this.dataSource.query(
+          'SELECT sc_name FROM school WHERE sc_id = ? AND del = 0 LIMIT 1',
+          [admin.scId],
+        );
+        scName = school?.sc_name ?? null;
+      } catch {
+        /* ignore */
+      }
+    }
+
     return {
       flag: 'success',
-      data: this.toResponse(admin),
+      data: { ...this.toResponse(admin), sc_name: scName },
       access_token,
     };
   }
@@ -139,30 +200,14 @@ export class AdminService {
       return { flag: false, ms: 'ชื่อผู้ใช้หรืออีเมลนี้มีอยู่ในระบบแล้ว' };
     }
 
-    // ดึง profile/license base64
-    let profileData: string | undefined = undefined;
-    if (payload.profile) {
-      if (typeof payload.profile === 'object') {
-        const fp = payload.profile as unknown as FilePayload;
-        if (fp.valid && fp.data) profileData = fp.data;
-      } else if (typeof payload.profile === 'string') {
-        const m = payload.profile.match(/^data:[^;]+;base64,(.+)$/);
-        profileData = m ? m[1] : payload.profile;
-      }
-    }
+    // ดึง profile/license base64 พร้อม validate ขนาดและ mime type
+    const profileData = extractBase64(payload.profile);
+    const licenseData = extractBase64(payload.license);
 
-    let licenseData: string | undefined = undefined;
-    if (payload.license) {
-      if (typeof payload.license === 'object') {
-        const fp = payload.license as unknown as FilePayload;
-        if (fp.valid && fp.data) licenseData = fp.data;
-      } else if (typeof payload.license === 'string') {
-        const m = payload.license.match(/^data:[^;]+;base64,(.+)$/);
-        licenseData = m ? m[1] : payload.license;
-      }
-    }
-
-    const passwordPlain = payload.password || payload.password_default || '123456';
+    const passwordPlain =
+      payload.password ||
+      payload.password_default ||
+      crypto.randomBytes(12).toString('base64url'); // สุ่ม password แทน hardcode '123456'
     // ✅ bcrypt แทน MD5
     const passwordHash = await bcrypt.hash(passwordPlain, BCRYPT_ROUNDS);
     const codeLogin = crypto.randomBytes(10).toString('hex');
@@ -189,12 +234,12 @@ export class AdminService {
       await this.adminRepository.save(admin);
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Add admin error:', error);
+      this.logger.error('Add admin error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' };
     }
   }
 
-  async removeAdmin(payload: UpdateAdminStatusDto) {
+  async removeAdmin(payload: UpdateAdminStatusDto & { reason?: string }) {
     const admin = await this.adminRepository.findOne({
       where: { adminId: payload.admin_id, del: 0 },
     });
@@ -203,9 +248,20 @@ export class AdminService {
       return '0';
     }
 
+    const snapshot = { ...admin, password: '[redacted]' };
     admin.del = payload.del;
     admin.upBy = payload.up_by ?? admin.upBy;
     await this.adminRepository.save(admin);
+    if (payload.del === 1) {
+      await this.deleteLog.log({
+        table: 'tb_admin',
+        rowId: admin.adminId,
+        reason: payload.reason ?? null,
+        deletedBy: payload.up_by ?? '',
+        scId: admin.scId ?? undefined,
+        snapshot,
+      });
+    }
     return '1';
   }
 
@@ -233,12 +289,12 @@ export class AdminService {
     // ✅ ไม่อัปเดต password_default เป็น plaintext อีกต่อไป
 
     if (payload.profile !== undefined) {
-      admin.avata = payload.profile || undefined;
+      admin.avata = extractBase64(payload.profile) || undefined;
     } else if (payload.avata !== undefined) {
-      admin.avata = payload.avata || undefined;
+      admin.avata = extractBase64(payload.avata) || undefined;
     }
     if (payload.license !== undefined) {
-      admin.license = payload.license || undefined;
+      admin.license = extractBase64(payload.license) || undefined;
     }
     if (payload.type !== undefined) admin.type = payload.type;
     if (payload.position !== undefined) admin.position = payload.position;
@@ -252,7 +308,7 @@ export class AdminService {
       await this.adminRepository.save(admin);
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Update admin error:', error);
+      this.logger.error('Update admin error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' };
     }
   }

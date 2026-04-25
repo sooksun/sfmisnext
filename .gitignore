@@ -12,6 +12,10 @@ out/
 .env.local
 .env.*.local
 backend/.env
+# local credential / artifact dump (curl tests, manual login response, ฯลฯ)
+.local/
+sfmis_login.json
+sfmis_token.txt
 
 # ── Angular legacy (src/) — NOT included in this repo ────────────────────────
 # ใช้ /src/ (leading slash) เพื่อ match เฉพาะ root-level เท่านั้น ไม่ครอบ backend/src/
@@ -76,7 +80,27 @@ ng
 subscribe
 scripts/
 .cursorrules
-.claude/
+
+# ── Claude Code config ─────────────────────────────────────────────────────
+# Share `.claude/commands/` (slash commands) + `.claude/settings.json` (project allowlist)
+# ignore ส่วนที่เป็น personal/runtime
+.claude/settings.local.json
+.claude/cache/
+.claude/sessions/
+.claude/file-history/
+.claude/projects/
+.claude/worktrees/
+.claude/plans/
+.claude/tasks/
+.claude/telemetry/
+.claude/shell-snapshots/
+.claude/session-env/
+.claude/paste-cache/
+.claude/backups/
+.claude/downloads/
+.claude/history.jsonl
+.claude/*.cache.json
+
 *.md~
 CREDITS
 # Thai-named temp files

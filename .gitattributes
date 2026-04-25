@@ -1,0 +1,42 @@
+# Default: detect text files automatically, normalize to LF on commit
+* text=auto eol=lf
+
+# Source code — บังคับ LF (กัน CRLF noise ตอน checkout บน Windows)
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.scss      text eol=lf
+*.sql       text eol=lf
+*.sh        text eol=lf
+.env.example text eol=lf
+.gitignore  text eol=lf
+.gitattributes text eol=lf
+
+# Windows-only — ต้องใช้ CRLF
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Binary — git ไม่ต้อง diff
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.tar       binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.eot       binary

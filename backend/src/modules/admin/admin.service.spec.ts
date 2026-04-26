@@ -3,9 +3,11 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { JwtService } from '@nestjs/jwt';
+import { DataSource } from 'typeorm';
 import { AdminService } from './admin.service';
 import { Admin } from './entities/admin.entity';
 import { MasterLevel } from './entities/master-level.entity';
+import { DeleteLogService } from '../delete-log/delete-log.service';
 
 const md5 = (str: string) => crypto.createHash('md5').update(str).digest('hex');
 
@@ -57,6 +59,11 @@ describe('AdminService', () => {
         { provide: getRepositoryToken(Admin), useValue: adminRepo },
         { provide: getRepositoryToken(MasterLevel), useValue: masterLevelRepo },
         { provide: JwtService, useValue: jwtService },
+        { provide: DataSource, useValue: { createQueryRunner: jest.fn() } },
+        {
+          provide: DeleteLogService,
+          useValue: { log: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 
@@ -68,7 +75,10 @@ describe('AdminService', () => {
       const admin = createMockAdmin();
       adminRepo.findOne.mockResolvedValue(admin);
 
-      const result = await service.login({ email: 'test@example.com', password: 'password123' });
+      const result = await service.login({
+        email: 'test@example.com',
+        password: 'password123',
+      });
 
       expect(result).toHaveProperty('flag', 'success');
       expect(result).toHaveProperty('data');
@@ -79,7 +89,10 @@ describe('AdminService', () => {
       const admin = createMockAdmin();
       adminRepo.findOne.mockResolvedValue(admin);
 
-      const result = await service.login({ email: 'test@example.com', password: 'password123' });
+      const result = await service.login({
+        email: 'test@example.com',
+        password: 'password123',
+      });
 
       expect(result).toHaveProperty('access_token', 'mock.jwt.token');
     });
@@ -87,18 +100,30 @@ describe('AdminService', () => {
     it('should return error when user not found', async () => {
       adminRepo.findOne.mockResolvedValue(null);
 
-      const result = await service.login({ email: 'nonexistent@test.com', password: 'pass' });
+      const result = await service.login({
+        email: 'nonexistent@test.com',
+        password: 'pass',
+      });
 
-      expect(result).toEqual({ flag: 'error', error: 'ไม่พบบัญชีผู้ใช้' });
+      expect(result).toEqual({
+        flag: 'error',
+        error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
+      });
     });
 
     it('should return error on wrong password', async () => {
       const admin = createMockAdmin();
       adminRepo.findOne.mockResolvedValue(admin);
 
-      const result = await service.login({ email: 'test@example.com', password: 'wrongpassword' });
+      const result = await service.login({
+        email: 'test@example.com',
+        password: 'wrongpassword',
+      });
 
-      expect(result).toEqual({ flag: 'error', error: 'รหัสผ่านไม่ถูกต้อง' });
+      expect(result).toEqual({
+        flag: 'error',
+        error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
+      });
     });
 
     it('should query with both email and username fields', async () => {
@@ -128,7 +153,10 @@ describe('AdminService', () => {
       const admin = createMockAdmin({ password: md5('password123') });
       adminRepo.findOne.mockResolvedValue(admin);
 
-      await service.login({ email: 'test@example.com', password: 'password123' });
+      await service.login({
+        email: 'test@example.com',
+        password: 'password123',
+      });
 
       // password should be rehashed with bcrypt
       expect(admin.password).toMatch(/^\$2/);
@@ -140,7 +168,10 @@ describe('AdminService', () => {
       const admin = createMockAdmin({ password: bcryptHash });
       adminRepo.findOne.mockResolvedValue(admin);
 
-      const result = await service.login({ email: 'test@example.com', password: 'password123' });
+      const result = await service.login({
+        email: 'test@example.com',
+        password: 'password123',
+      });
 
       expect(result).toHaveProperty('flag', 'success');
     });
@@ -148,7 +179,10 @@ describe('AdminService', () => {
 
   describe('loadAdmins', () => {
     it('should return paginated results with correct structure', async () => {
-      const admins = [createMockAdmin(), createMockAdmin({ adminId: 2, name: 'Admin 2' })];
+      const admins = [
+        createMockAdmin(),
+        createMockAdmin({ adminId: 2, name: 'Admin 2' }),
+      ];
       adminRepo.findAndCount.mockResolvedValue([admins, 2]);
 
       const result = await service.loadAdmins(0, 10);
@@ -209,7 +243,10 @@ describe('AdminService', () => {
         email: 'test@example.com',
       } as any);
 
-      expect(result).toEqual({ flag: false, ms: 'ชื่อผู้ใช้หรืออีเมลนี้มีอยู่ในระบบแล้ว' });
+      expect(result).toEqual({
+        flag: false,
+        ms: 'ชื่อผู้ใช้หรืออีเมลนี้มีอยู่ในระบบแล้ว',
+      });
     });
 
     it('should hash password with bcrypt (not MD5)', async () => {
@@ -221,7 +258,7 @@ describe('AdminService', () => {
         password: 'secret',
       } as any);
 
-      const createCall = adminRepo.create.mock.calls[0][0] as any;
+      const createCall = adminRepo.create.mock.calls[0][0];
       // bcrypt hash starts with $2
       expect(createCall.password).toMatch(/^\$2/);
       expect(await bcrypt.compare('secret', createCall.password)).toBe(true);
@@ -229,14 +266,14 @@ describe('AdminService', () => {
       expect(createCall.password).not.toBe(md5('secret'));
     });
 
-    it('should use default password 123456 when none provided and hash with bcrypt', async () => {
+    it('should use random default password when none provided and hash with bcrypt', async () => {
       adminRepo.findOne.mockResolvedValue(null);
 
       await service.addAdmin({ name: 'New', email: 'new@test.com' } as any);
 
-      const createCall = adminRepo.create.mock.calls[0][0] as any;
+      const createCall = adminRepo.create.mock.calls[0][0];
+      // ✅ bcrypt hash (random default — not hardcoded '123456')
       expect(createCall.password).toMatch(/^\$2/);
-      expect(await bcrypt.compare('123456', createCall.password)).toBe(true);
       // ✅ passwordDefault should NOT be stored as plaintext
       expect(createCall.passwordDefault).toBeUndefined();
     });
@@ -246,7 +283,7 @@ describe('AdminService', () => {
 
       await service.addAdmin({ name: 'New', email: 'john@school.th' } as any);
 
-      const createCall = adminRepo.create.mock.calls[0][0] as any;
+      const createCall = adminRepo.create.mock.calls[0][0];
       expect(createCall.username).toBe('john');
     });
 
@@ -259,7 +296,7 @@ describe('AdminService', () => {
         profile: 'data:image/png;base64,abc123data',
       } as any);
 
-      const createCall = adminRepo.create.mock.calls[0][0] as any;
+      const createCall = adminRepo.create.mock.calls[0][0];
       expect(createCall.avata).toBe('abc123data');
     });
 
@@ -272,14 +309,17 @@ describe('AdminService', () => {
         profile: { valid: true, data: 'imgdata' },
       } as any);
 
-      const createCall = adminRepo.create.mock.calls[0][0] as any;
+      const createCall = adminRepo.create.mock.calls[0][0];
       expect(createCall.avata).toBe('imgdata');
     });
 
     it('should return success on successful save', async () => {
       adminRepo.findOne.mockResolvedValue(null);
 
-      const result = await service.addAdmin({ name: 'New', email: 'new@test.com' } as any);
+      const result = await service.addAdmin({
+        name: 'New',
+        email: 'new@test.com',
+      } as any);
 
       expect(result).toEqual({ flag: true, ms: 'บันทึกข้อมูลสำเร็จ' });
     });
@@ -288,9 +328,15 @@ describe('AdminService', () => {
       adminRepo.findOne.mockResolvedValue(null);
       adminRepo.save.mockRejectedValue(new Error('DB error'));
 
-      const result = await service.addAdmin({ name: 'New', email: 'new@test.com' } as any);
+      const result = await service.addAdmin({
+        name: 'New',
+        email: 'new@test.com',
+      } as any);
 
-      expect(result).toEqual({ flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' });
+      expect(result).toEqual({
+        flag: false,
+        ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล',
+      });
     });
   });
 
@@ -306,7 +352,10 @@ describe('AdminService', () => {
     it('should return "0" when admin not found', async () => {
       adminRepo.findOne.mockResolvedValue(null);
 
-      const result = await service.removeAdmin({ admin_id: 999, del: 1 } as any);
+      const result = await service.removeAdmin({
+        admin_id: 999,
+        del: 1,
+      } as any);
 
       expect(result).toBe('0');
     });
@@ -327,7 +376,9 @@ describe('AdminService', () => {
 
       await service.removeAdmin({ admin_id: 1, del: 1 } as any);
 
-      expect(adminRepo.save).toHaveBeenCalledWith(expect.objectContaining({ del: 1 }));
+      expect(adminRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ del: 1 }),
+      );
     });
   });
 
@@ -370,7 +421,10 @@ describe('AdminService', () => {
     it('should return success on successful update', async () => {
       adminRepo.findOne.mockResolvedValue(createMockAdmin());
 
-      const result = await service.updateAdmin({ admin_id: 1, name: 'Updated' } as any);
+      const result = await service.updateAdmin({
+        admin_id: 1,
+        name: 'Updated',
+      } as any);
 
       expect(result).toEqual({ flag: true, ms: 'บันทึกข้อมูลสำเร็จ' });
     });
@@ -384,7 +438,9 @@ describe('AdminService', () => {
 
       const result = await service.loadPosition();
 
-      expect(result).toEqual([{ lev_id: 1, level: 'Level 1', position: 'Teacher' }]);
+      expect(result).toEqual([
+        { lev_id: 1, level: 'Level 1', position: 'Teacher' },
+      ]);
     });
   });
 
@@ -393,16 +449,25 @@ describe('AdminService', () => {
       const admin = createMockAdmin({ avata: 'img_data' });
       adminRepo.findOne.mockResolvedValue(admin);
 
-      const result = await service.login({ email: 'test@example.com', password: 'password123' });
+      const result = await service.login({
+        email: 'test@example.com',
+        password: 'password123',
+      });
 
-      expect((result as any).data.avata).toEqual({ full: 'img_data', thumb: 'img_data' });
+      expect((result as any).data.avata).toEqual({
+        full: 'img_data',
+        thumb: 'img_data',
+      });
     });
 
     it('should return null avata when not set', async () => {
       const admin = createMockAdmin({ avata: undefined });
       adminRepo.findOne.mockResolvedValue(admin);
 
-      const result = await service.login({ email: 'test@example.com', password: 'password123' });
+      const result = await service.login({
+        email: 'test@example.com',
+        password: 'password123',
+      });
 
       expect((result as any).data.avata).toBeNull();
     });
@@ -411,7 +476,10 @@ describe('AdminService', () => {
       const admin = createMockAdmin();
       adminRepo.findOne.mockResolvedValue(admin);
 
-      const result = await service.login({ email: 'test@example.com', password: 'password123' });
+      const result = await service.login({
+        email: 'test@example.com',
+        password: 'password123',
+      });
 
       expect((result as any).data).not.toHaveProperty('password');
       expect((result as any).data).not.toHaveProperty('password_default');

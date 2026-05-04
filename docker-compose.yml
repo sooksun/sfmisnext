@@ -1,11 +1,9 @@
-version: '3.8'
-
 services:
   db:
     image: mysql:8
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASS:-sfmis_secret}
-      MYSQL_DATABASE: ${DB_NAME:-sfmisystem}
+      MYSQL_ROOT_PASSWORD: "${DB_PASS:?DB_PASS is required — set in .env or shell env}"
+      MYSQL_DATABASE: "${DB_NAME:-sfmisystem}"
     ports:
       - '3306:3306'
     volumes:
@@ -24,9 +22,20 @@ services:
       DB_HOST: db
       DB_PORT: 3306
       DB_USER: root
-      DB_PASS: ${DB_PASS:-sfmis_secret}
-      DB_NAME: ${DB_NAME:-sfmisystem}
-      CORS_ORIGIN: http://localhost:3001
+      DB_PASS: "${DB_PASS:?DB_PASS is required}"
+      DB_NAME: "${DB_NAME:-sfmisystem}"
+      CORS_ORIGIN: "${CORS_ORIGIN:?CORS_ORIGIN is required — set to production frontend URL}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET is required — generate via node crypto.randomBytes(32).toString('base64url')}"
+      COMMITTEE_THRESHOLD: ${COMMITTEE_THRESHOLD:-5000}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      AI_DEFAULT_PROVIDER: ${AI_DEFAULT_PROVIDER:-openrouter}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-2.5-flash}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-}
     ports:
       - '3000:3000'
     depends_on:
@@ -36,7 +45,9 @@ services:
   frontend:
     build: ./frontend
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:3000/api/
+      NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}"
+      NEXTAUTH_URL: "${NEXTAUTH_URL:?NEXTAUTH_URL is required — production frontend URL}"
+      AUTH_SECRET: "${AUTH_SECRET:?AUTH_SECRET is required — generate via node crypto.randomBytes(32).toString('base64url')}"
     ports:
       - '3001:3001'
     depends_on:

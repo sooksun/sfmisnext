@@ -29,7 +29,9 @@ const SUPER_ADMIN_TYPE = 1;
 export function assertSameSchool(user: JwtUser, requestedScId: number): void {
   if (user.type === SUPER_ADMIN_TYPE) return;
   if (user.sc_id !== requestedScId) {
-    throw new ForbiddenException('ไม่สามารถดูหรือแก้ไขข้อมูลของโรงเรียนอื่นได้');
+    throw new ForbiddenException(
+      'ไม่สามารถดูหรือแก้ไขข้อมูลของโรงเรียนอื่นได้',
+    );
   }
 }
 

@@ -1,9 +1,24 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ExecutionContext, INestApplication, ValidationPipe } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import request from 'supertest';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
+import { RolesGuard } from '../auth/roles.guard';
+
+// Super Admin mock — sc_id=1, type=1 bypasses assertSameSchool ทุก school
+const mockJwtGuard = {
+  canActivate: (ctx: ExecutionContext) => {
+    ctx.switchToHttp().getRequest().user = {
+      admin_id: 1,
+      username: 'test',
+      sc_id: 1,
+      type: 1,
+    };
+    return true;
+  },
+};
 
 describe('AdminController (integration)', () => {
   let app: INestApplication;
@@ -23,12 +38,20 @@ describe('AdminController (integration)', () => {
     const module: TestingModule = await Test.createTestingModule({
       imports: [ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }])],
       controllers: [AdminController],
-      providers: [{ provide: AdminService, useValue: adminService }],
-    }).compile();
+      providers: [
+        { provide: AdminService, useValue: adminService },
+        { provide: APP_GUARD, useValue: mockJwtGuard },
+      ],
+    })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     app = module.createNestApplication();
     app.setGlobalPrefix('api');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
   });
 
@@ -133,7 +156,13 @@ describe('AdminController (integration)', () => {
 
       const res = await request(app.getHttpServer())
         .post('/api/B_admin/addAdmin')
-        .send({ name: 'New Admin', email: 'new@test.com', password: 'pass', type: 1, position: 1 });
+        .send({
+          name: 'New Admin',
+          email: 'new@test.com',
+          password: 'pass',
+          type: 1,
+          position: 1,
+        });
 
       // DTO validation may reject if additional required fields are missing
       if (res.status === 200) {
@@ -173,11 +202,20 @@ describe('AdminController (integration)', () => {
 
   describe('Alias endpoints', () => {
     it('POST /api/B_admin/add_user should call addAdmin', async () => {
-      (adminService.addAdmin as jest.Mock).mockResolvedValue({ flag: true, ms: 'ok' });
+      (adminService.addAdmin as jest.Mock).mockResolvedValue({
+        flag: true,
+        ms: 'ok',
+      });
 
       await request(app.getHttpServer())
         .post('/api/B_admin/add_user')
-        .send({ name: 'User', email: 'user@test.com' })
+        .send({
+          name: 'User',
+          email: 'user@test.com',
+          type: 2,
+          position: 1,
+          sc_id: 1,
+        })
         .expect(200);
 
       expect(adminService.addAdmin).toHaveBeenCalled();

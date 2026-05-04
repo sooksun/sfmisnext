@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiGet, apiPost } from '@/lib/api'
+import { useAppContext } from '@/hooks/use-app-context'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // field names ตรงกับสิ่งที่ backend project.service.ts map ออกมา
@@ -61,28 +62,14 @@ const fmt = (n: number) =>
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ProjectPage() {
+  const { scId, adminId, syId } = useAppContext()
+  const userId = adminId
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ProjectRow | null>(null)
   const [editing, setEditing] = useState<ProjectRow | null>(null)
-
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [userId, setUserId] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id)   setScId(Number(userData.sc_id))
-      if (userData?.admin_id) setUserId(Number(userData.admin_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-    } catch {}
-  }, [])
 
   // ── Query ─────────────────────────────────────────────────────────────────
   // endpoint: GET project/load_project/:scId/:userId/:page/:pageSize/:syId
@@ -163,7 +150,7 @@ export default function ProjectPage() {
 
   // ── Columns ───────────────────────────────────────────────────────────────
 
-  const columns = [
+  const columns = useMemo(() => [
     {
       header: 'จัดการ',
       render: (item: ProjectRow) => (
@@ -208,7 +195,7 @@ export default function ProjectPage() {
         return <span className={s.color}>{s.text}</span>
       },
     },
-  ]
+  ], [])
 
   // ── Render ────────────────────────────────────────────────────────────────
 

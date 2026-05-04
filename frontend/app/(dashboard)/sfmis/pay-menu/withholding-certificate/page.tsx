@@ -1,11 +1,12 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Printer } from 'lucide-react'
+import { openPrintWindow, makeHeader, makeSignatures, fmtBaht, numberToThaiBaht, esc, thaiFullDate } from '@/lib/print-utils'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
@@ -23,6 +24,7 @@ import {
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
+import { useAppContext } from '@/hooks/use-app-context'
 
 // ====== Types ================================================================
 
@@ -85,29 +87,16 @@ const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDi
 // ============================================================================
 
 export default function WithholdingCertificatePage() {
+  const { scId, adminId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const upBy = adminId
+  const year = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
+  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<WCRow | null>(null)
   const [editing, setEditing] = useState<WCRow | null>(null)
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [year, setYear] = useState('')
-  const [upBy, setUpBy] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-      if (userData?.admin_id) setUpBy(Number(userData.admin_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-      if (years?.budget_date?.budget_year) setYear(String(years.budget_date.budget_year))
-    } catch {}
-  }, [])
 
   // ── Queries ──────────────────────────────────────────────────────────────
 
@@ -164,7 +153,7 @@ export default function WithholdingCertificatePage() {
 
   const saveMutation = useMutation({
     mutationFn: (form: WCForm) => {
-      const payload = { ...form, sc_id: scId, sy_id: syId, year, up_by: upBy }
+      const payload = { ...form, sc_id: scId, sy_id: syId, year: apiYear, up_by: upBy }
       if (editing) {
         return apiPost('Withholding_certificate/updateWithholdingCertificate', {
           ...payload,
@@ -231,6 +220,34 @@ export default function WithholdingCertificatePage() {
     setDialogOpen(true)
   }
 
+  function printWC(item: WCRow) {
+    const header = makeHeader({
+      title: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย',
+      subtitle: 'ตามมาตรา 50 ทวิ แห่งประมวลรัษฎากร',
+      docNo: item.wc_no,
+      docDate: item.cer_date,
+    })
+    const body = `
+<p><b>ผู้มีหน้าที่หักภาษี ณ ที่จ่าย:</b> (โรงเรียน)</p>
+<p><b>ผู้ถูกหักภาษี ณ ที่จ่าย:</b> ${esc(item.p_name ?? '-')}</p>
+<p><b>ลำดับที่ในแบบ:</b> ${item.wc_rank ?? '-'} &nbsp; &nbsp; <b>ปีงบประมาณ:</b> ${esc(item.year ?? '-')}</p>
+<table>
+  <tr><th>รายการ</th><th>จำนวนเงิน (บาท)</th><th>ภาษีหัก ณ ที่จ่าย (บาท)</th></tr>
+  <tr>
+    <td>${esc(item.detail ?? '-')}</td>
+    <td class="num">${fmtBaht(item.amount)}</td>
+    <td class="num">${fmtBaht(item.deduct)}</td>
+  </tr>
+</table>
+<p class="mt-6"><b>จำนวนเงินภาษีหักไว้เป็นอักษร:</b> ${esc(numberToThaiBaht(Number(item.deduct)))}</p>
+<p>วันที่ออกหนังสือ: ${esc(thaiFullDate(item.cer_date))}</p>
+<p class="footer-note">ข้าพเจ้าขอรับรองว่าข้อความและตัวเลขดังกล่าวข้างต้นถูกต้องตรงกับความจริงทุกประการ</p>`
+    openPrintWindow({
+      title: `หนังสือรับรองหักภาษี_${item.wc_no}`,
+      body: header + body + makeSignatures(['ผู้มีหน้าที่หักภาษี ณ ที่จ่าย']),
+    })
+  }
+
   // ── Columns ───────────────────────────────────────────────────────────────
 
   const columns = [
@@ -238,6 +255,9 @@ export default function WithholdingCertificatePage() {
       header: 'จัดการ',
       render: (item: WCRow) => (
         <div className="flex gap-1">
+          <Button size="sm" variant="outline" onClick={() => printWC(item)} title="พิมพ์">
+            <Printer className="h-3 w-3" />
+          </Button>
           {item.status !== 101 && (
             <Button size="sm" variant="warning" onClick={() => openEdit(item)} title="แก้ไข">
               <Pencil className="h-3 w-3" />
@@ -253,7 +273,7 @@ export default function WithholdingCertificatePage() {
           </Button>
         </div>
       ),
-      headerClassName: 'w-24',
+      headerClassName: 'w-32',
     },
     {
       header: 'เล่มที่/เลขที่',

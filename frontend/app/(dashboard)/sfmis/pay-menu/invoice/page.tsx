@@ -1,15 +1,17 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Send } from 'lucide-react'
+import { Plus, Pencil, Trash2, Send, AlertTriangle, RotateCcw, Printer } from 'lucide-react'
+import { openPrintWindow, makeHeader, makeSignatures, fmtBaht, numberToThaiBaht, esc, thaiFullDate } from '@/lib/print-utils'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { DeleteWithReasonDialog } from '@/components/shared/delete-with-reason-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,6 +25,7 @@ import {
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface InvoiceRow {
   rw_id: number
@@ -44,8 +47,25 @@ interface InvoiceRow {
   up_by: string | number
   up_date: string
   remark: string
+  precheck_note?: string
   sy_id: number
   year: string
+}
+
+interface LoanRow {
+  rw_id: number
+  no_doc: string
+  detail: string
+  amount: number
+  loan_type: number | null
+  loan_start_date: string | null
+  loan_return_due_date: string | null
+  loan_returned_date: string | null
+  loan_return_cash: number
+  loan_return_voucher_amount: number
+  return_total: number
+  loan_status: 'active' | 'overdue' | 'returned'
+  requester_name: string
 }
 
 interface Partner {
@@ -63,7 +83,6 @@ interface UserRequest {
   name: string
 }
 
-// Select ส่งค่าผ่าน setValue(..., Number(v)) เสมอ ไม่จำเป็นต้องใช้ z.coerce
 const invoiceSchema = z.object({
   no_doc: z.string().min(1, 'กรุณากรอกเลขที่ใบสำคัญ'),
   bg_type_id: z.number().min(1, 'กรุณาเลือกประเภทงบ'),
@@ -73,13 +92,23 @@ const invoiceSchema = z.object({
   amount: z.number().min(0.01, 'กรุณากรอกจำนวนเงิน'),
   date_request: z.string().min(1, 'กรุณาเลือกวันที่'),
   user_request: z.number().min(1, 'กรุณาเลือกผู้ขอเบิก'),
+  loan_type: z.number().optional(),
+  loan_start_date: z.string().optional(),
 })
 type InvoiceForm = z.infer<typeof invoiceSchema>
 
-// status จริงใน request_withdraw
+const returnSchema = z.object({
+  loan_returned_date: z.string().min(1, 'กรุณาเลือกวันที่คืน'),
+  loan_return_cash: z.number().min(0, 'กรอกเงินสดคืน'),
+  loan_return_voucher_amount: z.number().min(0, 'กรอกใบสำคัญคืน'),
+})
+type ReturnForm = z.infer<typeof returnSchema>
+
 const statusLabel: Record<number, { label: string; color: string }> = {
-  0: { label: 'รออนุมัติ', color: 'text-yellow-600' },
-  100: { label: 'รอหัวหน้าตรวจ', color: 'text-blue-600' },
+  0: { label: 'ร่าง', color: 'text-gray-500' },
+  50: { label: 'รอเจ้าหน้าที่ตรวจฎีกา', color: 'text-amber-600' },
+  51: { label: 'ตรวจไม่ผ่าน — แก้ไขแล้วส่งใหม่', color: 'text-orange-600' },
+  100: { label: 'ตรวจแล้ว รอหัวหน้าอนุมัติ', color: 'text-blue-600' },
   101: { label: 'หัวหน้าไม่อนุมัติ', color: 'text-red-500' },
   102: { label: 'หัวหน้าอนุมัติ / รอ ผอ.', color: 'text-indigo-600' },
   200: { label: 'ผอ. อนุมัติ', color: 'text-green-600' },
@@ -87,40 +116,52 @@ const statusLabel: Record<number, { label: string; color: string }> = {
   202: { label: 'ออกเช็คแล้ว', color: 'text-green-700' },
 }
 
+// สถานะที่เจ้าของใบสามารถแก้ไข/ส่งใหม่/ลบได้
+const EDITABLE_STATUSES = new Set([0, 51])
+
 const rwTypeLabel: Record<number, string> = {
-  1: 'โอนเงิน',
-  2: 'เช็ค',
-  3: 'จัดซื้อ/จ้าง',
+  1: 'เงินยืม',
+  2: 'ค่าเดินทาง',
+  3: 'ค่าพัสดุ/บริการ',
   4: 'หัก ณ ที่จ่าย',
 }
 
+const loanTypeLabel: Record<number, string> = {
+  1: 'เงินสวัสดิการ',
+  2: 'โครงการ',
+  3: 'กิจกรรม',
+}
+
+const loanStatusStyle: Record<string, { label: string; cls: string }> = {
+  active: { label: 'ปกติ', cls: 'bg-blue-100 text-blue-700' },
+  overdue: { label: 'เกินกำหนด', cls: 'bg-red-100 text-red-700' },
+  returned: { label: 'คืนแล้ว', cls: 'bg-green-100 text-green-700' },
+}
+
 export default function InvoicePage() {
+  const { scId, adminId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const upBy = adminId
+  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [loanDialogOpen, setLoanDialogOpen] = useState(false)
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false)
+  const [returnTarget, setReturnTarget] = useState<LoanRow | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<InvoiceRow | null>(null)
   const [submitTarget, setSubmitTarget] = useState<InvoiceRow | null>(null)
   const [editing, setEditing] = useState<InvoiceRow | null>(null)
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [year, setYear] = useState('')
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-      if (years?.budget_date?.budget_year) setYear(String(years.budget_date.budget_year))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['invoice', scId, syId],
     queryFn: () => apiGet<InvoiceRow[]>(`Invoice/loadInvoiceOrder/${scId}/${syId}`),
+    enabled: scId > 0 && syId > 0,
+  })
+
+  const { data: loanData, isLoading: loanLoading } = useQuery({
+    queryKey: ['loan-status', scId, syId],
+    queryFn: () => apiGet<LoanRow[]>(`Invoice/loadLoanStatus/${scId}/${syId}`),
     enabled: scId > 0 && syId > 0,
   })
 
@@ -131,9 +172,9 @@ export default function InvoicePage() {
   })
 
   const { data: budgetTypes } = useQuery({
-    queryKey: ['budget-type-invoice', scId, syId, year],
-    queryFn: () => apiGet<BudgetType[]>(`Invoice/loadBudgetType/${scId}/${syId}/${year}`),
-    enabled: scId > 0 && syId > 0 && year !== '',
+    queryKey: ['budget-type-invoice', scId, syId, apiYear],
+    queryFn: () => apiGet<BudgetType[]>(`Invoice/loadBudgetType/${scId}/${syId}/${apiYear}`),
+    enabled: scId > 0 && syId > 0 && apiYear !== '',
   })
 
   const { data: userRequests } = useQuery({
@@ -145,18 +186,34 @@ export default function InvoicePage() {
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } =
     useForm<InvoiceForm>({
       resolver: zodResolver(invoiceSchema),
-      defaultValues: { no_doc: '', bg_type_id: 0, rw_type: 0, p_id: 0, detail: '', amount: 0, date_request: '', user_request: 0 },
+      defaultValues: {
+        no_doc: '', bg_type_id: 0, rw_type: 0, p_id: 0,
+        detail: '', amount: 0, date_request: '', user_request: 0,
+        loan_type: undefined, loan_start_date: '',
+      },
     })
+
+  const {
+    register: regReturn, handleSubmit: handleReturn,
+    reset: resetReturn, setValue: setReturnVal, watch: watchReturn,
+    formState: { errors: returnErrors },
+  } = useForm<ReturnForm>({
+    resolver: zodResolver(returnSchema),
+    defaultValues: { loan_returned_date: '', loan_return_cash: 0, loan_return_voucher_amount: 0 },
+  })
 
   const bgTypeId = watch('bg_type_id')
   const pId = watch('p_id')
   const rwType = watch('rw_type')
   const userRequest = watch('user_request')
   const dateRequest = watch('date_request')
+  const loanStartDate = watch('loan_start_date')
+  const loanType = watch('loan_type')
+  const returnedDate = watchReturn('loan_returned_date')
 
   const saveMutation = useMutation({
     mutationFn: (form: InvoiceForm) => {
-      const payload = { ...form, sc_id: scId, sy_id: syId, year }
+      const payload: Record<string, unknown> = { ...form, sc_id: scId, sy_id: syId, year: apiYear, up_by: upBy }
       if (editing) return apiPost('Invoice/updateInvoice', { ...payload, rw_id: editing.rw_id })
       return apiPost('Invoice/addInvoice', payload)
     },
@@ -164,6 +221,7 @@ export default function InvoicePage() {
       if (res.flag) {
         toast.success('บันทึกเรียบร้อยแล้ว')
         qc.invalidateQueries({ queryKey: ['invoice'] })
+        qc.invalidateQueries({ queryKey: ['loan-status'] })
         setDialogOpen(false)
         reset()
       } else {
@@ -173,16 +231,37 @@ export default function InvoicePage() {
     onError: () => toast.error('เกิดข้อผิดพลาด'),
   })
 
-  // ส่งอนุมัติ = เปลี่ยน status 0 → 100 (ส่งให้หัวหน้าการเงินตรวจ)
-  const submitMutation = useMutation({
-    mutationFn: (item: InvoiceRow) =>
-      apiPost('Invoice/updateInvoice', { rw_id: item.rw_id, status: 100, sc_id: item.sc_id ?? scId, no_doc: item.no_doc, bg_type_id: item.bg_type_id, rw_type: item.rw_type, p_id: item.p_id, detail: item.detail, amount: item.amount, date_request: item.date_request, user_request: item.user_request, sy_id: item.sy_id, year: item.year }),
+  const returnMutation = useMutation({
+    mutationFn: (form: ReturnForm) =>
+      apiPost('Invoice/returnLoan', { ...form, rw_id: returnTarget!.rw_id, up_by: upBy }),
     onSuccess: (res: any) => {
       if (res.flag) {
-        toast.success('ส่งอนุมัติเรียบร้อยแล้ว')
+        toast.success(res.ms || 'บันทึกการคืนเงินเรียบร้อยแล้ว')
+        qc.invalidateQueries({ queryKey: ['loan-status'] })
+        setReturnDialogOpen(false)
+        setReturnTarget(null)
+      } else {
+        toast.error(res.ms || 'มีปัญหา')
+      }
+    },
+    onError: () => toast.error('เกิดข้อผิดพลาด'),
+  })
+
+  const submitMutation = useMutation({
+    mutationFn: (item: InvoiceRow) =>
+      apiPost('Invoice/updateInvoice', {
+        rw_id: item.rw_id, status: 50, sc_id: item.sc_id ?? scId,
+        no_doc: item.no_doc, bg_type_id: item.bg_type_id, rw_type: item.rw_type,
+        p_id: item.p_id, detail: item.detail, amount: item.amount,
+        date_request: item.date_request, user_request: item.user_request,
+        sy_id: item.sy_id, year: item.year,
+      }),
+    onSuccess: (res: any) => {
+      if (res.flag) {
+        toast.success('ส่งตรวจฎีกาเรียบร้อยแล้ว')
         qc.invalidateQueries({ queryKey: ['invoice'] })
       } else {
-        toast.error(res.ms || 'มีปัญหาในการส่งอนุมัติ')
+        toast.error(res.ms || 'มีปัญหาในการส่งตรวจ')
       }
       setSubmitTarget(null)
     },
@@ -190,8 +269,12 @@ export default function InvoicePage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (item: InvoiceRow) =>
-      apiPost('Invoice/updateInvoice', { rw_id: item.rw_id, del: 1, sc_id: item.sc_id ?? scId, no_doc: item.no_doc, bg_type_id: item.bg_type_id, rw_type: item.rw_type, p_id: item.p_id, detail: item.detail, amount: item.amount, date_request: item.date_request, user_request: item.user_request, sy_id: item.sy_id, year: item.year }),
+    mutationFn: ({ item }: { item: InvoiceRow; reason: string }) =>
+      apiPost('Invoice/deleteInvoice', {
+        rw_id: item.rw_id,
+        sc_id: item.sc_id ?? scId,
+        up_by: adminId,
+      }),
     onSuccess: (res: any) => {
       if (res.flag) {
         toast.success('ลบเรียบร้อยแล้ว')
@@ -206,7 +289,11 @@ export default function InvoicePage() {
 
   function openAdd() {
     setEditing(null)
-    reset({ no_doc: '', bg_type_id: 0, rw_type: 0, p_id: 0, detail: '', amount: 0, date_request: new Date().toISOString().substring(0, 10), user_request: 0 })
+    reset({
+      no_doc: '', bg_type_id: 0, rw_type: 0, p_id: 0, detail: '', amount: 0,
+      date_request: new Date().toISOString().substring(0, 10), user_request: 0,
+      loan_type: undefined, loan_start_date: '',
+    })
     setDialogOpen(true)
   }
 
@@ -225,23 +312,73 @@ export default function InvoicePage() {
     setDialogOpen(true)
   }
 
-  const fmt = (n: number | string) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })
+  function printInvoice(item: InvoiceRow) {
+    const header = makeHeader({
+      title: 'ใบสำคัญจ่าย',
+      subtitle: 'หลักฐานการจ่ายเงินของทางราชการ',
+      docNo: item.no_doc,
+      docDate: item.date_request,
+    })
+    const body = `
+<p><b>ปีงบประมาณ:</b> ${esc(item.year ?? '-')} &nbsp; <b>ประเภทงบ:</b> ${esc(item.budget_type_name ?? '-')}</p>
+<p><b>โครงการ:</b> ${esc(item.project_name ?? '-')}</p>
+<p><b>ผู้รับเงิน:</b> ${esc(item.partner_name ?? '-')}</p>
+<p><b>ผู้เสนอขอเบิก:</b> ${esc(item.user_request_name ?? '-')}</p>
+<table>
+  <tr><th style="width:70%">รายการ</th><th>จำนวนเงิน (บาท)</th></tr>
+  <tr><td>${esc(item.detail ?? '-')}</td><td class="num">${fmtBaht(Number(item.amount))}</td></tr>
+  <tr><td class="right"><b>รวมทั้งสิ้น</b></td><td class="num"><b>${fmtBaht(Number(item.amount))}</b></td></tr>
+</table>
+<p class="mt-6"><b>จำนวนเงินเป็นอักษร:</b> ${esc(numberToThaiBaht(Number(item.amount)))}</p>
+<p><b>วันที่ขอเบิก:</b> ${esc(thaiFullDate(item.date_request))}</p>
+${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : ''}`
+    openPrintWindow({
+      title: `ใบสำคัญจ่าย_${item.no_doc}`,
+      body: header + body + makeSignatures(['ผู้รับเงิน', 'ผู้จ่ายเงิน', 'ผู้อนุมัติจ่าย']),
+    })
+  }
+
+  function openReturn(loan: LoanRow) {
+    setReturnTarget(loan)
+    resetReturn({
+      loan_returned_date: new Date().toISOString().substring(0, 10),
+      loan_return_cash: 0,
+      loan_return_voucher_amount: 0,
+    })
+    setReturnDialogOpen(true)
+  }
+
+  const fmt = (n: number | string) =>
+    Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })
+
   const rows = Array.isArray(data) ? data : []
+  const loans = Array.isArray(loanData) ? loanData : []
+  const overdueLoans = loans.filter((l) => l.loan_status === 'overdue')
+  const activeLoans = loans.filter((l) => l.loan_status !== 'returned')
+
   const partnerList = Array.isArray(partners) ? partners : []
   const budgetTypeList = Array.isArray(budgetTypes) ? budgetTypes : []
   const userRequestList = Array.isArray(userRequests) ? userRequests : []
 
-  const columns = [
+  const columns = useMemo(() => [
     {
       header: 'จัดการ',
       render: (item: InvoiceRow) => (
         <div className="flex gap-1">
-          {item.status === 0 && (
+          <Button size="sm" variant="outline" onClick={() => printInvoice(item)} title="พิมพ์ใบสำคัญจ่าย">
+            <Printer className="h-3 w-3" />
+          </Button>
+          {EDITABLE_STATUSES.has(item.status) && (
             <>
               <Button size="sm" variant="warning" onClick={() => openEdit(item)} title="แก้ไข">
                 <Pencil className="h-3 w-3" />
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setSubmitTarget(item)} title="ส่งอนุมัติ">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSubmitTarget(item)}
+                title={item.status === 51 ? 'ส่งตรวจใหม่' : 'ส่งตรวจฎีกา'}
+              >
                 <Send className="h-3 w-3" />
               </Button>
               <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(item)} title="ลบ">
@@ -251,7 +388,7 @@ export default function InvoicePage() {
           )}
         </div>
       ),
-      headerClassName: 'w-28',
+      headerClassName: 'w-36',
     },
     { header: 'เลขที่', key: 'no_doc' as keyof InvoiceRow },
     { header: 'ประเภทงบ', key: 'budget_type_name' as keyof InvoiceRow },
@@ -269,7 +406,16 @@ export default function InvoicePage() {
       header: 'สถานะ',
       render: (item: InvoiceRow) => {
         const s = statusLabel[item.status] ?? { label: String(item.status), color: 'text-gray-500' }
-        return <span className={s.color}>{s.label}</span>
+        return (
+          <div>
+            <span className={s.color}>{s.label}</span>
+            {item.status === 51 && item.precheck_note && (
+              <div className="text-xs text-red-600 mt-0.5" title={item.precheck_note}>
+                เหตุผล: {item.precheck_note}
+              </div>
+            )}
+          </div>
+        )
       },
     },
     {
@@ -285,19 +431,97 @@ export default function InvoicePage() {
         </div>
       ),
     },
-  ]
+  ], [])
+
+  // ── คอลัมน์ตารางเงินยืม ────────────────────────────────────────────────────
+  const loanColumns = useMemo(() => [
+    {
+      header: 'จัดการ',
+      render: (item: LoanRow) =>
+        item.loan_status !== 'returned' ? (
+          <Button size="sm" variant="outline" onClick={() => openReturn(item)} title="บันทึกการคืนเงิน">
+            <RotateCcw className="h-3 w-3 mr-1" />
+            คืนเงิน
+          </Button>
+        ) : null,
+      headerClassName: 'w-24',
+    },
+    { header: 'เลขที่', key: 'no_doc' as keyof LoanRow },
+    { header: 'ผู้ยืม', key: 'requester_name' as keyof LoanRow },
+    { header: 'รายละเอียด', key: 'detail' as keyof LoanRow },
+    {
+      header: 'ยอดยืม (บาท)',
+      render: (item: LoanRow) => <span className="text-right block">{fmt(item.amount)}</span>,
+    },
+    {
+      header: 'ประเภทเงินยืม',
+      render: (item: LoanRow) => <span>{item.loan_type ? loanTypeLabel[item.loan_type] : '—'}</span>,
+    },
+    {
+      header: 'วันที่ยืม',
+      render: (item: LoanRow) => <span>{fmtDateTH(item.loan_start_date)}</span>,
+    },
+    {
+      header: 'กำหนดคืน',
+      render: (item: LoanRow) => <span>{fmtDateTH(item.loan_return_due_date)}</span>,
+    },
+    {
+      header: 'วันที่คืนจริง',
+      render: (item: LoanRow) => <span>{item.loan_returned_date ? fmtDateTH(item.loan_returned_date) : '—'}</span>,
+    },
+    {
+      header: 'ยอดส่งคืน (บาท)',
+      render: (item: LoanRow) =>
+        item.loan_status === 'returned' ? (
+          <span className="text-right block">{fmt(item.return_total)}</span>
+        ) : <span className="text-gray-400">—</span>,
+    },
+    {
+      header: 'สถานะ',
+      render: (item: LoanRow) => {
+        const s = loanStatusStyle[item.loan_status]
+        return <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.cls}`}>{s.label}</span>
+      },
+    },
+  ], [])
 
   return (
     <div className="flex flex-col flex-auto min-w-0">
       <PageHeader
         title="ใบสำคัญจ่าย (ขอเบิก)"
         actions={
-          <Button onClick={openAdd} disabled={scId === 0}>
-            <Plus className="h-4 w-4" />
-            สร้างใบสำคัญจ่าย
-          </Button>
+          <div className="flex gap-2">
+            {activeLoans.length > 0 && (
+              <Button variant="outline" onClick={() => setLoanDialogOpen(true)} className="relative">
+                <RotateCcw className="h-4 w-4 mr-1" />
+                เงินยืม
+                {overdueLoans.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                    {overdueLoans.length}
+                  </span>
+                )}
+              </Button>
+            )}
+            <Button onClick={openAdd} disabled={scId === 0}>
+              <Plus className="h-4 w-4" />
+              สร้างใบสำคัญจ่าย
+            </Button>
+          </div>
         }
       />
+
+      {/* Banner เงินยืมเกินกำหนด */}
+      {overdueLoans.length > 0 && (
+        <div className="mx-4 mt-2 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <span className="font-semibold">มีเงินยืมเกินกำหนดส่งคืน {overdueLoans.length} รายการ</span>
+            {' — '}
+            {overdueLoans.map((l) => `${l.requester_name} (${fmt(l.amount)} บ.)`).join(', ')}
+          </div>
+        </div>
+      )}
+
       <div className="p-4">
         <DataTable
           columns={columns}
@@ -310,6 +534,7 @@ export default function InvoicePage() {
         />
       </div>
 
+      {/* ── Dialog เพิ่ม/แก้ไขใบสำคัญ ─────────────────────────────────────── */}
       <FormDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
@@ -343,15 +568,55 @@ export default function InvoicePage() {
               <Select value={rwType > 0 ? String(rwType) : ''} onValueChange={(v) => setValue('rw_type', Number(v))}>
                 <SelectTrigger><SelectValue placeholder="เลือกประเภทการจ่าย" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">โอนเงิน</SelectItem>
-                  <SelectItem value="2">เช็ค</SelectItem>
-                  <SelectItem value="3">จัดซื้อ/จ้าง</SelectItem>
+                  <SelectItem value="1">เงินยืม</SelectItem>
+                  <SelectItem value="2">ค่าเดินทาง</SelectItem>
+                  <SelectItem value="3">ค่าพัสดุ/บริการ</SelectItem>
                   <SelectItem value="4">หัก ณ ที่จ่าย</SelectItem>
                 </SelectContent>
               </Select>
               {errors.rw_type && <p className="text-red-500 text-xs mt-1">{errors.rw_type.message}</p>}
             </div>
           </div>
+
+          {/* ── ส่วนเงินยืม (แสดงเมื่อ rw_type = 1) ── */}
+          {rwType === 1 && (
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-3">
+              <p className="text-sm font-medium text-blue-700">ข้อมูลเงินยืม</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>ประเภทเงินยืม</Label>
+                  <Select
+                    value={loanType ? String(loanType) : ''}
+                    onValueChange={(v) => setValue('loan_type', Number(v))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="เลือกประเภท" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">เงินสวัสดิการ</SelectItem>
+                      <SelectItem value="2">โครงการ</SelectItem>
+                      <SelectItem value="3">กิจกรรม</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>วันที่ยืม</Label>
+                  <ThaiDatePicker
+                    value={loanStartDate ?? ''}
+                    onChange={(v) => setValue('loan_start_date', v, { shouldValidate: true })}
+                  />
+                  {loanStartDate && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      กำหนดคืน: {(() => {
+                        const d = new Date(loanStartDate)
+                        d.setDate(d.getDate() + 30)
+                        return fmtDateTH(d.toISOString().substring(0, 10))
+                      })()}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <Label>ผู้รับเงิน *</Label>
             <Select value={pId > 0 ? String(pId) : ''} onValueChange={(v) => setValue('p_id', Number(v))}>
@@ -399,26 +664,88 @@ export default function InvoicePage() {
         </div>
       </FormDialog>
 
-      {/* ส่งอนุมัติ — เปลี่ยน status 0 → 100 */}
+      {/* ── Dialog ตารางเงินยืม ────────────────────────────────────────────── */}
+      <FormDialog
+        open={loanDialogOpen}
+        onClose={() => setLoanDialogOpen(false)}
+        title="ทะเบียนเงินยืม"
+        size="xl"
+      >
+        <DataTable
+          columns={loanColumns}
+          data={loans}
+          total={loans.length}
+          page={0}
+          pageSize={50}
+          onPageChange={() => {}}
+          loading={loanLoading}
+        />
+      </FormDialog>
+
+      {/* ── Dialog บันทึกการคืนเงิน ───────────────────────────────────────── */}
+      <FormDialog
+        open={returnDialogOpen}
+        onClose={() => { setReturnDialogOpen(false); setReturnTarget(null) }}
+        title={`บันทึกการคืนเงิน — ${returnTarget?.no_doc ?? ''}`}
+        onSubmit={() => handleReturn((d) => returnMutation.mutate(d))()}
+        loading={returnMutation.isPending}
+        submitLabel="บันทึกการคืน"
+      >
+        {returnTarget && (
+          <div className="space-y-3">
+            <div className="rounded-md bg-gray-50 border px-3 py-2 text-sm space-y-1">
+              <div>ผู้ยืม: <strong>{returnTarget.requester_name}</strong></div>
+              <div>ยอดยืม: <strong>{fmt(returnTarget.amount)} บาท</strong></div>
+              <div>กำหนดคืน: <strong>{fmtDateTH(returnTarget.loan_return_due_date)}</strong></div>
+            </div>
+            <div>
+              <Label>วันที่คืน *</Label>
+              <ThaiDatePicker
+                value={returnedDate}
+                onChange={(v) => setReturnVal('loan_returned_date', v, { shouldValidate: true })}
+              />
+              {returnErrors.loan_returned_date && (
+                <p className="text-red-500 text-xs mt-1">{returnErrors.loan_returned_date.message}</p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>เงินสดคืน (บาท)</Label>
+                <Input
+                  type="number" step="0.01" min="0"
+                  {...regReturn('loan_return_cash', { valueAsNumber: true })}
+                />
+              </div>
+              <div>
+                <Label>ใบสำคัญคืน (บาท)</Label>
+                <Input
+                  type="number" step="0.01" min="0"
+                  {...regReturn('loan_return_voucher_amount', { valueAsNumber: true })}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </FormDialog>
+
+      {/* ส่งอนุมัติ */}
       <ConfirmDialog
         open={!!submitTarget}
         onConfirm={() => submitTarget && submitMutation.mutate(submitTarget)}
         onCancel={() => setSubmitTarget(null)}
-        title="ส่งอนุมัติ"
-        description={`ส่งใบสำคัญ "${submitTarget?.no_doc}" ให้หัวหน้าการเงินตรวจสอบหรือไม่?`}
-        confirmLabel="ส่งอนุมัติ"
+        title={submitTarget?.status === 51 ? 'ส่งตรวจฎีกาใหม่' : 'ส่งตรวจฎีกา'}
+        description={`ส่งใบสำคัญ "${submitTarget?.no_doc}" ให้เจ้าหน้าที่การเงินตรวจฎีกาหรือไม่?`}
+        confirmLabel="ส่งตรวจฎีกา"
         variant="default"
       />
 
       {/* ลบ */}
-      <ConfirmDialog
+      <DeleteWithReasonDialog
         open={!!deleteTarget}
-        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
-        onCancel={() => setDeleteTarget(null)}
-        title="ยืนยันการลบ"
-        description={`ต้องการลบใบสำคัญ "${deleteTarget?.no_doc}" หรือไม่?`}
-        confirmLabel="ลบ"
-        variant="destructive"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={(reason) => { if (deleteTarget) deleteMutation.mutate({ item: deleteTarget, reason }) }}
+        itemLabel={`ใบสำคัญ "${deleteTarget?.no_doc}"`}
+        loading={deleteMutation.isPending}
       />
     </div>
   )

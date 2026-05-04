@@ -1,0 +1,16 @@
+node_modules
+dist
+*.tsbuildinfo
+.env
+.env.local
+.git
+.github
+.vscode
+.idea
+*.log
+npm-debug.log*
+test
+coverage
+.nyc_output
+README.md
+*.md

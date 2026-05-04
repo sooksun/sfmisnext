@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+*.tsbuildinfo
+.env
+.env.local
+.git
+.github
+.vscode
+.idea
+*.log
+npm-debug.log*
+__tests__
+coverage
+README.md
+*.md
+.turbo

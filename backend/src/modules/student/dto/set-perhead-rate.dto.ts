@@ -1,4 +1,11 @@
-import { IsInt, IsNumber, IsArray, ValidateNested, Min } from 'class-validator';
+import {
+  IsInt,
+  IsNumber,
+  IsArray,
+  IsOptional,
+  ValidateNested,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class PerheadRateItemDto {
@@ -25,6 +32,7 @@ export class SetPerheadRateDto {
   @Type(() => PerheadRateItemDto)
   rates: PerheadRateItemDto[];
 
+  @IsOptional()
   @IsInt()
-  up_by: number;
+  up_by?: number;
 }

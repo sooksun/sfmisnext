@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Student } from './entities/student.entity';
@@ -18,7 +18,7 @@ import { BudgetIncomeTypeSchool } from '../bank/entities/budget-income-type-scho
 interface ClassroomBudgetPayload {
   class_id: number;
   bg_type_id: number;
-  amount: number;
+  amount?: number;
   up_by?: number;
 }
 
@@ -26,7 +26,7 @@ interface UpdateClassroomBudgetPayload {
   crb_id?: number | null;
   class_id?: number;
   bg_type_id?: number;
-  amount: number;
+  amount?: number;
   up_by?: number;
 }
 
@@ -47,6 +47,8 @@ export interface PerheadDataItem {
 
 @Injectable()
 export class StudentService {
+  private readonly logger = new Logger(StudentService.name);
+
   constructor(
     @InjectRepository(Student)
     private readonly studentRepository: Repository<Student>,
@@ -157,7 +159,7 @@ export class StudentService {
       await this.studentRepository.save(student);
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Add student error:', error);
+      this.logger.error('Add student error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' };
     }
   }
@@ -195,7 +197,7 @@ export class StudentService {
       await this.studentRepository.save(student);
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Update student error:', error);
+      this.logger.error('Update student error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' };
     }
   }
@@ -249,7 +251,7 @@ export class StudentService {
       await this.submittingStudentRecordsRepository.save(record);
       return { flag: true, ms: 'ยืนยันการส่งข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Confirm send record error:', error);
+      this.logger.error('Confirm send record error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการยืนยัน' };
     }
   }
@@ -290,7 +292,12 @@ export class StudentService {
   }
 
   async loadCalculatePerhead(scId: number, year: number) {
-    console.log('loadCalculatePerhead called with scId:', scId, 'year:', year);
+    this.logger.debug(
+      'loadCalculatePerhead called with scId:',
+      scId,
+      'year:',
+      year,
+    );
 
     // Get students for the year - try both syId and budget_year
     let students = await this.studentRepository.find({
@@ -305,7 +312,9 @@ export class StudentService {
 
     // If no students found with syId, try to find by budget_year
     if (students.length === 0) {
-      console.log('No students found with syId, trying to find by budget_year');
+      this.logger.debug(
+        'No students found with syId, trying to find by budget_year',
+      );
       const budgetYear = String(year + 543); // Convert to Buddhist year
       students = await this.studentRepository.find({
         where: {
@@ -316,12 +325,12 @@ export class StudentService {
         relations: [],
         order: { classId: 'ASC' },
       });
-      console.log('Found students by budget_year:', students.length);
+      this.logger.debug('Found students by budget_year:', students.length);
     }
 
-    console.log('Found students:', students.length);
+    this.logger.debug('Found students:', students.length);
     if (students.length > 0) {
-      console.log('First student:', {
+      this.logger.debug('First student:', {
         stId: students[0].stId,
         classId: students[0].classId,
         stCount: students[0].stCount,
@@ -330,7 +339,7 @@ export class StudentService {
         budgetYear: students[0].budgetYear,
       });
     } else {
-      console.warn('No students found for scId:', scId, 'year:', year);
+      this.logger.warn('No students found for scId:', scId, 'year:', year);
     }
 
     // Get classrooms
@@ -414,7 +423,9 @@ export class StudentService {
 
     // If no students found, create entries for all classrooms with budget types
     if (students.length === 0) {
-      console.log('No students found, creating entries for all classrooms');
+      this.logger.debug(
+        'No students found, creating entries for all classrooms',
+      );
       for (const classroom of classrooms) {
         for (const budgetType of budgetTypes) {
           const classroomBudget = classroomBudgets.find(
@@ -446,7 +457,7 @@ export class StudentService {
 
     const totalprice = data.reduce((sum, item) => sum + (item.total || 0), 0);
 
-    console.log('loadCalculatePerhead result:', {
+    this.logger.debug('loadCalculatePerhead result:', {
       dataCount: data.length,
       totalprice,
       sampleItem: data.length > 0 ? data[0] : null,
@@ -479,7 +490,7 @@ export class StudentService {
     const classroomBudget = new MasterClassroomBudget();
     classroomBudget.classId = payload.class_id;
     classroomBudget.bgTypeId = payload.bg_type_id;
-    classroomBudget.amount = payload.amount;
+    classroomBudget.amount = payload.amount ?? 0;
     classroomBudget.upBy = payload.up_by || 0;
     classroomBudget.del = 0;
 
@@ -487,17 +498,17 @@ export class StudentService {
       await this.masterClassroomBudgetRepository.save(classroomBudget);
       return { flag: true, ms: 'บันทึกอัตรารายหัวสำเร็จ' };
     } catch (error) {
-      console.error('Add classroom budget error:', error);
+      this.logger.error('Add classroom budget error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกอัตรารายหัว' };
     }
   }
 
   async updateClassroomBudget(payload: UpdateClassroomBudgetPayload) {
-    console.log('updateClassroomBudget called with payload:', payload);
+    this.logger.debug('updateClassroomBudget called with payload:', payload);
 
     // If crb_id is null or 0, create a new record instead
     if (!payload.crb_id || payload.crb_id === 0 || payload.crb_id === null) {
-      console.log('crb_id is null/0, creating new record instead');
+      this.logger.debug('crb_id is null/0, creating new record instead');
       if (!payload.class_id || !payload.bg_type_id) {
         return {
           flag: false,
@@ -517,10 +528,13 @@ export class StudentService {
     });
 
     if (!classroomBudget) {
-      console.log('Classroom budget not found with crb_id:', payload.crb_id);
+      this.logger.debug(
+        'Classroom budget not found with crb_id:',
+        payload.crb_id,
+      );
       // Try to create new record if not found
       if (payload.class_id && payload.bg_type_id) {
-        console.log('Attempting to create new record');
+        this.logger.debug('Attempting to create new record');
         return this.addClassroomBudget({
           class_id: payload.class_id,
           bg_type_id: payload.bg_type_id,
@@ -531,7 +545,7 @@ export class StudentService {
       return { flag: false, ms: 'ไม่พบข้อมูลอัตรารายหัว' };
     }
 
-    classroomBudget.amount = payload.amount;
+    if (payload.amount !== undefined) classroomBudget.amount = payload.amount;
     classroomBudget.upBy = payload.up_by || classroomBudget.upBy;
     classroomBudget.updateDate = new Date();
 
@@ -539,7 +553,7 @@ export class StudentService {
       await this.masterClassroomBudgetRepository.save(classroomBudget);
       return { flag: true, ms: 'แก้ไขอัตรารายหัวสำเร็จ' };
     } catch (error) {
-      console.error('Update classroom budget error:', error);
+      this.logger.error('Update classroom budget error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการแก้ไขอัตรารายหัว' };
     }
   }
@@ -580,7 +594,7 @@ export class StudentService {
 
   async setBudgetAllocation(payload: SetBudgetAllocationDto) {
     try {
-      console.log(
+      this.logger.debug(
         'setBudgetAllocation called with payload:',
         JSON.stringify(payload, null, 2),
       );
@@ -601,7 +615,7 @@ export class StudentService {
         },
       });
 
-      console.log('Existing allocations:', existing.length);
+      this.logger.debug('Existing allocations:', existing.length);
 
       // Soft delete all existing
       if (existing && existing.length > 0) {
@@ -610,7 +624,11 @@ export class StudentService {
           item.updateDate = new Date();
           await this.budgetIncomeTypeSchoolRepository.save(item);
         }
-        console.log('Soft deleted', existing.length, 'existing allocations');
+        this.logger.debug(
+          'Soft deleted',
+          existing.length,
+          'existing allocations',
+        );
       }
 
       // Create new allocations for selected budget types
@@ -631,17 +649,17 @@ export class StudentService {
         }
       }
 
-      console.log('Creating', newAllocations.length, 'new allocations');
+      this.logger.debug('Creating', newAllocations.length, 'new allocations');
 
       // Save all new allocations in batch
       if (newAllocations.length > 0) {
         await this.budgetIncomeTypeSchoolRepository.save(newAllocations);
-        console.log('Saved', newAllocations.length, 'new allocations');
+        this.logger.debug('Saved', newAllocations.length, 'new allocations');
       }
 
       return { flag: true, ms: 'บันทึกการกำหนดประเภทเงินที่ประมาณการสำเร็จ' };
     } catch (error) {
-      console.error('Set budget allocation error:', error);
+      this.logger.error('Set budget allocation error:', error);
       return {
         flag: false,
         ms:
@@ -735,7 +753,7 @@ export class StudentService {
           if (existing) {
             // Update existing
             existing.amount = rate.amount;
-            existing.upBy = payload.up_by;
+            if (payload.up_by !== undefined) existing.upBy = payload.up_by;
             existing.updateDate = new Date();
             await this.masterClassroomBudgetRepository.save(existing);
           } else {
@@ -771,7 +789,7 @@ export class StudentService {
 
       return { flag: true, ms: 'บันทึกอัตราการสนับสนุนเงินรายหัวสำเร็จ' };
     } catch (error) {
-      console.error('Set perhead rate error:', error);
+      this.logger.error('Set perhead rate error:', error);
       return {
         flag: false,
         ms: 'เกิดข้อผิดพลาดในการบันทึกอัตราการสนับสนุนเงินรายหัว',

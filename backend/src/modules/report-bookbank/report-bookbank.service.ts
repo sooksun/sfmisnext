@@ -59,8 +59,20 @@ export class ReportBookbankService {
       .getMany();
 
     // โหลด PlnReceive และ RequestWithdraw ที่เกี่ยวข้องแบบ batch (ไม่ query ทีละแถว)
-    const prIds = [...new Set(transactions.filter(t => t.type === 1 && t.prId > 0).map(t => t.prId))];
-    const rwIds = [...new Set(transactions.filter(t => t.type === -1 && t.rwId > 0).map(t => t.rwId))];
+    const prIds = [
+      ...new Set(
+        transactions
+          .filter((t) => t.type === 1 && t.prId > 0)
+          .map((t) => t.prId),
+      ),
+    ];
+    const rwIds = [
+      ...new Set(
+        transactions
+          .filter((t) => t.type === -1 && t.rwId > 0)
+          .map((t) => t.rwId),
+      ),
+    ];
 
     const [receives, withdraws] = await Promise.all([
       prIds.length > 0
@@ -71,8 +83,12 @@ export class ReportBookbankService {
         : [],
     ]);
 
-    const receiveMap = new Map<number, typeof receives[0]>(receives.map(r => [r.prId, r] as [number, typeof receives[0]]));
-    const withdrawMap = new Map<number, typeof withdraws[0]>(withdraws.map(w => [w.rwId, w] as [number, typeof withdraws[0]]));
+    const receiveMap = new Map<number, (typeof receives)[0]>(
+      receives.map((r) => [r.prId, r] as [number, (typeof receives)[0]]),
+    );
+    const withdrawMap = new Map<number, (typeof withdraws)[0]>(
+      withdraws.map((w) => [w.rwId, w] as [number, (typeof withdraws)[0]]),
+    );
 
     // คำนวณ balance สะสม + map field ให้ตรงกับ frontend
     let runningBalance = 0;
@@ -90,10 +106,16 @@ export class ReportBookbankService {
 
       if (isIncome && trans.prId > 0) {
         const r = receiveMap.get(trans.prId);
-        if (r) { transNo = r.prNo ?? transNo; detail = `รับเงิน ${r.receiveForm ?? ''}`.trim(); }
+        if (r) {
+          transNo = r.prNo ?? transNo;
+          detail = `รับเงิน ${r.receiveForm ?? ''}`.trim();
+        }
       } else if (isExpense && trans.rwId > 0) {
         const w = withdrawMap.get(trans.rwId);
-        if (w) { transNo = w.noDoc ?? transNo; detail = `จ่าย ${w.detail ?? ''}`.trim(); }
+        if (w) {
+          transNo = w.noDoc ?? transNo;
+          detail = `จ่าย ${w.detail ?? ''}`.trim();
+        }
       }
 
       const dateStr = trans.createDate

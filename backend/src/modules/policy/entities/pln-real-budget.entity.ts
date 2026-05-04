@@ -4,8 +4,10 @@ import {
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
+@Index(['scId', 'del'])
 @Entity('pln_real_budget')
 export class PlnRealBudget {
   @PrimaryGeneratedColumn({ name: 'prb_id' })

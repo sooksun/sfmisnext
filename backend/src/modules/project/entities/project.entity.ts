@@ -4,8 +4,10 @@ import {
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
+@Index(['scId', 'syId', 'del'])
 @Entity('pln_project')
 export class Project {
   @PrimaryGeneratedColumn({ name: 'proj_id' })
@@ -34,6 +36,19 @@ export class Project {
 
   @Column({ name: 'sy_id', type: 'int', nullable: true })
   syId: number | null;
+
+  /**
+   * ฝ่ายงาน: 1=วิชาการ 2=บริหารทั่วไป 3=แผนและงบประมาณ 4=บุคคล
+   * 5=งบประจำ 6=ปฐมวัย 7=สนับสนุนอบต./เทศบาล 8=สนับสนุนจากหน่วยงานอื่น
+   */
+  @Column({
+    name: 'department',
+    type: 'int',
+    nullable: true,
+    comment:
+      '1=วิชาการ|2=บริหารทั่วไป|3=แผน/งบ|4=บุคคล|5=งบประจำ|6=ปฐมวัย|7=อบต.|8=อื่น',
+  })
+  department: number | null;
 
   @Column({ name: 'up_by', type: 'int', nullable: true })
   upBy: number | null;

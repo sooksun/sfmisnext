@@ -5,6 +5,7 @@ import { GeneralDbService } from './general-db.service';
 import { Unit } from './entities/unit.entity';
 import { TypeSupplies } from './entities/type-supplies.entity';
 import { Partner } from './entities/partner.entity';
+import { MainRegister } from './entities/main-register.entity';
 import { Supplies } from '../supplie/entities/supplies.entity';
 import { TransactionSupplies } from '../supplie/entities/transaction-supplies.entity';
 
@@ -14,6 +15,7 @@ import { TransactionSupplies } from '../supplie/entities/transaction-supplies.en
       Unit,
       TypeSupplies,
       Partner,
+      MainRegister,
       Supplies,
       TransactionSupplies,
     ]),

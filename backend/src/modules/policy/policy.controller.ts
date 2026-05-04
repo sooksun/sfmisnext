@@ -9,6 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { PolicyService } from './policy.service';
+import { PageSizePipe } from '../../common/pipes/page-size.pipe';
 
 @Controller('Policy')
 export class PolicyController {
@@ -20,7 +21,7 @@ export class PolicyController {
     @Param('syId', ParseIntPipe) syId: number,
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.policyService.loadRealBudget(syId, scId, page, pageSize);
   }
@@ -30,7 +31,7 @@ export class PolicyController {
     @Param('syId', ParseIntPipe) syId: number,
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.policyService.loadRealBudget(syId, scId, page, pageSize);
   }
@@ -41,7 +42,7 @@ export class PolicyController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('year') year: string,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.policyService.loadExpenses(scId, year, page, pageSize);
   }
@@ -51,7 +52,7 @@ export class PolicyController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('year') year: string,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.policyService.loadExpenses(scId, year, page, pageSize);
   }

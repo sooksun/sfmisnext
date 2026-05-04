@@ -8,6 +8,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { SchoolService } from './school.service';
+import { PageSizePipe } from '../../common/pipes/page-size.pipe';
 
 @Controller('school')
 export class SchoolLowerController {
@@ -17,7 +18,7 @@ export class SchoolLowerController {
   @HttpCode(HttpStatus.OK)
   loadSchools(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.schoolService.loadSchools(page, pageSize);
   }
@@ -27,7 +28,7 @@ export class SchoolLowerController {
   loadBudgetIncomeTypeSchool(
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.schoolService.loadBudgetIncomeTypeSchool(scId, page, pageSize);
   }

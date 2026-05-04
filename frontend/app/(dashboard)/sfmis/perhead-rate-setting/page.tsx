@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { apiGet, apiPost } from '@/lib/api'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface PerheadRate {
   class_id: number
@@ -22,24 +23,11 @@ interface GroupedRates {
 }
 
 export default function PerheadRateSettingPage() {
+  const { scId, adminId, syId: _syId, budgetSyId } = useAppContext()
+  const syId = budgetSyId || _syId
+  const userId = adminId
   const qc = useQueryClient()
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [userId, setUserId] = useState(0)
   const [rates, setRates] = useState<PerheadRate[]>([])
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-      if (userData?.id) setUserId(Number(userData.id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.budget_date?.sy_id) setSyId(Number(years.budget_date.sy_id))
-      else if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['perhead-rate-setting', scId, syId],

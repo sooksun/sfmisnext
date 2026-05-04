@@ -5,9 +5,10 @@ export class UpdateClassroomBudgetDto {
   @IsOptional()
   crb_id?: number;
 
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  amount: number;
+  amount?: number;
 
   @IsInt()
   @IsOptional()

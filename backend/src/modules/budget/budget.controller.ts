@@ -7,6 +7,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { BudgetService } from './budget.service';
 import { CheckBudgetCategoryOnYearDto } from './dto/check-budget-category-on-year.dto';
@@ -16,7 +17,16 @@ import { AddNewBudgetCategoryDto } from './dto/add-new-budget-category.dto';
 import { UpdateEstimateDto } from './dto/update-estimate.dto';
 import { AddEstimateAcadyearDto } from './dto/add-estimate-acadyear.dto';
 import { UpdateRealBudgetDto } from './dto/update-real-budget.dto';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
+@UseGuards(RolesGuard)
+@Roles(1, 2, 3, 6)
 @Controller('Budget')
 export class BudgetController {
   constructor(private readonly budgetService: BudgetService) {}
@@ -27,7 +37,9 @@ export class BudgetController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('year', ParseIntPipe) year: number,
     @Param('sy_id', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.budgetService.loadEstimateAcadyearGroup(scId, year, syId);
   }
 
@@ -37,19 +49,29 @@ export class BudgetController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.budgetService.loadPLNBudgetCategory(scId, syId, budgetYear);
   }
 
   @Post('checkBudgetCategoryOnYear')
   @HttpCode(HttpStatus.OK)
-  checkBudgetCategoryOnYear(@Body() payload: CheckBudgetCategoryOnYearDto) {
+  checkBudgetCategoryOnYear(
+    @Body() payload: CheckBudgetCategoryOnYearDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
     return this.budgetService.checkBudgetCategoryOnYear(payload);
   }
 
   @Post('checkBudgetCategoryOnYears')
   @HttpCode(HttpStatus.OK)
-  checkBudgetCategoryOnYears(@Body() payload: CheckBudgetCategoryOnYearsDto) {
+  checkBudgetCategoryOnYears(
+    @Body() payload: CheckBudgetCategoryOnYearsDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
     return this.budgetService.checkBudgetCategoryOnYears(payload);
   }
 
@@ -70,37 +92,68 @@ export class BudgetController {
   loadBudgetIncome(
     @Param('pbc_id', ParseIntPipe) pbcId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.budgetService.loadBudgetIncome(pbcId, syId);
+    return this.budgetService.loadBudgetIncome(pbcId, syId, user.sc_id, user.type);
+  }
+
+  @Get('loadBudgetIncomeTypeSummary/:sc_id/:sy_id/:budget_year')
+  @HttpCode(HttpStatus.OK)
+  loadBudgetIncomeTypeSummary(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('sy_id', ParseIntPipe) syId: number,
+    @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
+    return this.budgetService.loadBudgetIncomeTypeSummary(scId, syId, budgetYear);
   }
 
   @Post('addPLNBudgetCategory')
   @HttpCode(HttpStatus.OK)
-  addPLNBudgetCategory(@Body() payload: AddPlnBudgetCategoryDto) {
-    return this.budgetService.addPLNBudgetCategory(payload);
+  addPLNBudgetCategory(
+    @Body() payload: AddPlnBudgetCategoryDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.budgetService.addPLNBudgetCategory(payload, user.sc_id, user.type);
   }
 
   @Post('addNewBudgetCategory')
   @HttpCode(HttpStatus.OK)
-  addNewBudgetCategory(@Body() payload: AddNewBudgetCategoryDto) {
+  addNewBudgetCategory(
+    @Body() payload: AddNewBudgetCategoryDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
     return this.budgetService.addNewBudgetCategory(payload);
   }
 
   @Post('updateEstimate')
   @HttpCode(HttpStatus.OK)
-  updateEstimate(@Body() payload: UpdateEstimateDto) {
-    return this.budgetService.updateEstimate(payload);
+  updateEstimate(
+    @Body() payload: UpdateEstimateDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.budgetService.updateEstimate(payload, user.sc_id, user.type);
   }
 
   @Post('addEstimateAcadyear')
   @HttpCode(HttpStatus.OK)
-  addEstimateAcadyear(@Body() payload: AddEstimateAcadyearDto) {
+  addEstimateAcadyear(
+    @Body() payload: AddEstimateAcadyearDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
     return this.budgetService.addEstimateAcadyear(payload);
   }
 
   @Post('updateRealBudget')
   @HttpCode(HttpStatus.OK)
-  updateRealBudget(@Body() payload: UpdateRealBudgetDto) {
+  updateRealBudget(
+    @Body() payload: UpdateRealBudgetDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
     return this.budgetService.updateRealBudget(payload);
   }
 }

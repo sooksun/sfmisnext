@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -22,6 +22,7 @@ import {
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface CommitteeOrder {
   order_id: number
@@ -69,31 +70,19 @@ const statusLabel: Record<number, { label: string; color: string }> = {
 }
 
 export default function SettingCommitteePage() {
+  const { scId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const budgetYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
+  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<CommitteeOrder | null>(null)
-  const [scId, setScId] = useState(0)
-  const [budgetYear, setBudgetYear] = useState('')
-  const [syId, setSyId] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.budget_date?.budget_year) setBudgetYear(String(years.budget_date.budget_year))
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['audit-committee', scId, budgetYear],
-    queryFn: () => apiGet<CommitteeOrder[]>(`Audit_committee/loadAuditCommitteeStatus/${scId}/${budgetYear}`),
-    enabled: scId > 0 && budgetYear !== '',
+    queryKey: ['audit-committee', scId, apiYear],
+    queryFn: () => apiGet<CommitteeOrder[]>(`Audit_committee/loadAuditCommitteeStatus/${scId}/${apiYear}`),
+    enabled: scId > 0 && apiYear !== '',
   })
 
   const { data: directors } = useQuery({

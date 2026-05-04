@@ -9,7 +9,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
-import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { DeleteWithReasonDialog } from '@/components/shared/delete-with-reason-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -76,8 +76,8 @@ export default function ObecPolicyPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (item: ObecPolicy) =>
-      apiPost('B_settings/remove_obec_policy', { id: item.id }),
+    mutationFn: ({ item, reason }: { item: ObecPolicy; reason: string }) =>
+      apiPost('B_settings/remove_obec_policy', { id: item.id, reason }),
     onSuccess: () => {
       toast.success('ลบเรียบร้อยแล้ว')
       qc.invalidateQueries({ queryKey: ['obec_policy'] })
@@ -166,14 +166,11 @@ export default function ObecPolicyPage() {
         </div>
       </FormDialog>
 
-      <ConfirmDialog
+      <DeleteWithReasonDialog
         open={!!deleteTarget}
-        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
-        onCancel={() => setDeleteTarget(null)}
-        title="ยืนยันการลบ"
-        description={`ต้องการลบนโยบาย "${deleteTarget?.obec_policy}" หรือไม่?`}
-        confirmLabel="ลบ"
-        variant="destructive"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={(reason) => { if (deleteTarget) deleteMutation.mutate({ item: deleteTarget, reason }) }}
+        loading={deleteMutation.isPending}
       />
     </div>
   )

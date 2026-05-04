@@ -20,6 +20,7 @@ import { CreateUnitDto } from './dto/create-unit.dto';
 import { UpdateUnitDto } from './dto/update-unit.dto';
 import { CreateTypeSuppliesDto } from './dto/create-type-supplies.dto';
 import { UpdateTypeSuppliesDto } from './dto/update-type-supplies.dto';
+import { PageSizePipe } from '../../common/pipes/page-size.pipe';
 
 @Controller('General_db')
 export class GeneralDbController {
@@ -31,7 +32,7 @@ export class GeneralDbController {
   loadUnits(
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.generalDbService.loadUnits(scId, page, pageSize);
   }
@@ -40,7 +41,7 @@ export class GeneralDbController {
   loadUnitsGet(
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.generalDbService.loadUnits(scId, page, pageSize);
   }
@@ -59,8 +60,19 @@ export class GeneralDbController {
 
   @Post('remove_unit')
   @HttpCode(HttpStatus.OK)
-  removeUnit(@Body() payload: { un_id: number }) {
-    return this.generalDbService.removeUnit(payload.un_id);
+  removeUnit(
+    @Body()
+    payload: {
+      un_id: number;
+      reason?: string;
+      up_by?: string | number;
+    },
+  ) {
+    return this.generalDbService.removeUnit(
+      payload.un_id,
+      payload.reason,
+      payload.up_by,
+    );
   }
 
   // TypeSupplies endpoints
@@ -69,7 +81,7 @@ export class GeneralDbController {
   loadTypeSupplies(
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.generalDbService.loadTypeSupplies(scId, page, pageSize);
   }
@@ -78,7 +90,7 @@ export class GeneralDbController {
   loadTypeSuppliesGet(
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.generalDbService.loadTypeSupplies(scId, page, pageSize);
   }
@@ -97,8 +109,19 @@ export class GeneralDbController {
 
   @Post('remove_type_supplie')
   @HttpCode(HttpStatus.OK)
-  removeTypeSupplie(@Body() payload: { ts_id: number }) {
-    return this.generalDbService.removeTypeSupplie(payload.ts_id);
+  removeTypeSupplie(
+    @Body()
+    payload: {
+      ts_id: number;
+      reason?: string;
+      up_by?: string | number;
+    },
+  ) {
+    return this.generalDbService.removeTypeSupplie(
+      payload.ts_id,
+      payload.reason,
+      payload.up_by,
+    );
   }
 
   // Partner endpoints
@@ -107,7 +130,7 @@ export class GeneralDbController {
   loadPartners(
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.generalDbService.loadPartners(scId, page, pageSize);
   }
@@ -116,7 +139,7 @@ export class GeneralDbController {
   loadPartnersGet(
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.generalDbService.loadPartners(scId, page, pageSize);
   }
@@ -135,8 +158,19 @@ export class GeneralDbController {
 
   @Post('remove_partner')
   @HttpCode(HttpStatus.OK)
-  removePartner(@Body() payload: { partner_id: number }) {
-    return this.generalDbService.removePartner(payload.partner_id);
+  removePartner(
+    @Body()
+    payload: {
+      partner_id: number;
+      reason?: string;
+      up_by?: string | number;
+    },
+  ) {
+    return this.generalDbService.removePartner(
+      payload.partner_id,
+      payload.reason,
+      payload.up_by,
+    );
   }
 
   // Supplies endpoints
@@ -145,7 +179,7 @@ export class GeneralDbController {
   loadSupplies(
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.generalDbService.loadSupplies(scId, page, pageSize);
   }
@@ -164,7 +198,15 @@ export class GeneralDbController {
 
   @Post('remove_supplies')
   @HttpCode(HttpStatus.OK)
-  removeSupplies(@Body() payload: { supp_id: number; del?: number }) {
+  removeSupplies(
+    @Body()
+    payload: {
+      supp_id: number;
+      del?: number;
+      reason?: string;
+      up_by?: string | number;
+    },
+  ) {
     return this.generalDbService.removeSupplies(payload);
   }
 
@@ -179,7 +221,7 @@ export class GeneralDbController {
   loadFixSupplies(
     @Param('suppId', ParseIntPipe) suppId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.generalDbService.loadFixSupplies(suppId, page, pageSize);
   }
@@ -188,5 +230,19 @@ export class GeneralDbController {
   @HttpCode(HttpStatus.OK)
   fixSupplies(@Body() payload: FixSuppliesPayload) {
     return this.generalDbService.fixSupplies(payload);
+  }
+
+  @Get('mainRegisters')
+  @HttpCode(HttpStatus.OK)
+  loadMainRegisters() {
+    return this.generalDbService.loadMainRegisters();
+  }
+
+  @Get('mainRegisters/category/:category')
+  @HttpCode(HttpStatus.OK)
+  loadMainRegistersByCategory(
+    @Param('category', ParseIntPipe) category: number,
+  ) {
+    return this.generalDbService.loadMainRegistersByCategory(category);
   }
 }

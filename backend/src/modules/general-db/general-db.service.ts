@@ -4,12 +4,14 @@ import { Repository, In } from 'typeorm';
 import { Unit } from './entities/unit.entity';
 import { TypeSupplies } from './entities/type-supplies.entity';
 import { Partner } from './entities/partner.entity';
+import { MainRegister } from './entities/main-register.entity';
 import { Supplies } from '../supplie/entities/supplies.entity';
 import { TransactionSupplies } from '../supplie/entities/transaction-supplies.entity';
 import { CreateUnitDto } from './dto/create-unit.dto';
 import { UpdateUnitDto } from './dto/update-unit.dto';
 import { CreateTypeSuppliesDto } from './dto/create-type-supplies.dto';
 import { UpdateTypeSuppliesDto } from './dto/update-type-supplies.dto';
+import { DeleteLogService } from '../delete-log/delete-log.service';
 
 export interface AddPartnerPayload {
   p_name: string;
@@ -84,10 +86,13 @@ export class GeneralDbService {
     private readonly typeSuppliesRepository: Repository<TypeSupplies>,
     @InjectRepository(Partner)
     private readonly partnerRepository: Repository<Partner>,
+    @InjectRepository(MainRegister)
+    private readonly mainRegisterRepository: Repository<MainRegister>,
     @InjectRepository(Supplies)
     private readonly suppliesRepository: Repository<Supplies>,
     @InjectRepository(TransactionSupplies)
     private readonly transactionSuppliesRepository: Repository<TransactionSupplies>,
+    private readonly deleteLog: DeleteLogService,
   ) {}
 
   // Unit methods
@@ -145,7 +150,7 @@ export class GeneralDbService {
     return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
   }
 
-  async removeUnit(unId: number) {
+  async removeUnit(unId: number, reason?: string, upBy?: string | number) {
     const unit = await this.unitRepository.findOne({
       where: { unId, uStatus: 1 },
     });
@@ -154,8 +159,16 @@ export class GeneralDbService {
       return { flag: false, ms: 'ไม่พบข้อมูล' };
     }
 
+    const snapshot = { ...unit };
     unit.uStatus = 0;
     await this.unitRepository.save(unit);
+    await this.deleteLog.log({
+      table: 'tb_unit',
+      rowId: unit.unId,
+      reason: reason ?? null,
+      deletedBy: upBy ?? '',
+      snapshot,
+    });
     return { flag: true, ms: 'ลบข้อมูลสำเร็จ' };
   }
 
@@ -213,7 +226,11 @@ export class GeneralDbService {
     return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
   }
 
-  async removeTypeSupplie(tsId: number) {
+  async removeTypeSupplie(
+    tsId: number,
+    reason?: string,
+    upBy?: string | number,
+  ) {
     const typeSupplie = await this.typeSuppliesRepository.findOne({
       where: { tsId, del: 0 },
     });
@@ -222,8 +239,17 @@ export class GeneralDbService {
       return { flag: false, ms: 'ไม่พบข้อมูล' };
     }
 
+    const snapshot = { ...typeSupplie };
     typeSupplie.del = 1;
     await this.typeSuppliesRepository.save(typeSupplie);
+    await this.deleteLog.log({
+      table: 'tb_type_supplies',
+      rowId: typeSupplie.tsId,
+      reason: reason ?? null,
+      deletedBy: upBy ?? '',
+      scId: typeSupplie.scId,
+      snapshot,
+    });
     return { flag: true, ms: 'ลบข้อมูลสำเร็จ' };
   }
 
@@ -304,7 +330,11 @@ export class GeneralDbService {
     return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
   }
 
-  async removePartner(partnerId: number) {
+  async removePartner(
+    partnerId: number,
+    reason?: string,
+    upBy?: string | number,
+  ) {
     const partner = await this.partnerRepository.findOne({
       where: { pId: partnerId, del: 0 },
     });
@@ -313,8 +343,17 @@ export class GeneralDbService {
       return { flag: false, ms: 'ไม่พบข้อมูล' };
     }
 
+    const snapshot = { ...partner };
     partner.del = 1;
     await this.partnerRepository.save(partner);
+    await this.deleteLog.log({
+      table: 'tb_partner',
+      rowId: partner.pId,
+      reason: reason ?? null,
+      deletedBy: upBy ?? '',
+      scId: partner.scId ?? undefined,
+      snapshot,
+    });
     return { flag: true, ms: 'ลบข้อมูลสำเร็จ' };
   }
 
@@ -343,7 +382,9 @@ export class GeneralDbService {
       typeSuppliesIds.length > 0
         ? this.typeSuppliesRepository
             .find({ where: { tsId: In(typeSuppliesIds), del: 0 } })
-            .then((rows) => rows.forEach((ts) => typeSuppliesMap.set(ts.tsId, ts.tsName)))
+            .then((rows) =>
+              rows.forEach((ts) => typeSuppliesMap.set(ts.tsId, ts.tsName)),
+            )
         : Promise.resolve(),
       unitIds.length > 0
         ? this.unitRepository
@@ -363,7 +404,7 @@ export class GeneralDbService {
       ts_name: typeSuppliesMap.get(supply.tsId) || '',
       un_id: supply.unId,
       un_name: unitMap.get(supply.unId) || '',
-      supp_amount: supply.suppCapMax,   // จำนวนสต็อก (supp_cap_max)
+      supp_amount: supply.suppCapMax, // จำนวนสต็อก (supp_cap_max)
       supp_detail: supply.suppDetail,
       supp_address: supply.suppAddress,
       supp_cap_max: supply.suppCapMax,
@@ -449,7 +490,12 @@ export class GeneralDbService {
     return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
   }
 
-  async removeSupplies(payload: { supp_id: number; del?: number }) {
+  async removeSupplies(payload: {
+    supp_id: number;
+    del?: number;
+    reason?: string;
+    up_by?: string | number;
+  }) {
     const supplies = await this.suppliesRepository.findOne({
       where: { suppId: payload.supp_id, del: 0 },
     });
@@ -458,9 +504,20 @@ export class GeneralDbService {
       return { flag: false, ms: 'ไม่พบข้อมูล' };
     }
 
+    const snapshot = { ...supplies };
     supplies.del = payload.del ?? 1;
     supplies.updateDate = new Date();
     await this.suppliesRepository.save(supplies);
+    if ((payload.del ?? 1) === 1) {
+      await this.deleteLog.log({
+        table: 'tb_supplies',
+        rowId: supplies.suppId,
+        reason: payload.reason ?? null,
+        deletedBy: payload.up_by ?? '',
+        scId: supplies.scId ?? undefined,
+        snapshot,
+      });
+    }
     return { flag: true, ms: 'ลบข้อมูลสำเร็จ' };
   }
 
@@ -532,5 +589,20 @@ export class GeneralDbService {
 
     await this.transactionSuppliesRepository.save(transaction);
     return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
+  }
+
+  // MainRegister methods
+  async loadMainRegisters() {
+    return this.mainRegisterRepository.find({
+      where: { isActive: 1 },
+      order: { sortOrder: 'ASC', mrId: 'ASC' },
+    });
+  }
+
+  async loadMainRegistersByCategory(category: number) {
+    return this.mainRegisterRepository.find({
+      where: { isActive: 1, category },
+      order: { sortOrder: 'ASC' },
+    });
   }
 }

@@ -4,8 +4,10 @@ import {
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
+@Index(['scId', 'del'])
 @Entity('tb_partner')
 export class Partner {
   @PrimaryGeneratedColumn({ name: 'p_id' })

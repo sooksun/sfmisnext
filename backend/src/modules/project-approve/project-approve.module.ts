@@ -7,6 +7,7 @@ import { ParcelOrder } from './entities/parcel-order.entity';
 import { ParcelDetail } from './entities/parcel-detail.entity';
 import { Partner } from '../general-db/entities/partner.entity';
 import { Admin } from '../admin/entities/admin.entity';
+import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { Admin } from '../admin/entities/admin.entity';
       ParcelDetail,
       Partner,
       Admin,
+      RequestWithdraw,
     ]),
   ],
   controllers: [ProjectApproveController],

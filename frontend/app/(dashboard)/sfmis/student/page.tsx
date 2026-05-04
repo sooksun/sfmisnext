@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
+import { useAppContext } from '@/hooks/use-app-context'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,10 @@ type EditForm = z.infer<typeof editSchema>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function StudentPage() {
+  const { scId, adminId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const upBy = adminId
+  const budgetYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
+  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
@@ -69,45 +74,27 @@ export default function StudentPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<StudentRow | null>(null)
 
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [budgetYear, setBudgetYear] = useState('')
-  const [upBy, setUpBy] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-      if (userData?.admin_id) setUpBy(Number(userData.admin_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-      if (years?.budget_date?.budget_year) setBudgetYear(String(years.budget_date.budget_year))
-    } catch {}
-  }, [])
-
   // ── Auto-init: สร้าง row ให้ทุก class หากยังไม่มีข้อมูลของปีนี้ ──────────────
   useEffect(() => {
-    if (scId > 0 && syId > 0 && budgetYear) {
+    if (scId > 0 && syId > 0 && apiYear) {
       apiPost('Student/checkClassOnYear', {
         sc_id: scId,
         sy_id: syId,
-        budget_date: budgetYear,
+        budget_date: apiYear,
         up_by: upBy,
       }).catch(() => {})
     }
-  }, [scId, syId, budgetYear, upBy])
+  }, [scId, syId, apiYear, upBy])
 
   // ── Queries ───────────────────────────────────────────────────────────────
 
   const { data: resp, isLoading } = useQuery({
-    queryKey: ['student', syId, budgetYear, scId, page, pageSize],
+    queryKey: ['student', syId, apiYear, scId, page, pageSize],
     queryFn: () =>
       apiGet<StudentResponse>(
-        `Student/loadStudent/${syId}/${budgetYear}/${scId}/${page}/${pageSize}`
+        `Student/loadStudent/${syId}/${apiYear}/${scId}/${page}/${pageSize}`
       ),
-    enabled: scId > 0 && syId > 0 && !!budgetYear,
+    enabled: scId > 0 && syId > 0 && !!apiYear,
   })
 
   const { data: classrooms } = useQuery({
@@ -133,7 +120,7 @@ export default function StudentPage() {
         ...form,
         sc_id: scId,
         sy_id: syId,
-        budget_year: budgetYear,
+        budget_year: apiYear,
         up_by: upBy,
       }),
     onSuccess: (res: any) => {
@@ -182,7 +169,7 @@ export default function StudentPage() {
 
   // ── Columns ───────────────────────────────────────────────────────────────
 
-  const columns = [
+  const columns = useMemo(() => [
     {
       header: 'จัดการ',
       render: (item: StudentRow) =>
@@ -201,7 +188,7 @@ export default function StudentPage() {
       ),
     },
     { header: 'แก้ไขโดย', key: 'up_by' as keyof StudentRow },
-  ]
+  ], [canEdit])
 
   // ── Render ────────────────────────────────────────────────────────────────
 

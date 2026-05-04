@@ -1,14 +1,18 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { CheckCircle, XCircle } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { FormDialog } from '@/components/shared/form-dialog'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime } from '@/lib/utils'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface ConfirmInvoice {
   rw_id: number
@@ -24,14 +28,17 @@ interface ConfirmInvoice {
   budget_type_name: string
   status: number
   remark: string
+  precheck_note: string
   up_by: string
   up_date: string
 }
 
-// สถานะตาม request_withdraw.status (state machine 100 series)
+// สถานะตาม request_withdraw.status
 const statusLabel: Record<number, { label: string; color: string }> = {
-  0: { label: 'กำลังทำ', color: 'text-gray-500' },
-  100: { label: 'รอหัวหน้าตรวจสอบ', color: 'text-yellow-600' },
+  0: { label: 'ร่าง', color: 'text-gray-500' },
+  50: { label: 'รอเจ้าหน้าที่ตรวจฎีกา', color: 'text-amber-600' },
+  51: { label: 'ตรวจไม่ผ่าน — ส่งกลับแก้ไข', color: 'text-orange-600' },
+  100: { label: 'ตรวจแล้ว รอหัวหน้าอนุมัติ', color: 'text-yellow-600' },
   101: { label: 'หัวหน้าไม่อนุมัติ', color: 'text-red-500' },
   102: { label: 'หัวหน้าอนุมัติ / รอ ผอ.', color: 'text-blue-600' },
   200: { label: 'ผอ. อนุมัติ', color: 'text-green-600' },
@@ -39,30 +46,30 @@ const statusLabel: Record<number, { label: string; color: string }> = {
   202: { label: 'ออกเช็ค', color: 'text-green-700' },
 }
 
-// ใบที่ยังทำงานต่อได้ = สถานะรอการอนุมัติในขั้นปัจจุบัน (100 = รอหัวหน้า, 102 = รอ ผอ.)
-const PENDING_STATUSES = new Set([100, 102])
+// ใบที่ต้องดำเนินการในขั้นนี้ ๆ
+const PENDING_STATUSES = new Set([50, 100, 102])
+
+// map admin.type → permission (status ที่ user เห็น/ตรวจได้)
+//   type=5 เจ้าหน้าที่การเงิน → 50
+//   type=8 หัวหน้าการเงิน     → 100
+//   type=2 ผอ.                → 102
+//   อื่น ๆ (1 = super admin)  → 0 = เห็นรวม
+function mapUserTypeToPermission(t: number): number {
+  if (t === 5) return 50
+  if (t === 8) return 100
+  if (t === 2) return 102
+  return 0
+}
 
 export default function ConfirmInvoicePage() {
+  const { scId, syId, userType, adminId } = useAppContext()
+  const permission = mapUserTypeToPermission(userType)
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [approveTarget, setApproveTarget] = useState<ConfirmInvoice | null>(null)
   const [denyTarget, setDenyTarget] = useState<ConfirmInvoice | null>(null)
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [permission, setPermission] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-      if (userData?.permission) setPermission(Number(userData.permission))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-    } catch {}
-  }, [])
+  const [denyNote, setDenyNote] = useState('')
 
   const { data, isLoading } = useQuery({
     queryKey: ['confirm-invoice', scId, permission, syId],
@@ -70,29 +77,38 @@ export default function ConfirmInvoicePage() {
     enabled: scId > 0 && syId > 0,
   })
 
-  // คำนวณ status ใหม่จาก status ปัจจุบัน + การตัดสินใจ (อนุมัติ/ปฏิเสธ)
-  // 100 -> อนุมัติ = 102, ปฏิเสธ = 101
-  // 102 -> อนุมัติ = 200, ปฏิเสธ = 101
+  // คำนวณ status ถัดไปจาก status ปัจจุบัน + การตัดสินใจ
+  //  50  → อนุมัติ = 100, ตีกลับ = 51
+  //  100 → อนุมัติ = 102, ไม่อนุมัติ = 101
+  //  102 → อนุมัติ = 200, ไม่อนุมัติ = 101
   const nextStatus = (current: number, approve: boolean): number => {
-    if (!approve) return 101
-    if (current === 100) return 102
-    if (current === 102) return 200
+    if (current === 50) return approve ? 100 : 51
+    if (current === 100) return approve ? 102 : 101
+    if (current === 102) return approve ? 200 : 101
     return current
   }
 
   const confirmMutation = useMutation({
-    mutationFn: ({ rw_id, status }: { rw_id: number; status: number }) =>
-      apiPost('Invoice/ConfirmInvoice', { rw_id, status }),
+    mutationFn: (payload: {
+      rw_id: number
+      status: number
+      precheck_note?: string
+    }) =>
+      apiPost('Invoice/ConfirmInvoice', {
+        ...payload,
+        up_by: adminId,
+      }),
     onSuccess: (res: any, vars) => {
       if (res.flag) {
-        const approved = vars.status === 102 || vars.status === 200
-        toast.success(approved ? 'อนุมัติเรียบร้อยแล้ว' : 'ปฏิเสธเรียบร้อยแล้ว')
+        const approved = [100, 102, 200].includes(vars.status)
+        toast.success(approved ? 'อนุมัติเรียบร้อยแล้ว' : 'บันทึกการไม่ผ่าน/ตีกลับแล้ว')
         qc.invalidateQueries({ queryKey: ['confirm-invoice'] })
       } else {
         toast.error(res.ms || 'มีปัญหาในการดำเนินการ')
       }
       setApproveTarget(null)
       setDenyTarget(null)
+      setDenyNote('')
     },
     onError: () => toast.error('เกิดข้อผิดพลาด'),
   })
@@ -110,7 +126,7 @@ export default function ConfirmInvoicePage() {
               variant="outline"
               className="text-green-600"
               onClick={() => setApproveTarget(item)}
-              title="อนุมัติ"
+              title={item.status === 50 ? 'ตรวจผ่าน' : 'อนุมัติ'}
             >
               <CheckCircle className="h-3 w-3" />
             </Button>
@@ -118,8 +134,8 @@ export default function ConfirmInvoicePage() {
               size="sm"
               variant="outline"
               className="text-red-500"
-              onClick={() => setDenyTarget(item)}
-              title="ไม่ผ่าน"
+              onClick={() => { setDenyTarget(item); setDenyNote('') }}
+              title={item.status === 50 ? 'ตีกลับ' : 'ไม่ผ่าน'}
             >
               <XCircle className="h-3 w-3" />
             </Button>
@@ -147,6 +163,12 @@ export default function ConfirmInvoicePage() {
       },
     },
     {
+      header: 'หมายเหตุตรวจ',
+      render: (item: ConfirmInvoice) => (
+        <span className="text-xs text-gray-600">{item.precheck_note ?? ''}</span>
+      ),
+    },
+    {
       header: 'แก้ไขล่าสุด',
       render: (item: ConfirmInvoice) => (
         <div>
@@ -157,9 +179,18 @@ export default function ConfirmInvoicePage() {
     },
   ]
 
+  const approveVerb = approveTarget?.status === 50 ? 'ตรวจผ่าน' : 'อนุมัติ'
+  const denyIsReject = denyTarget?.status === 50
+
   return (
     <div className="flex flex-col flex-auto min-w-0">
-      <PageHeader title="ตรวจสอบใบสำคัญจ่าย" />
+      <PageHeader
+        title={
+          permission === 50
+            ? 'ตรวจฎีกา (เจ้าหน้าที่การเงิน)'
+            : 'ตรวจสอบใบสำคัญจ่าย'
+        }
+      />
       <div className="p-4">
         <DataTable
           columns={columns}
@@ -182,27 +213,48 @@ export default function ConfirmInvoicePage() {
           })
         }
         onCancel={() => setApproveTarget(null)}
-        title="ยืนยันการอนุมัติ"
-        description={`อนุมัติใบสำคัญจ่าย "${approveTarget?.invoice_no} — ${approveTarget?.invoice_name}" หรือไม่?`}
-        confirmLabel="อนุมัติ"
+        title={`ยืนยันการ${approveVerb}`}
+        description={`${approveVerb}ใบสำคัญจ่าย "${approveTarget?.invoice_no} — ${approveTarget?.invoice_name}" หรือไม่?`}
+        confirmLabel={approveVerb}
         variant="default"
       />
 
-      <ConfirmDialog
+      {/* Dialog ตีกลับ/ไม่อนุมัติ — ถ้ามาจาก status 50 ขอเหตุผลด้วย */}
+      <FormDialog
         open={!!denyTarget}
-        onConfirm={() =>
-          denyTarget &&
+        onClose={() => { setDenyTarget(null); setDenyNote('') }}
+        title={denyIsReject ? 'ตีกลับให้แก้ไข' : 'ยืนยันไม่อนุมัติ'}
+        onSubmit={() => {
+          if (!denyTarget) return
+          if (denyIsReject && !denyNote.trim()) {
+            toast.error('กรุณาระบุเหตุผล')
+            return
+          }
           confirmMutation.mutate({
             rw_id: denyTarget.rw_id,
             status: nextStatus(denyTarget.status, false),
+            precheck_note: denyIsReject ? denyNote.trim() : undefined,
           })
-        }
-        onCancel={() => setDenyTarget(null)}
-        title="ยืนยันการปฏิเสธ"
-        description={`ปฏิเสธใบสำคัญจ่าย "${denyTarget?.invoice_no} — ${denyTarget?.invoice_name}" หรือไม่?`}
-        confirmLabel="ปฏิเสธ"
-        variant="destructive"
-      />
+        }}
+        loading={confirmMutation.isPending}
+        submitLabel={denyIsReject ? 'ตีกลับ' : 'ไม่อนุมัติ'}
+      >
+        <div className="space-y-3">
+          <div className="text-sm">
+            ใบสำคัญ: <strong>{denyTarget?.invoice_no}</strong> — {denyTarget?.invoice_name}
+          </div>
+          {denyIsReject && (
+            <div>
+              <Label>เหตุผลที่ตีกลับ *</Label>
+              <Input
+                value={denyNote}
+                onChange={(e) => setDenyNote(e.target.value)}
+                placeholder="เช่น เอกสารแนบไม่ครบ / จำนวนเงินไม่ตรง"
+              />
+            </div>
+          )}
+        </div>
+      </FormDialog>
     </div>
   )
 }

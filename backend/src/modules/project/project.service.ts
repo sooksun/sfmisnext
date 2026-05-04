@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Project } from './entities/project.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { type JwtUser } from '../../common/utils/tenant-guard';
 
 @Injectable()
 export class ProjectService {
@@ -61,6 +62,21 @@ export class ProjectService {
   }
 
   async addProject(payload: CreateProjectDto) {
+    // ป้องกัน duplicate ชื่อโครงการในปีเดียวกัน (Low priority)
+    if (payload.proj_name && payload.sc_id && payload.sy_id) {
+      const exists = await this.projectRepository.findOne({
+        where: {
+          projName: payload.proj_name,
+          scId: payload.sc_id,
+          syId: payload.sy_id,
+          del: 0,
+        },
+      });
+      if (exists) {
+        return { flag: false, ms: 'ชื่อโครงการนี้มีอยู่แล้วในปีการศึกษานี้' };
+      }
+    }
+
     const project = new Project();
     project.projName = payload.proj_name;
     project.projDetail = payload.proj_detail || null;
@@ -76,13 +92,18 @@ export class ProjectService {
     return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
   }
 
-  async updateProject(payload: UpdateProjectDto) {
+  async updateProject(payload: UpdateProjectDto, user: JwtUser) {
     const project = await this.projectRepository.findOne({
       where: { projId: payload.proj_id, del: 0 },
     });
 
     if (!project) {
       return { flag: false, ms: 'ไม่พบข้อมูลโครงการ' };
+    }
+
+    // ตรวจ tenant: non-super admin แก้ไขได้เฉพาะโครงการของโรงเรียนตัวเอง
+    if (user.type !== 1 && project.scId !== user.sc_id) {
+      throw new ForbiddenException('ไม่สามารถแก้ไขข้อมูลของโรงเรียนอื่นได้');
     }
 
     if (payload.proj_name !== undefined) project.projName = payload.proj_name;
@@ -102,13 +123,18 @@ export class ProjectService {
     return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
   }
 
-  async removeProject(projId: number) {
+  async removeProject(projId: number, user: JwtUser) {
     const project = await this.projectRepository.findOne({
       where: { projId, del: 0 },
     });
 
     if (!project) {
       return { flag: false, ms: 'ไม่พบข้อมูลโครงการ' };
+    }
+
+    // ตรวจ tenant: non-super admin ลบได้เฉพาะโครงการของโรงเรียนตัวเอง
+    if (user.type !== 1 && project.scId !== user.sc_id) {
+      throw new ForbiddenException('ไม่สามารถลบข้อมูลของโรงเรียนอื่นได้');
     }
 
     project.del = 1;

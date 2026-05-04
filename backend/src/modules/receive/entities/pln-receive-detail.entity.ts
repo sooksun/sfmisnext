@@ -1,6 +1,7 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('pln_receive_detail')
+@Index(['prId', 'del'])
 export class PlnReceiveDetail {
   @PrimaryGeneratedColumn({ name: 'prd_id' })
   prdId: number;

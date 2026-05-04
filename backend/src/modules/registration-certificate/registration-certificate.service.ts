@@ -1,12 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { WithholdingCertificate } from './entities/withholding-certificate.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { Partner } from '../general-db/entities/partner.entity';
+import { calcWithholding } from '../../common/utils/withholding.util';
 
 @Injectable()
 export class RegistrationCertificateService {
+  private readonly logger = new Logger(RegistrationCertificateService.name);
+
   constructor(
     @InjectRepository(WithholdingCertificate)
     private readonly withholdingCertificateRepository: Repository<WithholdingCertificate>,
@@ -33,10 +36,14 @@ export class RegistrationCertificateService {
       });
     }
 
-    const pIds = [...new Set(withdraws.map((w) => w.pId).filter((id) => id > 0))];
+    const pIds = [
+      ...new Set(withdraws.map((w) => w.pId).filter((id) => id > 0)),
+    ];
     let partners: Partner[] = [];
     if (pIds.length > 0) {
-      partners = await this.partnerRepository.find({ where: { pId: In(pIds) } });
+      partners = await this.partnerRepository.find({
+        where: { pId: In(pIds) },
+      });
     }
 
     const wMap = new Map(withdraws.map((w) => [w.rwId, w]));
@@ -47,14 +54,7 @@ export class RegistrationCertificateService {
       const p = w ? pMap.get(w.pId) : null;
       const amount = w ? Number(w.amount) : 0;
       const calVat = p ? p.calVat : 2;
-
-      let deduct = 0;
-      if (calVat === 1) {
-        const vat = amount - (amount * 7) / 107;
-        deduct = vat * 0.01;
-      } else {
-        deduct = amount * 0.01;
-      }
+      const wht = calcWithholding(amount, calVat);
 
       return {
         wc_id: cert.wcId,
@@ -67,8 +67,11 @@ export class RegistrationCertificateService {
         status: cert.status,
         detail: w?.detail ?? '',
         p_name: p?.pName ?? '',
-        amount,
-        deduct,
+        amount: wht.gross,
+        base: wht.base,
+        vat_amount: wht.vatAmount,
+        deduct: wht.withholdAmount,
+        net_payable: wht.netPayable,
         update_date: cert.updateDate,
       };
     });
@@ -134,6 +137,7 @@ export class RegistrationCertificateService {
 
   async updateWithholdingCertificate(dto: {
     wc_id: number;
+    sc_id?: number;
     wc_no?: string;
     of_id?: number;
     wc_rank?: number;
@@ -146,6 +150,13 @@ export class RegistrationCertificateService {
       where: { wcId: dto.wc_id, del: 0 },
     });
     if (!cert) return { flag: false, ms: 'ไม่พบข้อมูล' };
+
+    // H6: ห้ามแก้ไขหนังสือรับรองที่ออกแล้ว (status=101)
+    if (cert.status === 101 && dto.del !== 1) {
+      throw new BadRequestException(
+        'หนังสือรับรองนี้ออกแล้ว (status=101) ไม่สามารถแก้ไขได้',
+      );
+    }
 
     if (dto.del === 1) {
       cert.del = 1;
@@ -180,7 +191,9 @@ export class RegistrationCertificateService {
 
     // Return empty array if no certificates found
     if (certificates.length === 0) {
-      console.log(`No certificates found for scId: ${scId}, year: ${yearStr}`);
+      this.logger.debug(
+        `No certificates found for scId: ${scId}, year: ${yearStr}`,
+      );
       return [];
     }
 

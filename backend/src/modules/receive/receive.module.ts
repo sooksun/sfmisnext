@@ -6,6 +6,7 @@ import { PlnReceive } from './entities/pln-receive.entity';
 import { PlnReceiveDetail } from './entities/pln-receive-detail.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { FinancialAuditModule } from '../financial-audit/financial-audit.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
       Admin,
       BudgetIncomeType,
     ]),
+    FinancialAuditModule,
   ],
   controllers: [ReceiveController],
   providers: [ReceiveService],

@@ -4,8 +4,10 @@ import {
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
+@Index(['del'])
 @Entity('master_budget_income_type')
 export class BudgetIncomeType {
   @PrimaryGeneratedColumn({ name: 'bg_type_id' })

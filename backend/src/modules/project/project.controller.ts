@@ -7,11 +7,22 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { ProjectService } from './project.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { PageSizePipe } from '../../common/pipes/page-size.pipe';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
+@UseGuards(RolesGuard)
+@Roles(1, 2, 3, 4, 6, 7)
 @Controller('Project')
 export class ProjectController {
   constructor(private readonly projectService: ProjectService) {}
@@ -22,28 +33,37 @@ export class ProjectController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('userId', ParseIntPipe) userId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
     @Param('syId', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.projectService.loadProject(scId, userId, page, pageSize, syId);
   }
 
   @Post('addProject')
   @HttpCode(HttpStatus.OK)
-  addProject(@Body() payload: CreateProjectDto) {
+  addProject(@Body() payload: CreateProjectDto, @CurrentUser() user: JwtUser) {
+    assertSameSchool(user, payload.sc_id ?? user.sc_id);
     return this.projectService.addProject(payload);
   }
 
   @Post('updateProject')
   @HttpCode(HttpStatus.OK)
-  updateProject(@Body() payload: UpdateProjectDto) {
-    return this.projectService.updateProject(payload);
+  updateProject(
+    @Body() payload: UpdateProjectDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.projectService.updateProject(payload, user);
   }
 
   @Post('removeProject')
   @HttpCode(HttpStatus.OK)
-  removeProject(@Body() payload: { proj_id: number }) {
-    return this.projectService.removeProject(payload.proj_id);
+  removeProject(
+    @Body() payload: { proj_id: number },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.projectService.removeProject(payload.proj_id, user);
   }
 
   @Post('loadPLNBudgetCategory/:scId/:syId/:budgetYear')
@@ -117,9 +137,11 @@ export class ProjectLowerController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('userId', ParseIntPipe) userId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
     @Param('syId', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.projectService.loadProject(scId, userId, page, pageSize, syId);
   }
 
@@ -129,27 +151,36 @@ export class ProjectLowerController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('userId', ParseIntPipe) userId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
     @Param('syId', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.projectService.loadProject(scId, userId, page, pageSize, syId);
   }
 
   @Post('addProject')
   @HttpCode(HttpStatus.OK)
-  addProject(@Body() payload: CreateProjectDto) {
+  addProject(@Body() payload: CreateProjectDto, @CurrentUser() user: JwtUser) {
+    assertSameSchool(user, payload.sc_id ?? user.sc_id);
     return this.projectService.addProject(payload);
   }
 
   @Post('updateProject')
   @HttpCode(HttpStatus.OK)
-  updateProject(@Body() payload: UpdateProjectDto) {
-    return this.projectService.updateProject(payload);
+  updateProject(
+    @Body() payload: UpdateProjectDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.projectService.updateProject(payload, user);
   }
 
   @Post('removeProject')
   @HttpCode(HttpStatus.OK)
-  removeProject(@Body() payload: { proj_id: number }) {
-    return this.projectService.removeProject(payload.proj_id);
+  removeProject(
+    @Body() payload: { proj_id: number },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.projectService.removeProject(payload.proj_id, user);
   }
 }

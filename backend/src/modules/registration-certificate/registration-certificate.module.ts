@@ -15,7 +15,10 @@ import { Partner } from '../general-db/entities/partner.entity';
       Partner,
     ]),
   ],
-  controllers: [RegistrationCertificateController, WithholdingCertificateController],
+  controllers: [
+    RegistrationCertificateController,
+    WithholdingCertificateController,
+  ],
   providers: [RegistrationCertificateService],
   exports: [RegistrationCertificateService],
 })

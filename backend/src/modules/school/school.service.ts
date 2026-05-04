@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { School } from './entities/school.entity';
 import { BudgetIncomeTypeSchool } from './entities/budget-income-type-school.entity';
+import { DeleteLogService } from '../delete-log/delete-log.service';
 
 @Injectable()
 export class SchoolService {
@@ -11,6 +12,7 @@ export class SchoolService {
     private readonly schoolRepository: Repository<School>,
     @InjectRepository(BudgetIncomeTypeSchool)
     private readonly budgetIncomeTypeSchoolRepository: Repository<BudgetIncomeTypeSchool>,
+    private readonly deleteLog: DeleteLogService,
   ) {}
 
   async loadSchools(page: number, pageSize: number) {
@@ -98,9 +100,18 @@ export class SchoolService {
     });
     if (!school) return { flag: false, ms: 'ไม่พบข้อมูลโรงเรียน' };
 
+    const snapshot = { ...school };
     school.del = 1;
     try {
       await this.schoolRepository.save(school);
+      await this.deleteLog.log({
+        table: 'tb_school',
+        rowId: school.scId,
+        reason: payload.reason ?? null,
+        deletedBy: payload.up_by ?? '',
+        scId: school.scId,
+        snapshot,
+      });
       return { flag: true, ms: 'ลบข้อมูลสำเร็จ' };
     } catch (_error) {
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการลบข้อมูล' };

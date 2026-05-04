@@ -110,4 +110,29 @@ export class AddInvoiceDto {
   @IsOptional()
   @IsNumber()
   del?: number;
+
+  // ── เงินยืม (rw_type = 1) ──────────────────────────────────────────────────
+  @IsOptional()
+  @IsNumber()
+  loan_type?: number;
+
+  @IsOptional()
+  @IsDateString()
+  loan_start_date?: string;
+
+  @IsOptional()
+  @IsDateString()
+  loan_return_due_date?: string;
+
+  @IsOptional()
+  @IsDateString()
+  loan_returned_date?: string;
+
+  @IsOptional()
+  @IsNumber()
+  loan_return_cash?: number;
+
+  @IsOptional()
+  @IsNumber()
+  loan_return_voucher_amount?: number;
 }

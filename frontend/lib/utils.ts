@@ -64,18 +64,22 @@ export function parseDate(date: string): string {
   return d.getFullYear() + '-' + month + '-' + d.getDate()
 }
 
-// Get localStorage year data (client-side only)
+// Get year data from Zustand store (client-side only)
+// Prefer using useAppContext() hook in components instead of this function
 export function getYearData(): { sy_year: number; sy_id: number; budget_year: number; budget_id: number } | null {
   if (typeof window === 'undefined') return null
-  const year = localStorage.getItem('years')
-  if (!year) return null
   try {
-    const parsed = JSON.parse(year)
+    // Read from Zustand persisted store
+    const raw = localStorage.getItem('user-store')
+    if (!raw) return null
+    const store = JSON.parse(raw)
+    const yearData = store?.state?.yearData
+    if (!yearData) return null
     return {
-      sy_year: parsed.sy_date?.sy_year ?? 0,
-      sy_id: parsed.sy_date?.sy_id ?? 0,
-      budget_year: (parsed.budget_date?.budget_year ?? 0) + 543,
-      budget_id: parsed.budget_date?.sy_id ?? 0,
+      sy_year: yearData.sy_date?.sy_year ?? 0,
+      sy_id: yearData.sy_date?.sy_id ?? 0,
+      budget_year: (yearData.budget_date?.budget_year ?? 0) + 543,
+      budget_id: yearData.budget_date?.sy_id ?? 0,
     }
   } catch {
     return null

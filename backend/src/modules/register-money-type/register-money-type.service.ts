@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
@@ -24,6 +24,8 @@ export interface RegisterTransaction {
 
 @Injectable()
 export class RegisterMoneyTypeService {
+  private readonly logger = new Logger(RegisterMoneyTypeService.name);
+
   constructor(
     @InjectRepository(BudgetIncomeType)
     private readonly budgetIncomeTypeRepository: Repository<BudgetIncomeType>,
@@ -73,7 +75,7 @@ export class RegisterMoneyTypeService {
 
     // Return empty data if no transactions
     if (transactions.length === 0) {
-      console.log(
+      this.logger.debug(
         `No transactions found for bgTypeId: ${bgTypeId}, scId: ${scId}`,
       );
       return {

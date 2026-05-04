@@ -9,7 +9,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
-import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { DeleteWithReasonDialog } from '@/components/shared/delete-with-reason-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -63,7 +63,8 @@ export default function AdminPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (item: Admin) => apiPost('B_admin/remove_admin', { ...item, del: 1 }),
+    mutationFn: ({ item, reason }: { item: Admin; reason: string }) =>
+      apiPost('B_admin/remove_admin', { ...item, del: 1, reason }),
     onSuccess: () => {
       toast.success('ลบเรียบร้อยแล้ว')
       qc.invalidateQueries({ queryKey: ['admin'] })
@@ -171,14 +172,12 @@ export default function AdminPage() {
         </div>
       </FormDialog>
 
-      <ConfirmDialog
+      <DeleteWithReasonDialog
         open={!!deleteTarget}
-        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
-        onCancel={() => setDeleteTarget(null)}
-        title="ยืนยันการลบ"
-        description={`ต้องการลบ "${deleteTarget?.name}" หรือไม่?`}
-        confirmLabel="ลบ"
-        variant="destructive"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={(reason) => { if (deleteTarget) deleteMutation.mutate({ item: deleteTarget, reason }) }}
+        itemLabel={deleteTarget?.name}
+        loading={deleteMutation.isPending}
       />
     </div>
   )

@@ -7,6 +7,7 @@ import { BudgetIncomeTypeSchool } from './entities/budget-income-type-school.ent
 import { AddBankAccountDto } from './dto/add-bank-account.dto';
 import { AddBudgetSchoolDto } from './dto/add-budget-school.dto';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { DeleteLogService } from '../delete-log/delete-log.service';
 
 @Injectable()
 export class BankService {
@@ -19,6 +20,7 @@ export class BankService {
     private readonly budgetIncomeTypeSchoolRepository: Repository<BudgetIncomeTypeSchool>,
     @InjectRepository(BudgetIncomeType)
     private readonly budgetIncomeTypeRepository: Repository<BudgetIncomeType>,
+    private readonly deleteLog: DeleteLogService,
   ) {}
 
   async loadBankAccount(scId: number) {
@@ -28,18 +30,23 @@ export class BankService {
     });
 
     // โหลดข้อมูลธนาคารทั้งหมดครั้งเดียว
-    const bankIds = [...new Set(accounts.map((a) => a.bId).filter((id) => id > 0))];
-    const banks = bankIds.length > 0
-      ? await this.bankDbRepository.find({ where: { bId: In(bankIds) } })
-      : [];
-    const bankMap = new Map(banks.map((b) => [b.bId, b.bNameL ?? b.bNameS ?? '']));
+    const bankIds = [
+      ...new Set(accounts.map((a) => a.bId).filter((id) => id > 0)),
+    ];
+    const banks =
+      bankIds.length > 0
+        ? await this.bankDbRepository.find({ where: { bId: In(bankIds) } })
+        : [];
+    const bankMap = new Map(
+      banks.map((b) => [b.bId, b.bNameL ?? b.bNameS ?? '']),
+    );
 
     return accounts.map((account) => ({
       ba_id: account.baId,
       b_id: account.bId,
-      bank_name: bankMap.get(account.bId) ?? '',   // ชื่อธนาคาร
-      account_name: account.baName,                 // ชื่อบัญชี
-      account_no: account.baNo,                     // เลขที่บัญชี
+      bank_name: bankMap.get(account.bId) ?? '', // ชื่อธนาคาร
+      account_name: account.baName, // ชื่อบัญชี
+      account_no: account.baNo, // เลขที่บัญชี
       ba_name: account.baName,
       ba_no: account.baNo,
       sc_id: account.scId,
@@ -125,7 +132,11 @@ export class BankService {
     return { flag: true };
   }
 
-  async removeBankAccount(baId: number) {
+  async removeBankAccount(
+    baId: number,
+    reason?: string,
+    upBy?: string | number,
+  ) {
     const account = await this.bankAccountRepository.findOne({
       where: { baId, del: 0 },
     });
@@ -134,8 +145,17 @@ export class BankService {
       return { flag: false, ms: 'ไม่พบข้อมูลบัญชีธนาคาร' };
     }
 
+    const snapshot = { ...account };
     account.del = 1;
     await this.bankAccountRepository.save(account);
+    await this.deleteLog.log({
+      table: 'tb_bankaccount',
+      rowId: account.baId,
+      reason: reason ?? null,
+      deletedBy: upBy ?? '',
+      scId: account.scId ?? undefined,
+      snapshot,
+    });
 
     return { flag: true };
   }

@@ -3,70 +3,75 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
+  MinLength,
   ValidateIf,
 } from 'class-validator';
+import { PASSWORD_MSG, PASSWORD_PATTERN } from '../../../common/constants/password';
 
 export class UpdateAdminDto {
-  @IsInt()
   @IsOptional()
+  @IsInt()
   admin_id?: number;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   name?: string;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   username?: string;
 
-  @IsEmail()
   @IsOptional()
+  @IsEmail()
   email?: string;
 
-  @IsString()
   @IsOptional()
+  @IsString()
+  @MinLength(8, { message: 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร' })
+  @Matches(PASSWORD_PATTERN, { message: PASSWORD_MSG })
   password?: string;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   password_default?: string;
 
   @ValidateIf((o: UpdateAdminDto) => o.avata !== null && o.avata !== undefined)
-  @IsString()
   @IsOptional()
+  @IsString()
   avata?: string | null;
 
   @ValidateIf(
     (o: UpdateAdminDto) => o.license !== null && o.license !== undefined,
   )
-  @IsString()
   @IsOptional()
+  @IsString()
   license?: string | null;
 
-  @IsInt()
   @IsOptional()
+  @IsInt()
   type?: number;
 
-  @IsInt()
   @IsOptional()
+  @IsInt()
   position?: number;
 
-  @IsInt()
   @IsOptional()
+  @IsInt()
   sc_id?: number;
 
-  @IsInt()
   @IsOptional()
+  @IsInt()
   up_by?: number;
 
-  @IsInt()
   @IsOptional()
+  @IsInt()
   del?: number;
 
   @ValidateIf(
     (o: UpdateAdminDto) => o.profile !== null && o.profile !== undefined,
   )
-  @IsString()
   @IsOptional()
+  @IsString()
   profile?: string | null;
 }

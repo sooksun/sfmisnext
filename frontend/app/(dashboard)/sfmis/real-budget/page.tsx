@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime, toBE } from '@/lib/utils'
+import { useAppContext } from '@/hooks/use-app-context'
 
 // ชนิดที่รับจาก API — ใช้ unknown/any เพราะ backend อาจส่ง number หรือ string (เช่น budget_year, amount)
 interface RealBudgetRow {
@@ -63,27 +64,15 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export default function RealBudgetPage() {
+  const { scId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const acadYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
+  const apiAcadYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<RealBudgetRow | null>(null)
   const [editing, setEditing] = useState<RealBudgetRow | null>(null)
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [acadYear, setAcadYear] = useState('')
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-      if (years?.budget_date?.budget_year) setAcadYear(String(years.budget_date.budget_year))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['real-budget', syId, scId, page, pageSize],
@@ -118,7 +107,7 @@ export default function RealBudgetPage() {
         ...form,
         detail: form.detail ?? '',
         sc_id: scId,
-        acad_year: acadYear,
+        acad_year: apiAcadYear,
       }
       if (editing)
         return apiPost('Policy/updateRealBudget', { ...payload, prb_id: editing.prb_id })

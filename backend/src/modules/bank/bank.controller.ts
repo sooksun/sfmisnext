@@ -7,11 +7,16 @@ import {
   ParseIntPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { BankService } from './bank.service';
 import { AddBankAccountDto } from './dto/add-bank-account.dto';
 import { AddBudgetSchoolDto } from './dto/add-budget-school.dto';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
+@UseGuards(RolesGuard)
+@Roles(1, 2, 5, 8)
 @Controller('Bank')
 export class BankController {
   constructor(private readonly bankService: BankService) {}
@@ -48,8 +53,14 @@ export class BankController {
 
   @Post('removeBankAccount')
   @HttpCode(HttpStatus.OK)
-  removeBankAccount(@Body() body: { ba_id: number }) {
-    return this.bankService.removeBankAccount(body.ba_id);
+  removeBankAccount(
+    @Body() body: { ba_id: number; reason?: string; up_by?: string | number },
+  ) {
+    return this.bankService.removeBankAccount(
+      body.ba_id,
+      body.reason,
+      body.up_by,
+    );
   }
 
   @Post('addBudgetSchool')

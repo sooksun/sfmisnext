@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
@@ -8,6 +8,8 @@ import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 
 @Injectable()
 export class ReportCheckControlService {
+  private readonly logger = new Logger(ReportCheckControlService.name);
+
   constructor(
     @InjectRepository(RequestWithdraw)
     private readonly requestWithdrawRepository: Repository<RequestWithdraw>,
@@ -33,7 +35,7 @@ export class ReportCheckControlService {
 
     // Return empty array if no checks found
     if (checks.length === 0) {
-      console.log(`No checks found for scId: ${scId}, syId: ${syId}`);
+      this.logger.debug(`No checks found for scId: ${scId}, syId: ${syId}`);
       return [];
     }
 

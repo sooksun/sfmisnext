@@ -1,4 +1,4 @@
-import { IsInt, IsNumber, Min } from 'class-validator';
+import { IsInt, IsNumber, IsOptional, Min } from 'class-validator';
 
 export class AddClassroomBudgetDto {
   @IsInt()
@@ -11,6 +11,7 @@ export class AddClassroomBudgetDto {
   @Min(0)
   amount: number;
 
+  @IsOptional()
   @IsInt()
   up_by?: number;
 }

@@ -1,12 +1,14 @@
 import {
   Column,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
 @Entity('pln_receive')
+@Index(['scId', 'syId', 'del'])
 export class PlnReceive {
   @PrimaryGeneratedColumn({ name: 'pr_id' })
   prId: number;

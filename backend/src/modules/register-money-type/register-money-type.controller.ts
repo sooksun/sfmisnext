@@ -5,9 +5,14 @@ import {
   ParseIntPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { RegisterMoneyTypeService } from './register-money-type.service';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
+@UseGuards(RolesGuard)
+@Roles(1, 2, 5, 8)
 @Controller('Register_control_money_type')
 export class RegisterMoneyTypeController {
   constructor(

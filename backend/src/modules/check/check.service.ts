@@ -1,14 +1,33 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { UpdateCheckDto } from './dto/update-check.dto';
+import { SaveCommitteeDto } from './dto/save-committee.dto';
 import { Partner } from '../general-db/entities/partner.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { CheckReceiveCommittee } from './entities/check-receive-committee.entity';
+import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
+import { calcWithholding } from '../../common/utils/withholding.util';
+import { FinancialAuditService } from '../financial-audit/financial-audit.service';
+
+/**
+ * Map type_offer_check → money_channel
+ *   type_offer_check: 1 = บค (เบิกเงินสด), 2 = บจ (เบิกจ่ายผ่านเช็ค/ธนาคาร)
+ *   money_channel:     1 = cash, 2 = bank
+ */
+function mapCheckChannel(typeOfferCheck: number | null | undefined): number {
+  if (typeOfferCheck === 1) return 1; // เบิกเงินสด
+  if (typeOfferCheck === 2) return 2; // เบิกจ่ายผ่านเช็ค
+  return 2;
+}
 
 @Injectable()
 export class CheckService {
+  private readonly committeeThreshold: number;
+
   constructor(
     @InjectRepository(RequestWithdraw)
     private readonly requestWithdrawRepository: Repository<RequestWithdraw>,
@@ -18,7 +37,16 @@ export class CheckService {
     private readonly adminRepository: Repository<Admin>,
     @InjectRepository(BudgetIncomeType)
     private readonly budgetIncomeTypeRepository: Repository<BudgetIncomeType>,
-  ) {}
+    @InjectRepository(CheckReceiveCommittee)
+    private readonly committeeRepository: Repository<CheckReceiveCommittee>,
+    private readonly configService: ConfigService,
+    private readonly dataSource: DataSource,
+    private readonly financialAuditService: FinancialAuditService,
+  ) {
+    // วงเงินที่ต้องมีคณะกรรมการตรวจรับ (ตามระเบียบ พัสดุ) — กำหนดได้ใน .env: COMMITTEE_THRESHOLD=5000
+    this.committeeThreshold =
+      this.configService.get<number>('COMMITTEE_THRESHOLD') ?? 5000;
+  }
 
   async loadCheck(scId: number, syId: number) {
     const rows = await this.requestWithdrawRepository
@@ -91,6 +119,7 @@ export class CheckService {
         del: 0,
       },
       order: { adminId: 'ASC' },
+      take: 1000,
     });
 
     return users.map((user) => ({
@@ -110,6 +139,7 @@ export class CheckService {
         del: 0,
       },
       order: { pId: 'ASC' },
+      take: 1000,
     });
 
     return partners.map((partner) => ({
@@ -148,6 +178,16 @@ export class CheckService {
       return [];
     }
 
+    const partner = check.pId
+      ? await this.partnerRepository.findOne({
+          where: { pId: check.pId, del: 0 },
+        })
+      : null;
+
+    const amount = Number(check.amount ?? 0);
+    const calVat = partner?.calVat ?? 2;
+    const wht = calcWithholding(amount, calVat);
+
     return [
       {
         rw_id: check.rwId,
@@ -159,7 +199,12 @@ export class CheckService {
         order_id: check.orderId,
         p_id: check.pId,
         detail: check.detail,
-        amount: check.amount,
+        amount: wht.gross,
+        wht_base: wht.base,
+        wht_vat_amount: wht.vatAmount,
+        wht_amount: wht.withholdAmount,
+        wht_net_payable: wht.netPayable,
+        cal_vat: calVat,
         certificate_payment: check.certificatePayment,
         date_request: check.dateRequest,
         user_request_head: check.userRequestHead,
@@ -184,39 +229,186 @@ export class CheckService {
     ];
   }
 
-  async cancelCheck(rwId: number) {
+  async cancelCheck(rwId: number, scId: number) {
     const check = await this.requestWithdrawRepository.findOne({
-      where: { rwId, del: 0 },
+      where: { rwId, scId, del: 0 },
     });
     if (!check) return { flag: false, ms: 'ไม่พบข้อมูลเช็ค' };
+
+    // ห้ามยกเลิกถ้าวันที่ออกเช็ค (หรือวันที่ขอเบิก) ถูกลงนามแล้ว
+    const checkDate = check.offerCheckDate ?? check.dateRequest;
+    const dateStr = checkDate
+      ? checkDate instanceof Date
+        ? checkDate.toISOString().slice(0, 10)
+        : String(checkDate).slice(0, 10)
+      : null;
+    if (dateStr) {
+      const locked = await this.financialAuditService.isDateLocked(
+        scId,
+        dateStr,
+      );
+      if (locked) {
+        return {
+          flag: false,
+          ms: `วันที่ ${dateStr} ถูกลงนามแล้ว ไม่สามารถยกเลิกเช็คได้`,
+        };
+      }
+    }
 
     check.status = 201;
     check.del = 1;
     await this.requestWithdrawRepository.save(check);
+
+    // soft-delete financial_transactions ที่ผูกกับเช็คนี้ (ถ้ามี)
+    await this.dataSource
+      .getRepository(FinancialTransactions)
+      .update(
+        { rwId, type: -1, del: 0 },
+        { del: 1, updateDate: new Date() },
+      );
+
     return { flag: true, ms: 'ยกเลิกเช็คเรียบร้อยแล้ว' };
   }
 
-  async updateCheck(dto: UpdateCheckDto) {
-    const check = await this.requestWithdrawRepository.findOne({
-      where: { rwId: dto.rw_id, del: 0 },
-    });
+  async updateCheck(dto: UpdateCheckDto, scId: number) {
+    // Wrap ใน transaction + pessimistic_write lock — กัน race condition ตอน
+    // 2 request พร้อมกันออกเช็คใบเดียวกัน (double-insert FT, bypass committee check)
+    return this.dataSource.transaction(async (em) => {
+      const checkRepo = em.getRepository(RequestWithdraw);
+      const committeeRepo = em.getRepository(CheckReceiveCommittee);
+      const ftRepo = em.getRepository(FinancialTransactions);
 
-    if (!check) {
-      return { flag: false, ms: 'ไม่พบข้อมูลเช็ค' };
+      const check = await checkRepo.findOne({
+        where: { rwId: dto.rw_id, scId, del: 0 },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!check) {
+        return { flag: false, ms: 'ไม่พบข้อมูลเช็ค' };
+      }
+
+      // ── ตรวจสอบคณะกรรมการตรวจรับ เมื่อจะออกเช็ค (status=202) ─────────────
+      if (
+        dto.status === 202 &&
+        Number(check.amount) >= this.committeeThreshold
+      ) {
+        const committee = await committeeRepo.findOne({
+          where: { rwId: dto.rw_id, del: 0 },
+        });
+        if (!committee || !committee.member1Name) {
+          return {
+            flag: false,
+            ms: `จำนวนเงิน ${Number(check.amount).toLocaleString('th-TH')} บาท ต้องระบุคณะกรรมการตรวจรับก่อนออกเช็ค`,
+          };
+        }
+      }
+
+      const prevStatus = check.status;
+
+      if (dto.check_no_doc !== undefined)
+        check.checkNoDoc = dto.check_no_doc.toString();
+      if (dto.type_offer_check !== undefined)
+        check.typeOfferCheck = dto.type_offer_check;
+      if (dto.user_offer_check !== undefined)
+        check.userOfferCheck = dto.user_offer_check;
+      if (dto.offer_check_date !== undefined)
+        check.offerCheckDate = new Date(dto.offer_check_date);
+      if (dto.status !== undefined) check.status = dto.status;
+      if (dto.del !== undefined) check.del = dto.del;
+
+      await checkRepo.save(check);
+
+      // ── Sync financial_transactions (ledger) ──────────────────────────
+      // เมื่อเปลี่ยนจาก "ยังไม่ออก" → "ออกเช็คแล้ว" (status=202) ให้สร้าง transaction type=-1
+      // ถ้ายกเลิก (status≠202) ให้ soft-delete transaction ที่เคยสร้างไว้
+      if (check.status === 202 && prevStatus !== 202) {
+        // ป้องกัน double-insert — ตรวจว่ามี ft ของ rwId นี้อยู่แล้วไหม
+        // (ภายใน transaction + lock จึง atomic กับ save ของ check ด้านบน)
+        const exists = await ftRepo.count({
+          where: { rwId: check.rwId, type: -1, del: 0 },
+        });
+        if (exists === 0) {
+          const ft = ftRepo.create({
+            type: -1,
+            bgTypeId: check.bgTypeId ?? 0,
+            amount: Number(check.amount ?? 0),
+            scId: check.scId ?? 0,
+            syId: check.syId ?? null,
+            upBy: dto.up_by ?? 0,
+            prId: 0,
+            prdId: 0,
+            rwId: check.rwId,
+            prbId: 0,
+            moneyChannel: mapCheckChannel(check.typeOfferCheck),
+            baId: null,
+            del: 0,
+            createDate: check.offerCheckDate ?? new Date(),
+            updateDate: new Date(),
+          });
+          await ftRepo.save(ft);
+        }
+      } else if (prevStatus === 202 && check.status !== 202) {
+        // ยกเลิกออกเช็ค → soft-delete ft
+        await ftRepo.update(
+          { rwId: check.rwId, type: -1, del: 0 },
+          { del: 1, updateDate: new Date() },
+        );
+      }
+
+      return { flag: true };
+    });
+  }
+
+  async loadCommittee(rwId: number, scId: number, userType: number) {
+    // Super Admin (type=1) ข้ามโรงเรียนได้ — ตรวจเฉพาะ type อื่น
+    if (userType !== 1) {
+      const rw = await this.requestWithdrawRepository.findOne({
+        where: { rwId, scId, del: 0 },
+      });
+      if (!rw) {
+        throw new ForbiddenException('ไม่มีสิทธิ์เข้าถึงข้อมูลของโรงเรียนนี้');
+      }
     }
 
-    check.checkNoDoc = dto.check_no_doc.toString();
-    if (dto.type_offer_check !== undefined)
-      check.typeOfferCheck = dto.type_offer_check;
-    check.userOfferCheck = dto.user_offer_check;
-    check.offerCheckDate = new Date(dto.offer_check_date);
-    check.status = dto.status;
-    if (dto.del !== undefined) check.del = dto.del;
+    const c = await this.committeeRepository.findOne({
+      where: { rwId, del: 0 },
+    });
+    if (!c) return null;
+    return {
+      crc_id: c.crcId,
+      rw_id: c.rwId,
+      member1_name: c.member1Name ?? '',
+      member1_position: c.member1Position ?? '',
+      member2_name: c.member2Name ?? '',
+      member2_position: c.member2Position ?? '',
+      member3_name: c.member3Name ?? '',
+      member3_position: c.member3Position ?? '',
+    };
+  }
 
-    await this.requestWithdrawRepository.save(check);
+  async saveCommittee(dto: SaveCommitteeDto) {
+    // ตรวจสอบว่า rw_id นี้เป็นของ sc_id นี้จริง
+    const rw = await this.requestWithdrawRepository.findOne({
+      where: { rwId: dto.rw_id, scId: dto.sc_id, del: 0 },
+    });
+    if (!rw) return { flag: false, ms: 'ไม่พบข้อมูลการเบิกจ่าย' };
 
-    // TODO: Create transaction if needed (dto.transaction)
-
-    return { flag: true };
+    // upsert — ถ้ามีแล้วให้อัปเดต
+    let c = await this.committeeRepository.findOne({
+      where: { rwId: dto.rw_id },
+    });
+    if (!c) {
+      c = this.committeeRepository.create({ rwId: dto.rw_id, scId: dto.sc_id });
+    }
+    c.member1Name = dto.member1_name;
+    c.member1Position = dto.member1_position;
+    c.member2Name = dto.member2_name ?? null;
+    c.member2Position = dto.member2_position ?? null;
+    c.member3Name = dto.member3_name ?? null;
+    c.member3Position = dto.member3_position ?? null;
+    c.upBy = dto.up_by ?? 0;
+    c.del = 0;
+    await this.committeeRepository.save(c);
+    return { flag: true, ms: 'บันทึกคณะกรรมการเรียบร้อยแล้ว' };
   }
 }

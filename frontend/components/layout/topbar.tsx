@@ -1,7 +1,8 @@
 'use client'
 import { useSession, signOut } from 'next-auth/react'
-import { useEffect, useState } from 'react'
-import { LogOut, User, ChevronDown, CalendarDays } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { LogOut, User, ChevronDown, CalendarDays, Search } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,29 +11,26 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { YearData } from '@/lib/types'
 import { toBE } from '@/lib/utils'
+import { useAppContext } from '@/hooks/use-app-context'
 
 export function Topbar() {
   const { data: session } = useSession()
-  const [yearData, setYearData] = useState<YearData | null>(null)
+  const router = useRouter()
+  const { syYear, budgetYear: budgetYearRaw } = useAppContext()
   const [mounted, setMounted] = useState(false)
+  const [searchValue, setSearchValue] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setMounted(true)
-    const raw = localStorage.getItem('years')
-    if (raw) {
-      try {
-        setYearData(JSON.parse(raw))
-      } catch {}
-    }
   }, [])
 
-  // Derive yearInfo from yearData (client-only) to avoid hydration mismatch
-  const yearInfo = mounted && yearData
+  // Derive yearInfo from hook (client-only) to avoid hydration mismatch
+  const yearInfo = mounted && (syYear > 0 || budgetYearRaw > 0)
     ? {
-        sy_year: yearData.sy_date?.sy_year,
-        budget_year: yearData.budget_date?.budget_year,
+        sy_year: syYear,
+        budget_year: budgetYearRaw,
       }
     : null
 
@@ -43,6 +41,14 @@ export function Topbar() {
         type?: number
       }
     | undefined
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && searchValue.trim()) {
+      router.push(`/sfmis/financial-report/unified-register?q=${encodeURIComponent(searchValue.trim())}`)
+      setSearchValue('')
+      searchRef.current?.blur()
+    }
+  }
 
   const roleLabel = (type?: number) => {
     switch (type) {
@@ -72,6 +78,22 @@ export function Topbar() {
         ) : (
           <span className="text-gray-400">ยังไม่ได้เลือกปีการศึกษา</span>
         )}
+      </div>
+
+      {/* Center: Global search (desktop only) */}
+      <div className="hidden md:flex flex-1 justify-center px-4">
+        <div className="relative w-64 max-w-sm">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            ref={searchRef}
+            type="text"
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="ค้นหาเอกสาร... เช่น บค.1/2568"
+            className="h-8 w-full rounded-md border border-gray-200 bg-gray-50 pl-8 pr-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 transition-colors"
+          />
+        </div>
       </div>
 
       {/* Right: User menu */}

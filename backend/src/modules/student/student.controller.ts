@@ -7,6 +7,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { StudentService } from './student.service';
 import { AddStudentDto } from './dto/add-student.dto';
@@ -18,7 +19,11 @@ import { AddClassroomBudgetDto } from './dto/add-classroom-budget.dto';
 import { UpdateClassroomBudgetDto } from './dto/update-classroom-budget.dto';
 import { SetBudgetAllocationDto } from './dto/set-budget-allocation.dto';
 import { SetPerheadRateDto } from './dto/set-perhead-rate.dto';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
+@UseGuards(RolesGuard)
+@Roles(1, 2, 3, 6)
 @Controller('Student')
 export class StudentController {
   constructor(private readonly studentService: StudentService) {}

@@ -1,6 +1,8 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity({ name: 'admin' })
+@Index(['scId', 'del'])
+@Index(['del'])
 export class Admin {
   @PrimaryGeneratedColumn({ name: 'admin_id' })
   adminId: number;

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MasterScPolicy } from './entities/master-sc-policy.entity';
@@ -16,6 +16,8 @@ import { UpdateObecPolicyDto } from './dto/update-obec-policy.dto';
 
 @Injectable()
 export class SettingsService {
+  private readonly logger = new Logger(SettingsService.name);
+
   constructor(
     @InjectRepository(MasterScPolicy)
     private readonly masterScPolicyRepository: Repository<MasterScPolicy>,
@@ -71,7 +73,7 @@ export class SettingsService {
       await this.masterScPolicyRepository.save(policy);
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Add school policy error:', error);
+      this.logger.error('Add school policy error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' };
     }
   }
@@ -101,7 +103,7 @@ export class SettingsService {
       await this.masterScPolicyRepository.save(policy);
       return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Update school policy error:', error);
+      this.logger.error('Update school policy error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการอัปเดตข้อมูล' };
     }
   }
@@ -122,7 +124,7 @@ export class SettingsService {
       await this.masterScPolicyRepository.save(policy);
       return '1';
     } catch (error) {
-      console.error('Remove school policy error:', error);
+      this.logger.error('Remove school policy error:', error);
       return '0';
     }
   }
@@ -163,7 +165,7 @@ export class SettingsService {
       await this.masterObecPolicyRepository.save(policy);
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Add OBEC policy error:', error);
+      this.logger.error('Add OBEC policy error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' };
     }
   }
@@ -193,7 +195,7 @@ export class SettingsService {
       await this.masterObecPolicyRepository.save(policy);
       return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Update OBEC policy error:', error);
+      this.logger.error('Update OBEC policy error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการอัปเดตข้อมูล' };
     }
   }
@@ -214,7 +216,7 @@ export class SettingsService {
       await this.masterObecPolicyRepository.save(policy);
       return '1';
     } catch (error) {
-      console.error('Remove OBEC policy error:', error);
+      this.logger.error('Remove OBEC policy error:', error);
       return '0';
     }
   }
@@ -251,30 +253,33 @@ export class SettingsService {
       await this.masterSaoPolicyRepository.save(item);
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('addSaoPolicy error:', error);
+      this.logger.error('addSaoPolicy error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' };
     }
   }
 
   async updateSaoPolicy(payload: any) {
-    if (!payload.sao_policy_id) return { flag: false, ms: 'ไม่พบ sao_policy_id' };
+    if (!payload.sao_policy_id)
+      return { flag: false, ms: 'ไม่พบ sao_policy_id' };
     const item = await this.masterSaoPolicyRepository.findOne({
       where: { saoPolicyId: payload.sao_policy_id, del: 0 },
     });
     if (!item) return { flag: false, ms: 'ไม่พบข้อมูล' };
-    if (payload.sao_policy_name !== undefined) item.saoPolicyName = payload.sao_policy_name;
+    if (payload.sao_policy_name !== undefined)
+      item.saoPolicyName = payload.sao_policy_name;
     if (payload.up_by !== undefined) item.upBy = payload.up_by;
     try {
       await this.masterSaoPolicyRepository.save(item);
       return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('updateSaoPolicy error:', error);
+      this.logger.error('updateSaoPolicy error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการอัปเดตข้อมูล' };
     }
   }
 
   async removeSaoPolicy(payload: any) {
-    if (!payload.sao_policy_id) return { flag: false, ms: 'ไม่พบ sao_policy_id' };
+    if (!payload.sao_policy_id)
+      return { flag: false, ms: 'ไม่พบ sao_policy_id' };
     const item = await this.masterSaoPolicyRepository.findOne({
       where: { saoPolicyId: payload.sao_policy_id, del: 0 },
     });
@@ -284,7 +289,7 @@ export class SettingsService {
       await this.masterSaoPolicyRepository.save(item);
       return { flag: true, ms: 'ลบข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('removeSaoPolicy error:', error);
+      this.logger.error('removeSaoPolicy error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการลบข้อมูล' };
     }
   }
@@ -323,31 +328,35 @@ export class SettingsService {
       await this.masterMoePolicyRepository.save(item);
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('addMoePolicy error:', error);
+      this.logger.error('addMoePolicy error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' };
     }
   }
 
   async updateMoePolicy(payload: any) {
-    if (!payload.moe_policy_id) return { flag: false, ms: 'ไม่พบ moe_policy_id' };
+    if (!payload.moe_policy_id)
+      return { flag: false, ms: 'ไม่พบ moe_policy_id' };
     const item = await this.masterMoePolicyRepository.findOne({
       where: { moePolicyId: payload.moe_policy_id, del: 0 },
     });
     if (!item) return { flag: false, ms: 'ไม่พบข้อมูล' };
-    if (payload.policy_name !== undefined) item.policyName = payload.policy_name;
-    if (payload.policy_detail !== undefined) item.policyDetail = payload.policy_detail;
+    if (payload.policy_name !== undefined)
+      item.policyName = payload.policy_name;
+    if (payload.policy_detail !== undefined)
+      item.policyDetail = payload.policy_detail;
     if (payload.up_by !== undefined) item.upBy = payload.up_by;
     try {
       await this.masterMoePolicyRepository.save(item);
       return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('updateMoePolicy error:', error);
+      this.logger.error('updateMoePolicy error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการอัปเดตข้อมูล' };
     }
   }
 
   async removeMoePolicy(payload: any) {
-    if (!payload.moe_policy_id) return { flag: false, ms: 'ไม่พบ moe_policy_id' };
+    if (!payload.moe_policy_id)
+      return { flag: false, ms: 'ไม่พบ moe_policy_id' };
     const item = await this.masterMoePolicyRepository.findOne({
       where: { moePolicyId: payload.moe_policy_id, del: 0 },
     });
@@ -357,7 +366,7 @@ export class SettingsService {
       await this.masterMoePolicyRepository.save(item);
       return { flag: true, ms: 'ลบข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('removeMoePolicy error:', error);
+      this.logger.error('removeMoePolicy error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการลบข้อมูล' };
     }
   }
@@ -396,7 +405,7 @@ export class SettingsService {
       await this.masterQuickWinRepository.save(item);
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('addQuickWin error:', error);
+      this.logger.error('addQuickWin error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' };
     }
   }
@@ -414,7 +423,7 @@ export class SettingsService {
       await this.masterQuickWinRepository.save(item);
       return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('updateQuickWin error:', error);
+      this.logger.error('updateQuickWin error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการอัปเดตข้อมูล' };
     }
   }
@@ -430,7 +439,7 @@ export class SettingsService {
       await this.masterQuickWinRepository.save(item);
       return { flag: true, ms: 'ลบข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('removeQuickWin error:', error);
+      this.logger.error('removeQuickWin error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการลบข้อมูล' };
     }
   }
@@ -471,7 +480,7 @@ export class SettingsService {
       await this.masterSaoRepository.save(item);
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('addSao error:', error);
+      this.logger.error('addSao error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' };
     }
   }
@@ -497,7 +506,7 @@ export class SettingsService {
       await this.masterSaoRepository.save(item);
       return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('updateSao error:', error);
+      this.logger.error('updateSao error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการอัปเดตข้อมูล' };
     }
   }
@@ -521,7 +530,7 @@ export class SettingsService {
       await this.masterSaoRepository.save(item);
       return { flag: true, ms: 'ลบข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('removeSao error:', error);
+      this.logger.error('removeSao error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการลบข้อมูล' };
     }
   }
@@ -571,7 +580,7 @@ export class SettingsService {
       await this.masterCbLevelRepository.save(item);
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('addClassroomBudget error:', error);
+      this.logger.error('addClassroomBudget error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' };
     }
   }
@@ -583,13 +592,14 @@ export class SettingsService {
     });
     if (!item) return { flag: false, ms: 'ไม่พบข้อมูล' };
     if (payload.level_name !== undefined) item.levelName = payload.level_name;
-    if (payload.budget_amount !== undefined) item.budgetAmount = payload.budget_amount;
+    if (payload.budget_amount !== undefined)
+      item.budgetAmount = payload.budget_amount;
     if (payload.up_by !== undefined) item.upBy = payload.up_by;
     try {
       await this.masterCbLevelRepository.save(item);
       return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('updateClassroomBudget error:', error);
+      this.logger.error('updateClassroomBudget error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการอัปเดตข้อมูล' };
     }
   }
@@ -605,7 +615,7 @@ export class SettingsService {
       await this.masterCbLevelRepository.save(item);
       return { flag: true, ms: 'ลบข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('removeClassroomBudget error:', error);
+      this.logger.error('removeClassroomBudget error:', error);
       return { flag: false, ms: 'เกิดข้อผิดพลาดในการลบข้อมูล' };
     }
   }
@@ -685,8 +695,10 @@ export class SettingsService {
     if (!item) return { flag: false, ms: 'ไม่พบข้อมูล' };
 
     if (payload.bit_name !== undefined) item.budgetType = payload.bit_name;
-    if (payload.budget_type_calc !== undefined) item.budgetTypeCalc = payload.budget_type_calc;
-    if (payload.budget_borrow_type !== undefined) item.budgetBorrowType = payload.budget_borrow_type;
+    if (payload.budget_type_calc !== undefined)
+      item.budgetTypeCalc = payload.budget_type_calc;
+    if (payload.budget_borrow_type !== undefined)
+      item.budgetBorrowType = payload.budget_borrow_type;
     if (payload.up_by !== undefined) item.upBy = payload.up_by;
 
     try {

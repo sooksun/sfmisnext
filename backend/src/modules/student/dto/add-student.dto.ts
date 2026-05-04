@@ -1,4 +1,4 @@
-import { IsInt, IsString, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class AddStudentDto {
   @IsInt()
@@ -17,6 +17,7 @@ export class AddStudentDto {
   @Min(0)
   st_count: number;
 
+  @IsOptional()
   @IsInt()
   up_by?: number;
 }

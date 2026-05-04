@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { User, YearData } from '@/lib/types'
 
 interface UserStore {
@@ -21,6 +21,10 @@ export const useUserStore = create<UserStore>()(
     }),
     {
       name: 'sfmis-user',
-    }
-  )
+      // sessionStorage แทน localStorage — ข้อมูลหายเมื่อปิด tab → ลด XSS surface
+      storage: createJSONStorage(() =>
+        typeof window !== 'undefined' ? sessionStorage : undefined!,
+      ),
+    },
+  ),
 )

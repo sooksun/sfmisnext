@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -9,7 +9,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
-import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { DeleteWithReasonDialog } from '@/components/shared/delete-with-reason-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime } from '@/lib/utils'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface BankAccount {
   ba_id: number
@@ -50,20 +51,13 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export default function AccountBankPage() {
+  const { scId } = useAppContext()
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<BankAccount | null>(null)
   const [editing, setEditing] = useState<BankAccount | null>(null)
-  const [scId, setScId] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['account-bank', scId],
@@ -106,8 +100,8 @@ export default function AccountBankPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (item: BankAccount) =>
-      apiPost('Bank/removeBankAccount', { ba_id: item.ba_id }),
+    mutationFn: ({ item, reason }: { item: BankAccount; reason: string }) =>
+      apiPost('Bank/removeBankAccount', { ba_id: item.ba_id, reason }),
     onSuccess: (res: any) => {
       if (res.flag) {
         toast.success('ลบเรียบร้อยแล้ว')
@@ -241,14 +235,11 @@ export default function AccountBankPage() {
         </div>
       </FormDialog>
 
-      <ConfirmDialog
+      <DeleteWithReasonDialog
         open={!!deleteTarget}
-        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
-        onCancel={() => setDeleteTarget(null)}
-        title="ยืนยันการลบ"
-        description={`ต้องการลบบัญชี "${deleteTarget?.ba_name}" (${deleteTarget?.ba_no}) หรือไม่?`}
-        confirmLabel="ลบ"
-        variant="destructive"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={(reason) => { if (deleteTarget) deleteMutation.mutate({ item: deleteTarget, reason }) }}
+        loading={deleteMutation.isPending}
       />
     </div>
   )

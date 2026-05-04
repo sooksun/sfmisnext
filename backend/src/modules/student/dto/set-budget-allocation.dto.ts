@@ -1,4 +1,4 @@
-import { IsInt, IsArray, ValidateNested } from 'class-validator';
+import { IsInt, IsArray, IsOptional, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class BudgetAllocationItemDto {
@@ -21,6 +21,7 @@ export class SetBudgetAllocationDto {
   @Type(() => BudgetAllocationItemDto)
   budget_types: BudgetAllocationItemDto[];
 
+  @IsOptional()
   @IsInt()
-  up_by: number;
+  up_by?: number;
 }

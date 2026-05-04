@@ -9,6 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { SchoolYearService } from './school-year.service';
+import { PageSizePipe } from '../../common/pipes/page-size.pipe';
 
 @Controller('B_school_year')
 export class BSchoolYearController {
@@ -18,7 +19,7 @@ export class BSchoolYearController {
   @HttpCode(HttpStatus.OK)
   loadSchoolYearGet(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.schoolYearService.loadAllSchoolYears(page, pageSize);
   }
@@ -27,7 +28,7 @@ export class BSchoolYearController {
   @HttpCode(HttpStatus.OK)
   loadSchoolYear(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.schoolYearService.loadAllSchoolYears(page, pageSize);
   }

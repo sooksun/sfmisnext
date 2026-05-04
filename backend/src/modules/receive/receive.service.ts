@@ -1,11 +1,27 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { PlnReceive } from './entities/pln-receive.entity';
 import { PlnReceiveDetail } from './entities/pln-receive-detail.entity';
 import { AddReceiveDto } from './dto/add-receive.dto';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
+import { FinancialAuditService } from '../financial-audit/financial-audit.service';
+
+/**
+ * Map receive_money_type → money_channel
+ *   receive_money_type: 1=เช็ค, 2=เงินสด, 3=โอนเงิน
+ *   money_channel:      1=cash, 2=bank
+ * เงินสด (2) → cash ; เช็ค/โอน (1/3) → bank ; อื่น → cash (default)
+ */
+function mapReceiveChannel(
+  receiveMoneyType: number | null | undefined,
+): number {
+  if (receiveMoneyType === 2) return 1;
+  if (receiveMoneyType === 1 || receiveMoneyType === 3) return 2;
+  return 1;
+}
 
 @Injectable()
 export class ReceiveService {
@@ -18,6 +34,8 @@ export class ReceiveService {
     private readonly adminRepository: Repository<Admin>,
     @InjectRepository(BudgetIncomeType)
     private readonly budgetIncomeTypeRepository: Repository<BudgetIncomeType>,
+    private readonly dataSource: DataSource,
+    private readonly financialAuditService: FinancialAuditService,
   ) {}
 
   async loadReceive(scId: number, syId: number, budgetYear: string) {
@@ -155,93 +173,198 @@ export class ReceiveService {
     }));
   }
 
+  async loadReceiveById(prId: number, scId: number) {
+    const receive = await this.plnReceiveRepository.findOne({
+      where: { prId, scId, del: 0 },
+    });
+    if (!receive) return null;
+
+    const details = await this.plnReceiveDetailRepository.find({
+      where: { prId, del: 0 },
+    });
+
+    // batch load budget type names
+    const bgTypeIds = [
+      ...new Set(details.map((d) => d.bgTypeId).filter(Boolean)),
+    ] as number[];
+    const btList = bgTypeIds.length
+      ? await this.budgetIncomeTypeRepository.find({
+          where: { bgTypeId: In(bgTypeIds) },
+        })
+      : [];
+    const btMap = new Map(btList.map((b) => [b.bgTypeId, b.budgetType]));
+
+    return {
+      pr_id: receive.prId,
+      pr_no: receive.prNo,
+      sc_id: receive.scId,
+      sy_id: receive.syId,
+      budget_year: receive.budgetYear,
+      receive_form: receive.receiveForm,
+      receive_money_type: receive.receiveMoneyType,
+      receive_date: receive.receiveDate,
+      cf_transaction: receive.cfTransaction,
+      up_by: receive.upBy,
+      details: details.map((d) => ({
+        prd_id: d.prdId,
+        bg_type_id: d.bgTypeId,
+        bg_type_name: btMap.get(d.bgTypeId!) ?? '',
+        prd_detail: d.prdDetail,
+        prd_budget: d.prdBudget ?? 0,
+      })),
+      total: details.reduce((s, d) => s + (d.prdBudget ?? 0), 0),
+    };
+  }
+
   async addReceive(dto: AddReceiveDto) {
-    // Create or update pln_receive
-    let receive: PlnReceive;
-    if (dto.pr_id && dto.pr_id > 0) {
-      const foundReceive = await this.plnReceiveRepository.findOne({
-        where: { prId: dto.pr_id, del: 0 },
-      });
-      if (!foundReceive) {
-        return { flag: false, ms: 'ไม่พบข้อมูลการรับเงิน' };
+    return this.dataSource.transaction(async (manager) => {
+      // Create or update pln_receive
+      let receive: PlnReceive;
+      if (dto.pr_id && dto.pr_id > 0) {
+        const foundReceive = await manager.findOne(PlnReceive, {
+          where: { prId: dto.pr_id, del: 0 },
+        });
+        if (!foundReceive) {
+          return { flag: false, ms: 'ไม่พบข้อมูลการรับเงิน' };
+        }
+        receive = foundReceive;
+      } else {
+        receive = manager.create(PlnReceive, {});
       }
-      receive = foundReceive;
-    } else {
-      receive = this.plnReceiveRepository.create({});
-    }
 
-    receive.prNo = dto.pr_no ?? null;
-    receive.scId = dto.sc_id;
-    receive.receiveForm = dto.receive_form ?? dto.note ?? null;
-    receive.syId = dto.sy_id;
-    receive.budgetYear = dto.budget_year;
-    receive.userReceive = dto.user_receive ?? 0;
-    // Support both receive_money_type and budget_type_id from frontend
-    receive.receiveMoneyType =
-      dto.receive_money_type ?? dto.budget_type_id ?? 0;
-    receive.receiveDate = new Date(dto.receive_date);
-    receive.cfTransaction = dto.cf_transaction ?? 0;
-    receive.upBy = dto.up_by ?? null;
+      receive.prNo = dto.pr_no ?? null;
+      receive.scId = dto.sc_id;
+      receive.receiveForm = dto.receive_form ?? dto.note ?? null;
+      receive.syId = dto.sy_id;
+      receive.budgetYear = dto.budget_year;
+      receive.userReceive = dto.user_receive ?? 0;
+      receive.receiveMoneyType =
+        dto.receive_money_type ?? dto.budget_type_id ?? 0;
+      receive.receiveDate = new Date(dto.receive_date);
+      receive.cfTransaction = dto.cf_transaction ?? 0;
+      receive.upBy = dto.up_by ?? null;
 
-    await this.plnReceiveRepository.save(receive);
+      await manager.save(PlnReceive, receive);
 
-    // Handle receive details - support both receiveList array and flat amount
-    const receiveList = dto.receiveList ?? [];
+      // Handle receive details - support both receiveList array and flat amount
+      const receiveList = dto.receiveList ?? [];
 
-    // If no receiveList but amount + budget_type_id provided (from simple frontend form),
-    // auto-create a single detail record
-    if (receiveList.length === 0 && dto.amount && receive.receiveMoneyType) {
-      const detail = this.plnReceiveDetailRepository.create({
-        prId: receive.prId,
-      });
-      detail.bgTypeId = receive.receiveMoneyType;
-      detail.prdDetail = receive.receiveForm ?? null;
-      detail.prdBudget = Number(dto.amount);
-      detail.upBy = receive.upBy ?? null;
-      await this.plnReceiveDetailRepository.save(detail);
-    }
+      if (receiveList.length === 0 && dto.amount && receive.receiveMoneyType) {
+        const detail = manager.create(PlnReceiveDetail, { prId: receive.prId });
+        detail.bgTypeId = receive.receiveMoneyType;
+        detail.prdDetail = receive.receiveForm ?? null;
+        detail.prdBudget = Number(dto.amount);
+        detail.upBy = receive.upBy ?? null;
+        await manager.save(PlnReceiveDetail, detail);
+      }
 
-    if (receiveList.length > 0) {
       for (const detailItem of receiveList) {
         let detail: PlnReceiveDetail;
         if (detailItem.prd_id && detailItem.prd_id > 0) {
-          const foundDetail = await this.plnReceiveDetailRepository.findOne({
+          const foundDetail = await manager.findOne(PlnReceiveDetail, {
             where: { prdId: detailItem.prd_id, del: 0 },
           });
-          if (!foundDetail) {
-            continue;
-          }
+          if (!foundDetail) continue;
           detail = foundDetail;
         } else {
-          detail = this.plnReceiveDetailRepository.create({
-            prId: receive.prId,
-          });
+          detail = manager.create(PlnReceiveDetail, { prId: receive.prId });
         }
-
         detail.bgTypeId = detailItem.bg_type_id;
         detail.prdDetail = detailItem.prd_detail || null;
         detail.prdBudget = detailItem.prd_budget;
         detail.upBy = detailItem.up_by ?? null;
-
-        await this.plnReceiveDetailRepository.save(detail);
+        await manager.save(PlnReceiveDetail, detail);
       }
-    }
 
-    // Handle deleted details
-    if (dto.receiveList_del && dto.receiveList_del.length > 0) {
-      for (const detailItem of dto.receiveList_del) {
+      // Handle deleted details
+      for (const detailItem of dto.receiveList_del ?? []) {
         if (detailItem.prd_id && detailItem.prd_id > 0) {
-          const detail = await this.plnReceiveDetailRepository.findOne({
+          const detail = await manager.findOne(PlnReceiveDetail, {
             where: { prdId: detailItem.prd_id, del: 0 },
           });
           if (detail) {
             detail.del = 1;
-            await this.plnReceiveDetailRepository.save(detail);
+            await manager.save(PlnReceiveDetail, detail);
           }
         }
       }
-    }
 
-    return { flag: true };
+      // ── Sync financial_transactions (ledger) ──────────────────────────
+      // ลบ transactions เก่าของ receive นี้ (กรณี update) แล้วสร้างใหม่ตาม detail
+      await manager
+        .createQueryBuilder()
+        .update(FinancialTransactions)
+        .set({ del: 1 })
+        .where('pr_id = :prId AND type = 1 AND del = :del', {
+          prId: receive.prId,
+          del: 0,
+        })
+        .execute();
+
+      const channel = mapReceiveChannel(receive.receiveMoneyType);
+      const activeDetails = await manager.find(PlnReceiveDetail, {
+        where: { prId: receive.prId, del: 0 },
+      });
+      for (const d of activeDetails) {
+        const ft = manager.create(FinancialTransactions, {
+          type: 1,
+          bgTypeId: d.bgTypeId ?? 0,
+          amount: Number(d.prdBudget ?? 0),
+          scId: receive.scId ?? 0,
+          syId: receive.syId ?? null,
+          budgetYear: receive.budgetYear ? Number(receive.budgetYear) : null,
+          upBy: receive.upBy ?? 0,
+          prId: receive.prId,
+          prdId: d.prdId,
+          rwId: 0,
+          prbId: 0,
+          moneyChannel: channel,
+          baId: null,
+          del: 0,
+          createDate: receive.receiveDate ?? new Date(),
+          updateDate: new Date(),
+        });
+        await manager.save(FinancialTransactions, ft);
+      }
+
+      return { flag: true };
+    });
+  }
+
+  async deleteReceive(prId: number, scId: number, upBy?: number) {
+    return this.dataSource.transaction(async (manager) => {
+      const receive = await manager.findOne(PlnReceive, {
+        where: { prId, scId, del: 0 },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!receive) return { flag: false, ms: 'ไม่พบข้อมูลการรับเงิน' };
+
+      const dateStr = receive.receiveDate
+        ? receive.receiveDate instanceof Date
+          ? receive.receiveDate.toISOString().slice(0, 10)
+          : String(receive.receiveDate).slice(0, 10)
+        : null;
+      if (dateStr) {
+        const locked = await this.financialAuditService.isDateLocked(scId, dateStr);
+        if (locked) {
+          return {
+            flag: false,
+            ms: `วันที่ ${dateStr} ถูกลงนามแล้ว ไม่สามารถลบรายการรับเงินได้`,
+          };
+        }
+      }
+
+      await manager.update(PlnReceiveDetail, { prId, del: 0 }, { del: 1 });
+      await manager
+        .createQueryBuilder()
+        .update(FinancialTransactions)
+        .set({ del: 1 })
+        .where('pr_id = :prId AND type = 1 AND del = :del', { prId, del: 0 })
+        .execute();
+      receive.del = 1;
+      if (upBy !== undefined) receive.upBy = upBy;
+      await manager.save(PlnReceive, receive);
+      return { flag: true, ms: 'ลบข้อมูลการรับเงินเรียบร้อยแล้ว' };
+    });
   }
 }

@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { SchoolService } from './school.service';
 import { School } from './entities/school.entity';
 import { BudgetIncomeTypeSchool } from './entities/budget-income-type-school.entity';
+import { DeleteLogService } from '../delete-log/delete-log.service';
 
 function createMockSchool(overrides: Partial<School> = {}): School {
   return {
@@ -38,7 +39,14 @@ describe('SchoolService', () => {
       providers: [
         SchoolService,
         { provide: getRepositoryToken(School), useValue: schoolRepo },
-        { provide: getRepositoryToken(BudgetIncomeTypeSchool), useValue: budgetTypeRepo },
+        {
+          provide: getRepositoryToken(BudgetIncomeTypeSchool),
+          useValue: budgetTypeRepo,
+        },
+        {
+          provide: DeleteLogService,
+          useValue: { log: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 

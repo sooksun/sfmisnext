@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not, In } from 'typeorm';
 import { ParcelOrder } from './entities/parcel-order.entity';
 import { ParcelDetail } from './entities/parcel-detail.entity';
 import { PlnProjApprove } from './entities/pln-proj-approve.entity';
@@ -13,6 +13,10 @@ import { UpdateProjectApproveDto } from './dto/update-project-approve.dto';
 import { RemoveParcelOrderDto } from './dto/remove-parcel-order.dto';
 import { Partner } from '../general-db/entities/partner.entity';
 import { Admin } from '../admin/entities/admin.entity';
+import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
+
+// สถานะที่ถือว่า "ยกเลิก/ไม่อนุมัติ" — ไม่นับในยอดที่ใช้ไป
+const CANCELLED_STATUSES = [101, 201] as const;
 
 @Injectable()
 export class ProjectApproveService {
@@ -27,6 +31,8 @@ export class ProjectApproveService {
     private readonly partnerRepository: Repository<Partner>,
     @InjectRepository(Admin)
     private readonly adminRepository: Repository<Admin>,
+    @InjectRepository(RequestWithdraw)
+    private readonly requestWithdrawRepository: Repository<RequestWithdraw>,
   ) {}
 
   async loadProjectApprove(
@@ -60,6 +66,12 @@ export class ProjectApproveService {
       remark_cf_business: item.remarkCfBusiness ?? '',
       remark_cf_suppile: item.remarkCfSuppile ?? '',
       remark_cf_ceo: item.remarkCfCeo ?? '',
+      cancel_reason: item.cancelReason ?? '',
+      cancel_by: item.cancelBy ?? null,
+      cancel_date: item.cancelDate,
+      is_urgent: item.isUrgent ?? 0,
+      urgent_clause: item.urgentClause ?? '',
+      urgent_reason: item.urgentReason ?? '',
       sc_id: item.scId,
       acad_year: item.acadYear,
       del: item.del,
@@ -106,9 +118,12 @@ export class ProjectApproveService {
     }));
   }
 
-  async loadSuppilesByOrderID(orderId: number) {
-    // Load supplies by order_id from parcel_detail
-    // This might need to join with supplies table
+  async loadSuppilesByOrderID(orderId: number, scId: number) {
+    const order = await this.parcelOrderRepository.findOne({
+      where: { orderId, scId, del: 0 },
+    });
+    if (!order) return [];
+
     const details = await this.parcelDetailRepository.find({
       where: {
         orderId,
@@ -134,114 +149,151 @@ export class ProjectApproveService {
     scId: number,
     _year: number,
   ) {
-    // Calculate budget balance
-    // This is a simplified version - might need to join with budget tables
     const order = await this.parcelOrderRepository.findOne({
-      where: {
-        orderId,
-        projectId,
-        scId,
-        del: 0,
-      },
+      where: { orderId, projectId, scId, del: 0 },
     });
 
-    if (!order) {
-      return 0;
-    }
+    if (!order) return 0;
 
-    // TODO: Calculate actual budget balance from project budget and expenses
-    return order.budgets || 0;
+    const allocatedBudget = order.budgets ?? 0;
+
+    // รวมยอดที่ขอเบิกไปแล้วในคำสั่งซื้อนี้
+    // ไม่นับสถานะ: 101=หัวหน้าไม่อนุมัติ, 201=ยกเลิกเช็ค
+    const result = await this.requestWithdrawRepository
+      .createQueryBuilder('rw')
+      .select('SUM(rw.amount)', 'totalWithdrawn')
+      .where('rw.order_id = :orderId', { orderId })
+      .andWhere('rw.del = 0')
+      .andWhere('rw.status NOT IN (:...cancelled)', {
+        cancelled: CANCELLED_STATUSES,
+      })
+      .getRawOne<{ totalWithdrawn: string }>();
+
+    const totalWithdrawn = Number(result?.totalWithdrawn ?? 0);
+    const remaining =
+      Math.round((allocatedBudget - totalWithdrawn) * 100) / 100;
+
+    return {
+      allocated: allocatedBudget,
+      withdrawn: Math.round(totalWithdrawn * 100) / 100,
+      remaining,
+    };
   }
 
-  async approveParcelByPlan(dto: ApproveParcelByPlanDto) {
-    const order = await this.parcelOrderRepository.findOne({
-      where: {
-        orderId: dto.order_id,
-        del: 0,
-      },
-    });
-
-    if (!order) {
-      return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
+  // Status flow: 0=ทบทวน, 1=ขอ, 2=แผน, 3=การเงิน, 4=พัสดุ, 5=ผอ., 6=กรรมการ, 7=จัดซื้อ, 8=สำเร็จ, 9=ยกเลิก
+  private assertValidTransition(
+    current: number,
+    target: number,
+    allowedFrom: number,
+    stepName: string,
+  ) {
+    // ยืดหยุ่นสำหรับ reject (target=0): อนุญาตจาก step ปัจจุบันเท่านั้น
+    if (target === 0) {
+      if (current !== allowedFrom) {
+        throw new BadRequestException(
+          `ไม่สามารถปฏิเสธได้: สถานะปัจจุบัน (${current}) ไม่ใช่ขั้นตอน ${stepName}`,
+        );
+      }
+      return;
     }
-
-    order.orderStatus = dto.order_status;
-    if (dto.remark) {
-      order.remarkCfPlan = dto.remark;
+    // approve: สถานะปัจจุบันต้องเป็น allowedFrom
+    if (current !== allowedFrom) {
+      throw new BadRequestException(
+        `ไม่สามารถดำเนินการได้: ต้องอยู่ที่สถานะ ${allowedFrom} ก่อน (ปัจจุบัน: ${current})`,
+      );
     }
-    if (dto.order_status === 0) {
-      // Rejected
-      order.remark = dto.remark_cf || '';
-    }
-
-    await this.parcelOrderRepository.save(order);
-
-    return { flag: true };
   }
 
-  async approveParcelByBusiness(dto: ApproveParcelByBusinessDto) {
+  async approveParcelByPlan(dto: ApproveParcelByPlanDto, scId: number) {
     const order = await this.parcelOrderRepository.findOne({
-      where: {
-        orderId: dto.order_id,
-        del: 0,
-      },
-    });
-
-    if (!order) {
-      return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
-    }
-
-    order.orderStatus = dto.order_status;
-    if (dto.remark) {
-      order.remarkCfBusiness = dto.remark;
-    }
-    if (dto.order_status === 0) {
-      // Rejected
-      order.remark = dto.remark_cf || '';
-    }
-
-    await this.parcelOrderRepository.save(order);
-
-    return { flag: true };
-  }
-
-  async approveParcelBySupplie(dto: { order_id: number; order_status: number; remark?: string; remark_cf?: string }) {
-    const order = await this.parcelOrderRepository.findOne({
-      where: { orderId: dto.order_id, del: 0 },
+      where: { orderId: dto.order_id, scId, del: 0 },
     });
     if (!order) return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
 
-    order.orderStatus = dto.order_status; // 4 = อนุมัติ, 0 = ทบทวน
-    if (dto.remark) order.remarkCfSuppile = dto.remark;
-    if (dto.order_status === 0) order.remark = dto.remark_cf || '';
+    // H3: State Machine — ต้องอยู่ที่สถานะ 1 (ขอ) ก่อน
+    this.assertValidTransition(order.orderStatus, dto.order_status, 1, 'แผน');
+
+    if (dto.remark) order.remarkCfPlan = dto.remark;
+    if (dto.order_status === 0) {
+      // M6: เก็บ remark เดิมไว้; เพิ่ม remark_cf เป็น prefix แทนการทับ
+      order.remark = dto.remark_cf
+        ? `[ปฏิเสธ] ${dto.remark_cf}`
+        : order.remark;
+    }
+    order.orderStatus = dto.order_status;
 
     await this.parcelOrderRepository.save(order);
     return { flag: true };
   }
 
-  async approveParcelByCeo(dto: ApproveParcelByCeoDto) {
+  async approveParcelByBusiness(dto: ApproveParcelByBusinessDto, scId: number) {
     const order = await this.parcelOrderRepository.findOne({
-      where: {
-        orderId: dto.order_id,
-        del: 0,
-      },
+      where: { orderId: dto.order_id, scId, del: 0 },
     });
+    if (!order) return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
 
-    if (!order) {
-      return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
-    }
+    // H3: State Machine — ต้องอยู่ที่สถานะ 2 (แผน) ก่อน
+    this.assertValidTransition(order.orderStatus, dto.order_status, 2, 'การเงิน');
 
-    order.orderStatus = dto.order_status;
-    if (dto.remark) {
-      order.remarkCfCeo = dto.remark;
-    }
+    if (dto.remark) order.remarkCfBusiness = dto.remark;
     if (dto.order_status === 0) {
-      // Rejected
-      order.remark = dto.remark_cf || '';
+      order.remark = dto.remark_cf
+        ? `[ปฏิเสธ] ${dto.remark_cf}`
+        : order.remark;
     }
+    order.orderStatus = dto.order_status;
 
     await this.parcelOrderRepository.save(order);
+    return { flag: true };
+  }
 
+  async approveParcelBySupplie(
+    dto: {
+      order_id: number;
+      order_status: number;
+      remark?: string;
+      remark_cf?: string;
+    },
+    scId: number,
+  ) {
+    const order = await this.parcelOrderRepository.findOne({
+      where: { orderId: dto.order_id, scId, del: 0 },
+    });
+    if (!order) return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
+
+    // H3: State Machine — ต้องอยู่ที่สถานะ 3 (การเงิน) ก่อน
+    this.assertValidTransition(order.orderStatus, dto.order_status, 3, 'พัสดุ');
+
+    if (dto.remark) order.remarkCfSuppile = dto.remark;
+    if (dto.order_status === 0) {
+      order.remark = dto.remark_cf
+        ? `[ปฏิเสธ] ${dto.remark_cf}`
+        : order.remark;
+    }
+    order.orderStatus = dto.order_status;
+
+    await this.parcelOrderRepository.save(order);
+    return { flag: true };
+  }
+
+  async approveParcelByCeo(dto: ApproveParcelByCeoDto, scId: number) {
+    const order = await this.parcelOrderRepository.findOne({
+      where: { orderId: dto.order_id, scId, del: 0 },
+    });
+    if (!order) return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
+
+    // H3: State Machine — ต้องอยู่ที่สถานะ 4 (พัสดุ) ก่อน
+    this.assertValidTransition(order.orderStatus, dto.order_status, 4, 'ผอ.');
+
+    if (dto.remark) order.remarkCfCeo = dto.remark;
+    if (dto.order_status === 0) {
+      order.remark = dto.remark_cf
+        ? `[ปฏิเสธ] ${dto.remark_cf}`
+        : order.remark;
+    }
+    order.orderStatus = dto.order_status;
+
+    await this.parcelOrderRepository.save(order);
     return { flag: true };
   }
 
@@ -291,12 +343,9 @@ export class ProjectApproveService {
     return { flag: true };
   }
 
-  async updateProjectApprove(dto: UpdateProjectApproveDto) {
+  async updateProjectApprove(dto: UpdateProjectApproveDto, scId: number) {
     const projectApprove = await this.plnProjApproveRepository.findOne({
-      where: {
-        ppaId: dto.ppa_id,
-        del: 0,
-      },
+      where: { ppaId: dto.ppa_id, scId, del: 0 },
     });
 
     if (!projectApprove) {
@@ -386,12 +435,74 @@ export class ProjectApproveService {
     return { flag: true };
   }
 
-  async removeParcelOrder(dto: RemoveParcelOrderDto) {
+  async cancelParcelOrder(
+    dto: { order_id: number; cancel_reason: string; up_by?: number },
+    scId: number,
+  ) {
     const order = await this.parcelOrderRepository.findOne({
-      where: {
-        orderId: dto.order_id,
-        del: 0,
-      },
+      where: { orderId: dto.order_id, scId, del: 0 },
+    });
+    if (!order) return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
+    if (order.orderStatus === 9) {
+      return { flag: false, ms: 'คำสั่งซื้อนี้ถูกยกเลิกไปแล้ว' };
+    }
+    if (order.orderStatus === 8) {
+      return {
+        flag: false,
+        ms: 'คำสั่งซื้อเสร็จสมบูรณ์แล้ว ไม่สามารถยกเลิกได้',
+      };
+    }
+    if (!dto.cancel_reason?.trim()) {
+      return { flag: false, ms: 'กรุณาระบุเหตุผลการยกเลิก' };
+    }
+
+    order.orderStatus = 9;
+    order.cancelReason = dto.cancel_reason.trim();
+    order.cancelBy = dto.up_by ?? null;
+    order.cancelDate = new Date();
+    if (dto.up_by !== undefined) order.upBy = dto.up_by;
+
+    await this.parcelOrderRepository.save(order);
+    return { flag: true, ms: 'ยกเลิกคำสั่งซื้อเรียบร้อยแล้ว' };
+  }
+
+  async setParcelOrderUrgent(
+    dto: {
+      order_id: number;
+      is_urgent: number;
+      urgent_clause?: string;
+      urgent_reason?: string;
+      up_by?: number;
+    },
+    scId: number,
+  ) {
+    const order = await this.parcelOrderRepository.findOne({
+      where: { orderId: dto.order_id, scId, del: 0 },
+    });
+    if (!order) return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
+
+    const urgent = dto.is_urgent ? 1 : 0;
+    if (urgent && !dto.urgent_reason?.trim()) {
+      return { flag: false, ms: 'กรุณาระบุเหตุผลเร่งด่วน' };
+    }
+
+    order.isUrgent = urgent;
+    order.urgentClause = urgent
+      ? dto.urgent_clause?.trim() || '56(2)(ง)'
+      : null;
+    order.urgentReason = urgent ? (dto.urgent_reason?.trim() ?? null) : null;
+    if (dto.up_by !== undefined) order.upBy = dto.up_by;
+
+    await this.parcelOrderRepository.save(order);
+    return {
+      flag: true,
+      ms: urgent ? 'บันทึกรายการเร่งด่วนแล้ว' : 'ยกเลิกสถานะเร่งด่วนแล้ว',
+    };
+  }
+
+  async removeParcelOrder(dto: RemoveParcelOrderDto, scId: number) {
+    const order = await this.parcelOrderRepository.findOne({
+      where: { orderId: dto.order_id, scId, del: 0 },
     });
 
     if (!order) {

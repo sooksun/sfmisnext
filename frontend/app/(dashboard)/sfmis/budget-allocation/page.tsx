@@ -1,9 +1,10 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { apiGet } from '@/lib/api'
+import { useAppContext } from '@/hooks/use-app-context'
 
 // ชื่อฟิลด์ตามที่ backend ส่งกลับมา (budget.service.ts::loadPLNBudgetCategory)
 interface BudgetCategory {
@@ -18,36 +19,24 @@ interface BudgetCategory {
 }
 
 export default function BudgetAllocationPage() {
+  const { scId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const budgetYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
+  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const [page, setPage] = useState(0)
   const pageSize = 25
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [budgetYear, setBudgetYear] = useState('')
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-      if (years?.budget_date?.budget_year) setBudgetYear(String(years.budget_date.budget_year))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['budget-allocation', scId, syId, budgetYear],
+    queryKey: ['budget-allocation', scId, syId, apiYear],
     queryFn: () =>
       apiGet<BudgetCategory[]>(
-        `Budget/loadPLNBudgetCategory/${scId}/${syId}/${budgetYear}`
+        `Budget/loadPLNBudgetCategory/${scId}/${syId}/${apiYear}`
       ),
-    enabled: scId > 0 && syId > 0 && !!budgetYear,
+    enabled: scId > 0 && syId > 0 && !!apiYear,
   })
 
   const rows = Array.isArray(data) ? data : []
 
-  const columns = [
+  const columns = useMemo(() => [
     { header: 'ประเภทงบประมาณ', key: 'budget_cate' as keyof BudgetCategory },
     {
       header: 'วงเงินงบประมาณ (บาท)',
@@ -64,7 +53,7 @@ export default function BudgetAllocationPage() {
       ),
     },
     { header: 'ปีงบประมาณ', key: 'budget_year' as keyof BudgetCategory },
-  ]
+  ], [])
 
   return (
     <div className="flex flex-col flex-auto min-w-0">

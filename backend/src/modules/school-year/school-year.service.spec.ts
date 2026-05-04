@@ -41,7 +41,9 @@ describe('SchoolYearService', () => {
 
   beforeEach(async () => {
     // Reset all mocks
-    Object.values(mockQueryBuilder).forEach((fn) => (fn as jest.Mock).mockReset().mockReturnThis());
+    Object.values(mockQueryBuilder).forEach((fn) =>
+      fn.mockReset().mockReturnThis(),
+    );
     mockQueryBuilder.getMany.mockResolvedValue([]);
     mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
     mockQueryBuilder.getOne.mockResolvedValue(null);
@@ -183,7 +185,10 @@ describe('SchoolYearService', () => {
     it('should return success on update', async () => {
       repo.findOne.mockResolvedValue(createMockSchoolYear());
 
-      const result = await service.updateSchoolYear({ sy_id: 1, sy_year: 2568 } as any);
+      const result = await service.updateSchoolYear({
+        sy_id: 1,
+        sy_year: 2568,
+      } as any);
 
       expect(result).toEqual({ flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' });
     });
@@ -235,7 +240,9 @@ describe('SchoolYearService', () => {
       const result = await service.changeYear(1, 1);
 
       expect((result as any).flag).toBe(true);
-      expect((result as any).budget_date.sy_id).toBe((result as any).sy_date.sy_id);
+      expect((result as any).budget_date.sy_id).toBe(
+        (result as any).sy_date.sy_id,
+      );
     });
 
     it('should use budgetSyId when provided', async () => {

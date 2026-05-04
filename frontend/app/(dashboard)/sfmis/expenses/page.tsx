@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime } from '@/lib/utils'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface ExpenseRow {
   ex_id: number
@@ -60,26 +61,14 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export default function ExpensesPage() {
+  const { scId, budgetSyId } = useAppContext()
+  const budgetYear = String(budgetSyId)
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ExpenseRow | null>(null)
   const [editing, setEditing] = useState<ExpenseRow | null>(null)
-  const [scId, setScId] = useState(0)
-  const [budgetYear, setBudgetYear] = useState('')
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.budget_date?.sy_id) setBudgetYear(String(years.budget_date.sy_id))
-      else if (years?.sy_date?.sy_id) setBudgetYear(String(years.sy_date.sy_id))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['expenses', scId, budgetYear, page, pageSize],
@@ -167,7 +156,7 @@ export default function ExpensesPage() {
   const typeList = Array.isArray(budgetTypes) ? budgetTypes : []
   const yearList = Array.isArray(schoolYears) ? schoolYears : []
 
-  const columns = [
+  const columns = useMemo(() => [
     {
       header: 'จัดการ',
       render: (item: ExpenseRow) => (
@@ -199,7 +188,7 @@ export default function ExpensesPage() {
         </div>
       ),
     },
-  ]
+  ], [])
 
   return (
     <div className="flex flex-col flex-auto min-w-0">

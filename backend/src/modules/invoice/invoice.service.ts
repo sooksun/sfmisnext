@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull, Not, LessThan } from 'typeorm';
 import { RequestWithdraw } from './entities/request-withdraw.entity';
 import { AddInvoiceDto } from './dto/add-invoice.dto';
 import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
 import { Partner } from '../general-db/entities/partner.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { FinancialAuditService } from '../financial-audit/financial-audit.service';
 
 @Injectable()
 export class InvoiceService {
@@ -21,6 +22,7 @@ export class InvoiceService {
     private readonly adminRepository: Repository<Admin>,
     @InjectRepository(BudgetIncomeType)
     private readonly budgetIncomeTypeRepository: Repository<BudgetIncomeType>,
+    private readonly financialAuditService: FinancialAuditService,
   ) {}
 
   async loadInvoiceOrder(scId: number, yId: number) {
@@ -59,6 +61,7 @@ export class InvoiceService {
       .addSelect('rw.type_offer_check', 'type_offer_check')
       .addSelect('rw.status', 'status')
       .addSelect('rw.remark', 'remark')
+      .addSelect('rw.precheck_note', 'precheck_note')
       .addSelect('rw.sy_id', 'sy_id')
       .addSelect('rw.year', 'year')
       .addSelect('rw.up_by', 'up_by')
@@ -110,6 +113,7 @@ export class InvoiceService {
         del: 0,
       },
       order: { pId: 'ASC' },
+      take: 1000,
     });
 
     return partners.map((partner) => ({
@@ -121,20 +125,38 @@ export class InvoiceService {
     }));
   }
 
-  async loadBudgetType(_scId: number, _syId: number, _year: string) {
-    // Load budget income types with available budget
-    // This is a simplified version - might need to join with budget tables
+  async loadBudgetType(scId: number, syId: number, _year: string) {
     const budgetTypes = await this.budgetIncomeTypeRepository.find({
       where: { del: 0 },
       order: { bgTypeId: 'ASC' },
+      take: 1000,
     });
+
+    // ยอดเบิกสะสมแล้วต่อประเภทเงิน (status >= 200 = ผ่านอนุมัติ/ออกเช็คแล้ว)
+    const withdrawn = await this.requestWithdrawRepository
+      .createQueryBuilder('rw')
+      .select('rw.bg_type_id', 'bgTypeId')
+      .addSelect('SUM(rw.amount)', 'total')
+      .where(
+        'rw.sc_id = :scId AND rw.sy_id = :syId AND rw.del = 0 AND rw.status >= 200',
+        { scId, syId },
+      )
+      .groupBy('rw.bg_type_id')
+      .getRawMany<{ bgTypeId: number; total: string }>();
+
+    const withdrawnMap = new Map(
+      withdrawn.map((r) => [
+        Number(r.bgTypeId),
+        Math.round(Number(r.total) * 100) / 100,
+      ]),
+    );
 
     return budgetTypes.map((type) => ({
       bg_type_id: type.bgTypeId,
       budget_type_id: type.bgTypeId,
       budget_type: type.budgetType,
       budget_type_name: type.budgetType,
-      minWithdrawn: 0, // TODO: Calculate from budget tables
+      minWithdrawn: withdrawnMap.get(type.bgTypeId) ?? 0,
       disabled: false,
     }));
   }
@@ -159,6 +181,60 @@ export class InvoiceService {
   }
 
   async addInvoice(dto: AddInvoiceDto) {
+    // ── H4: ตรวจงบคงเหลือก่อนสร้างใบเบิก ──────────────────────────────────
+    if (dto.order_id && dto.order_id > 0 && dto.amount) {
+      const order = await this.parcelOrderRepository.findOne({
+        where: { orderId: dto.order_id, del: 0 },
+      });
+      if (order && order.budgets) {
+        const row = await this.requestWithdrawRepository
+          .createQueryBuilder('rw')
+          .select('COALESCE(SUM(rw.amount),0)', 'totalWithdrawn')
+          .where('rw.order_id = :orderId', { orderId: dto.order_id })
+          .andWhere('rw.del = 0')
+          .andWhere('rw.status NOT IN (:...cancelled)', { cancelled: [51, 201] })
+          .getRawOne<{ totalWithdrawn: string }>();
+        const remaining =
+          Number(order.budgets) - Number(row?.totalWithdrawn ?? 0);
+        if (dto.amount > remaining) {
+          return {
+            flag: false,
+            ms: `งบคงเหลือไม่เพียงพอ (คงเหลือ ${remaining.toLocaleString('th-TH')} บาท, ขอเบิก ${dto.amount.toLocaleString('th-TH')} บาท)`,
+          };
+        }
+      }
+    }
+
+    // ── ตรวจสอบเงินยืมค้างชำระ ─────────────────────────────────────────────
+    if (dto.rw_type === 1 && dto.user_request) {
+      const today = new Date().toISOString().substring(0, 10);
+      const outstanding = await this.requestWithdrawRepository.findOne({
+        where: {
+          scId: dto.sc_id,
+          rwType: 1,
+          userRequest: dto.user_request,
+          loanReturnedDate: IsNull(),
+          loanReturnDueDate: Not(IsNull()),
+          del: 0,
+        },
+      });
+      // ถ้ามีเงินยืมที่ยังไม่ได้คืนและเลยกำหนดแล้ว → block
+      if (outstanding && outstanding.loanReturnDueDate! < today) {
+        return {
+          flag: false,
+          ms: `มีเงินยืมค้างชำระ (ใบสำคัญ ${outstanding.noDoc ?? '—'}) เลยกำหนดส่งคืนแล้ว กรุณาส่งคืนก่อน`,
+        };
+      }
+    }
+
+    // ── auto-calc กำหนดส่งคืน ─────────────────────────────────────────────
+    let loanReturnDueDate: string | null = dto.loan_return_due_date ?? null;
+    if (dto.rw_type === 1 && dto.loan_start_date && !loanReturnDueDate) {
+      const due = new Date(dto.loan_start_date);
+      due.setDate(due.getDate() + 30);
+      loanReturnDueDate = due.toISOString().substring(0, 10);
+    }
+
     const invoice = this.requestWithdrawRepository.create({
       scId: dto.sc_id,
       noDoc: dto.no_doc,
@@ -187,6 +263,12 @@ export class InvoiceService {
       year: dto.year,
       upBy: dto.up_by ?? 0,
       del: dto.del ?? 0,
+      loanType: dto.loan_type ?? null,
+      loanStartDate: dto.loan_start_date ?? null,
+      loanReturnDueDate,
+      loanReturnedDate: dto.loan_returned_date ?? null,
+      loanReturnCash: dto.loan_return_cash ?? null,
+      loanReturnVoucherAmount: dto.loan_return_voucher_amount ?? null,
     });
 
     await this.requestWithdrawRepository.save(invoice);
@@ -200,7 +282,7 @@ export class InvoiceService {
     }
 
     const invoice = await this.requestWithdrawRepository.findOne({
-      where: { rwId: dto.rw_id, del: 0 },
+      where: { rwId: dto.rw_id, scId: dto.sc_id, del: 0 },
     });
 
     if (!invoice) {
@@ -239,10 +321,115 @@ export class InvoiceService {
     if (dto.remark !== undefined) invoice.remark = dto.remark;
     if (dto.del !== undefined) invoice.del = dto.del;
     if (dto.up_by !== undefined) invoice.upBy = dto.up_by;
+    if (dto.loan_type !== undefined) invoice.loanType = dto.loan_type;
+    if (dto.loan_start_date !== undefined)
+      invoice.loanStartDate = dto.loan_start_date;
+    if (dto.loan_return_due_date !== undefined)
+      invoice.loanReturnDueDate = dto.loan_return_due_date;
+    if (dto.loan_returned_date !== undefined)
+      invoice.loanReturnedDate = dto.loan_returned_date;
+    if (dto.loan_return_cash !== undefined)
+      invoice.loanReturnCash = dto.loan_return_cash;
+    if (dto.loan_return_voucher_amount !== undefined)
+      invoice.loanReturnVoucherAmount = dto.loan_return_voucher_amount;
 
     await this.requestWithdrawRepository.save(invoice);
 
     return { flag: true };
+  }
+
+  async loadLoanStatus(scId: number, syId: number) {
+    const loans = await this.requestWithdrawRepository
+      .createQueryBuilder('rw')
+      .leftJoin('admin', 'adm', 'adm.admin_id = rw.user_request')
+      .where('rw.sc_id = :scId', { scId })
+      .andWhere('rw.sy_id = :syId', { syId })
+      .andWhere('rw.rw_type = 1')
+      .andWhere('rw.del = 0')
+      .andWhere('rw.status >= 200') // อนุมัติและออกเช็คแล้ว
+      .select('rw.rw_id', 'rw_id')
+      .addSelect('rw.no_doc', 'no_doc')
+      .addSelect('rw.detail', 'detail')
+      .addSelect('rw.amount', 'amount')
+      .addSelect('rw.loan_type', 'loan_type')
+      .addSelect('rw.loan_start_date', 'loan_start_date')
+      .addSelect('rw.loan_return_due_date', 'loan_return_due_date')
+      .addSelect('rw.loan_returned_date', 'loan_returned_date')
+      .addSelect('rw.loan_return_cash', 'loan_return_cash')
+      .addSelect('rw.loan_return_voucher_amount', 'loan_return_voucher_amount')
+      .addSelect('rw.status', 'status')
+      .addSelect('rw.user_request', 'user_request')
+      .addSelect('adm.name', 'requester_name')
+      .orderBy('rw.loan_return_due_date', 'ASC')
+      .getRawMany();
+
+    const today = new Date().toISOString().substring(0, 10);
+
+    return loans.map((r) => {
+      const returned = !!r.loan_returned_date;
+      const returnTotal =
+        Number(r.loan_return_cash ?? 0) +
+        Number(r.loan_return_voucher_amount ?? 0);
+      let loanStatus: 'returned' | 'active' | 'overdue';
+      if (returned) {
+        loanStatus = 'returned';
+      } else if (r.loan_return_due_date && r.loan_return_due_date < today) {
+        loanStatus = 'overdue';
+      } else {
+        loanStatus = 'active';
+      }
+      return {
+        rw_id: r.rw_id,
+        no_doc: r.no_doc ?? '',
+        detail: r.detail ?? '',
+        amount: Number(r.amount ?? 0),
+        loan_type: r.loan_type,
+        loan_start_date: r.loan_start_date,
+        loan_return_due_date: r.loan_return_due_date,
+        loan_returned_date: r.loan_returned_date,
+        loan_return_cash: Number(r.loan_return_cash ?? 0),
+        loan_return_voucher_amount: Number(r.loan_return_voucher_amount ?? 0),
+        return_total: returnTotal,
+        loan_status: loanStatus,
+        requester_name: r.requester_name ?? '',
+        user_request: r.user_request,
+      };
+    });
+  }
+
+  async returnLoan(
+    scId: number,
+    dto: {
+      rw_id: number;
+      loan_returned_date: string;
+      loan_return_cash: number;
+      loan_return_voucher_amount: number;
+      up_by?: number;
+    },
+  ) {
+    const loan = await this.requestWithdrawRepository.findOne({
+      where: { rwId: dto.rw_id, scId, rwType: 1, del: 0 },
+    });
+    if (!loan) return { flag: false, ms: 'ไม่พบข้อมูลเงินยืม' };
+    if (loan.loanReturnedDate)
+      return { flag: false, ms: 'บันทึกการคืนเงินแล้ว' };
+
+    const returnTotal =
+      Number(dto.loan_return_cash) + Number(dto.loan_return_voucher_amount);
+    if (returnTotal < Number(loan.amount)) {
+      return {
+        flag: false,
+        ms: `ยอดส่งคืน ${returnTotal.toLocaleString('th-TH')} บาท น้อยกว่ายอดยืม ${Number(loan.amount).toLocaleString('th-TH')} บาท`,
+      };
+    }
+
+    loan.loanReturnedDate = dto.loan_returned_date;
+    loan.loanReturnCash = dto.loan_return_cash;
+    loan.loanReturnVoucherAmount = dto.loan_return_voucher_amount;
+    if (dto.up_by !== undefined) loan.upBy = dto.up_by;
+
+    await this.requestWithdrawRepository.save(loan);
+    return { flag: true, ms: 'บันทึกการคืนเงินเรียบร้อยแล้ว' };
   }
 
   async loadConfirmInvoice(scId: number, permission: number, syId: number) {
@@ -272,12 +459,14 @@ export class InvoiceService {
       .andWhere('rw.sy_id = :syId', { syId })
       .andWhere('rw.del = 0');
 
-    if (permission === 100) {
+    if (permission === 50) {
+      qb.andWhere('rw.status = 50');
+    } else if (permission === 100) {
       qb.andWhere('rw.status = 100');
     } else if (permission === 102) {
       qb.andWhere('rw.status = 102');
     } else {
-      qb.andWhere('rw.status IN (100, 102)');
+      qb.andWhere('rw.status IN (50, 100, 102)');
     }
 
     qb.orderBy('rw.rw_id', 'DESC')
@@ -294,6 +483,7 @@ export class InvoiceService {
       .addSelect('bit.budget_type', 'budget_type_name')
       .addSelect('rw.status', 'status')
       .addSelect('rw.remark', 'remark')
+      .addSelect('rw.precheck_note', 'precheck_note')
       .addSelect('rw.up_by', 'up_by')
       .addSelect('rw.update_date', 'up_date');
 
@@ -311,6 +501,7 @@ export class InvoiceService {
       budget_type_name: string | null;
       status: number;
       remark: string | null;
+      precheck_note: string | null;
       up_by: number | null;
       up_date: Date | null;
     }>();
@@ -325,32 +516,78 @@ export class InvoiceService {
       bank_name: r.bank_name ?? '',
       account_no: r.account_no ?? '',
       budget_type_name: r.budget_type_name ?? '',
+      precheck_note: r.precheck_note ?? '',
       budgets: r.budgets == null ? 0 : Number(r.budgets),
     }));
   }
 
-  async confirmInvoice(dto: {
-    rw_id: number;
-    status: number;
-    remark?: string;
-  }) {
+  async confirmInvoice(
+    dto: {
+      rw_id: number;
+      status: number;
+      remark?: string;
+      precheck_note?: string;
+      up_by?: number;
+    },
+    scId: number,
+  ) {
     const invoice = await this.requestWithdrawRepository.findOne({
-      where: { rwId: dto.rw_id, del: 0 },
+      where: { rwId: dto.rw_id, scId, del: 0 },
     });
 
     if (!invoice) {
       return { flag: false, ms: 'ไม่พบข้อมูลขอเบิก' };
     }
 
-    // status: 100 = อนุมัติ, 101 = ไม่อนุมัติ, 102 = ผอ. อนุมัติ (user_type = 2)
+    const fromPrecheck = invoice.status === 50;
     invoice.status = dto.status;
     if (dto.remark !== undefined) {
       invoice.remark = dto.remark;
     }
 
+    // บันทึกข้อมูลเจ้าหน้าที่ตรวจฎีกา เมื่อ transition จาก 50 → 100/51
+    if (fromPrecheck && (dto.status === 100 || dto.status === 51)) {
+      invoice.precheckBy = dto.up_by ?? null;
+      invoice.precheckDate = new Date();
+      invoice.precheckNote = dto.precheck_note ?? null;
+    }
+
+    if (dto.up_by !== undefined) invoice.upBy = dto.up_by;
     invoice.updateDate = new Date();
     await this.requestWithdrawRepository.save(invoice);
 
     return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
+  }
+
+  async deleteInvoice(rwId: number, scId: number, upBy?: number) {
+    const invoice = await this.requestWithdrawRepository.findOne({
+      where: { rwId, scId, del: 0 },
+    });
+    if (!invoice) return { flag: false, ms: 'ไม่พบข้อมูลใบเบิก' };
+
+    // ห้ามลบถ้าวันที่ขอเบิกถูกลงนามแล้ว
+    const dateStr = invoice.dateRequest
+      ? invoice.dateRequest instanceof Date
+        ? invoice.dateRequest.toISOString().slice(0, 10)
+        : String(invoice.dateRequest).slice(0, 10)
+      : null;
+    if (dateStr) {
+      const locked = await this.financialAuditService.isDateLocked(
+        scId,
+        dateStr,
+      );
+      if (locked) {
+        return {
+          flag: false,
+          ms: `วันที่ ${dateStr} ถูกลงนามแล้ว ไม่สามารถลบรายการได้`,
+        };
+      }
+    }
+
+    invoice.del = 1;
+    if (upBy !== undefined) invoice.upBy = upBy;
+    invoice.updateDate = new Date();
+    await this.requestWithdrawRepository.save(invoice);
+    return { flag: true, ms: 'ลบข้อมูลใบเบิกเรียบร้อยแล้ว' };
   }
 }

@@ -1,9 +1,10 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { apiGet } from '@/lib/api'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface PerheadCalcItem {
   st_id: number
@@ -24,22 +25,10 @@ interface PerheadCalcResponse {
 }
 
 export default function CalculatePerheadPage() {
+  const { scId, syId: _syId, budgetSyId } = useAppContext()
+  const syId = budgetSyId || _syId
   const [page, setPage] = useState(0)
   const pageSize = 25
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.budget_date?.sy_id) setSyId(Number(years.budget_date.sy_id))
-      else if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['calculate-perhead', scId, syId],

@@ -4,8 +4,10 @@ import {
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
+@Index(['scId', 'del'])
 @Entity('parcel_order')
 export class ParcelOrder {
   @PrimaryGeneratedColumn({ name: 'order_id' })
@@ -39,9 +41,43 @@ export class ParcelOrder {
     type: 'int',
     default: 1,
     comment:
-      '0 = ทบทวนใหม่ |1 = ขอ |2 = แผน|3 = การเงิน|4 = พัสดุ|5 = ผอ.|6 = ตั้งกรรมการ|7 = จัดซื้อ | 8 = สำเร็จ',
+      '0 = ทบทวนใหม่ |1 = ขอ |2 = แผน|3 = การเงิน|4 = พัสดุ|5 = ผอ.|6 = ตั้งกรรมการ|7 = จัดซื้อ | 8 = สำเร็จ | 9 = ยกเลิก',
   })
   orderStatus: number;
+
+  @Column({ name: 'cancel_reason', type: 'text', nullable: true })
+  cancelReason: string | null;
+
+  @Column({ name: 'cancel_by', type: 'int', nullable: true })
+  cancelBy: number | null;
+
+  @Column({ name: 'cancel_date', type: 'datetime', nullable: true })
+  cancelDate: Date | null;
+
+  @Column({
+    name: 'is_urgent',
+    type: 'tinyint',
+    default: 0,
+    comment: '1 = จัดซื้อกรณีเร่งด่วน ม.56(2)(ง)',
+  })
+  isUrgent: number;
+
+  @Column({
+    name: 'urgent_clause',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+    comment: 'มาตรา/อนุมาตรา เช่น 56(2)(ง)',
+  })
+  urgentClause: string | null;
+
+  @Column({
+    name: 'urgent_reason',
+    type: 'text',
+    nullable: true,
+    comment: 'เหตุผลเร่งด่วน (จำเป็นเมื่อ is_urgent=1)',
+  })
+  urgentReason: string | null;
 
   @Column({ type: 'text', nullable: true, comment: 'หมายเหตุหากไม่อนุมัติ' })
   remark: string | null;
@@ -190,4 +226,23 @@ export class ParcelOrder {
 
   @Column({ name: 'up_by', type: 'int', default: 0 })
   upBy: number;
+
+  @Column({
+    name: 'ppi_id',
+    type: 'int',
+    nullable: true,
+    comment: 'อ้างอิงรายการแผนจัดซื้อ',
+  })
+  ppiId: number | null;
+
+  @Column({
+    name: 'method_type',
+    type: 'int',
+    default: 3,
+    comment: '1=e-bidding 2=คัดเลือก 3=เฉพาะเจาะจง 4=ตลาด (พ.ร.บ.55-56)',
+  })
+  methodType: number;
+
+  @Column({ name: 'method_reason', type: 'text', nullable: true })
+  methodReason: string | null;
 }

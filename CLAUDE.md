@@ -83,6 +83,14 @@ DB_USER=root
 DB_PASS=
 DB_NAME=sfmisystem
 CORS_ORIGIN=http://localhost:3001,http://localhost:4200
+JWT_SECRET=<secret>
+COMMITTEE_THRESHOLD=5000   # Baht threshold for committee approval (procurement)
+SENTRY_DSN=               # optional, enables error tracking via Sentry
+AI_DEFAULT_PROVIDER=gemini # or ollama
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.0-flash
+OLLAMA_BASE_URL=
+OLLAMA_MODEL=
 ```
 Next.js frontend requires `frontend/.env.local`:
 ```
@@ -101,7 +109,7 @@ Angular frontend API base URL in `src/environments/environment.ts` → `http://l
 - Entry: `backend/src/main.ts` → `backend/src/app.module.ts`
 - API prefix: `/api/` — all routes are prefixed
 - Standard module structure: `module.ts`, `controller.ts`, `service.ts`, `dto/`, `entities/`
-- 22 feature modules: Admin, Dashboard, SchoolYear, School, GeneralDb, Policy, Student, Budget, Settings, Project, ProjectApprove, Receive, Receipt, Invoice, Check, Bank, Supplie, AuditCommittee, ReportDailyBalance, ReportCheckControl, ReportBookbank, RegisterMoneyType
+- 41 feature modules — core: Admin, Dashboard, SchoolYear, School, GeneralDb, Policy, Student, Budget, Settings, Project, ProjectApprove, Receive, Receipt, Invoice, Check, Bank, Supplie, AuditCommittee, ReportDailyBalance, ReportCheckControl, ReportBookbank, RegisterMoneyType; extended: Ai, BankLedger, BankReconciliation, CashKeeping, DayCloseCheck, DocCounter, FinancialAudit, FiscalYearBalance, GlobalSearch, GovRevenue, Health, LoanAgreement, MonthlySubmission, ProcurementPlan, ReceiptBook, SmpDeposit, UnifiedRegister, YearEndReport
 - TypeORM `synchronize` is ON in dev, OFF in production (`NODE_ENV=production`)
 - ⚠️ `synchronize: true` in dev means entity changes auto-alter tables. Generate a migration before merging schema changes (`npm run migration:generate`) — production relies on migrations, not sync.
 - Global `ValidationPipe` with `whitelist: true` and `transform: true`
@@ -110,9 +118,10 @@ Angular frontend API base URL in `src/environments/environment.ts` → `http://l
 ### Next.js Frontend (`frontend/`)
 - App Router with route groups: `(auth)/` for login, `(dashboard)/` for protected pages
 - Feature pages under `app/(dashboard)/sfmis/` — 20+ SFMIS pages
-- API calls via `frontend/lib/api.ts` — `apiGet<T>()` and `apiPost<T>()` functions that auto-attach Bearer token from `localStorage.access_token` and `up_by` from `localStorage.data`
-- Auth: NextAuth 5 beta (`frontend/auth.ts`) — Credentials provider against `/api/B_admin/login`, JWT strategy, 8-hour sessions
-- State: Zustand store at `frontend/stores/user-store.ts` — persisted to localStorage, holds `user` and `yearData`
+- API calls via `frontend/lib/api.ts` — `apiGet<T>()` and `apiPost<T>()` that auto-attach Bearer token from `auth-token.ts` (in-memory + sessionStorage fallback) and `up_by` from `localStorage.data`; has 401 retry logic: clears token → refreshes from NextAuth session → retries → signs out if still 401
+- Token storage: `frontend/lib/auth-token.ts` — in-memory primary, sessionStorage only for Fast Refresh recovery (XSS defense — **not** localStorage)
+- Auth: NextAuth 5 beta (`frontend/auth.ts`) — Credentials provider against `/api/B_admin/login`, JWT strategy, 8-hour sessions; `access_token` stored in JWT payload
+- State: Zustand store at `frontend/stores/user-store.ts` — persisted to localStorage, holds `user` and `yearData`; `frontend/stores/ai-chat-store.ts` — AI chat UI state, keeps last 50 messages
 - Types: all domain entities defined in `frontend/lib/types.ts`
 - Providers wired in `frontend/app/layout.tsx`: SessionProvider, QueryClientProvider, Toaster
 
@@ -151,6 +160,16 @@ Angular frontend API base URL in `src/environments/environment.ts` → `http://l
 - Path params validated with `ParseIntPipe`
 
 ## UI Components (Next.js)
+
+### Frontend Utilities (`frontend/lib/`)
+- `export-xlsx.ts` — `exportToXlsx(rows, sheetName, filename)` using `xlsx` library; triggered by `<ExportButton>` (green download button in `frontend/components/ui/export-button.tsx`)
+- `print-utils.ts` — `openPrintWindow()` for A4/A5 print layouts; helpers: `numberToThaiBaht()` (amount → Thai text for checks), `thaiFullDate()`, `fmtBaht()`, `makeTable()`, `makeHeader()`, `makeSignatures()` — use these for official Thai document printing
+- `utils/withholding.ts` — `calcWithholding()` for frontend VAT/withholding preview (mirrors backend `withholding.util.ts`)
+
+### AI Module (`/api/ai`)
+- ให้บริการ ChatService, ValidationService, AnalysisService, MergeService
+- รองรับ 2 providers: Gemini (`GEMINI_API_KEY`) หรือ Ollama (`OLLAMA_BASE_URL`) — เลือกด้วย `AI_DEFAULT_PROVIDER`
+- ทุก role เข้าถึงได้ (roles 1–8); ใช้ `ai-chat-store.ts` ใน frontend
 
 ### ThaiDatePicker
 - ไฟล์: `frontend/components/ui/thai-date-picker.tsx`
@@ -245,6 +264,10 @@ Angular frontend API base URL in `src/environments/environment.ts` → `http://l
 - **Rate limiting** on login endpoint (5 requests/minute via ThrottlerGuard)
 - **Soft delete** — all update/delete operations filter `del: 0` to prevent modifying deleted records
 - Plaintext `password_default` is NOT returned in API responses
+- **Global JwtAuthGuard** registered as `APP_GUARD` — all endpoints require JWT by default; use `@Public()` decorator to bypass
+- **RolesGuard** with `@Roles(roleId[])` decorator — omitting `@Roles()` allows any authenticated user; specify role IDs to restrict
+- **PageSizePipe** (`backend/src/common/pipes/page-size.pipe.ts`) — caps `pageSize` at 500 to prevent DB abuse
+- **Sentry** (`backend/src/instrument.ts`) — loaded first in `main.ts`; active only when `SENTRY_DSN` env is set
 
 ## CI/CD
 

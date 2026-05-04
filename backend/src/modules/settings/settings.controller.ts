@@ -13,6 +13,7 @@ import { CreateSchoolPolicyDto } from './dto/create-school-policy.dto';
 import { UpdateSchoolPolicyDto } from './dto/update-school-policy.dto';
 import { CreateObecPolicyDto } from './dto/create-obec-policy.dto';
 import { UpdateObecPolicyDto } from './dto/update-obec-policy.dto';
+import { PageSizePipe } from '../../common/pipes/page-size.pipe';
 
 @Controller('Settings')
 export class SettingsController {
@@ -24,7 +25,7 @@ export class SettingsController {
   loadSchoolPolicy(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('page_size', ParseIntPipe) pageSize: number,
+    @Param('page_size', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadSchoolPolicy(scId, page, pageSize);
   }
@@ -52,7 +53,7 @@ export class SettingsController {
   @HttpCode(HttpStatus.OK)
   loadSaoPolicy(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadSaoPolicy(page, pageSize);
   }
@@ -60,7 +61,7 @@ export class SettingsController {
   @Get('load_SaoPolicy/:page/:pageSize')
   loadSaoPolicyGet(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadSaoPolicy(page, pageSize);
   }
@@ -88,7 +89,7 @@ export class SettingsController {
   @HttpCode(HttpStatus.OK)
   loadMoePolicy(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadMoePolicy(page, pageSize);
   }
@@ -96,7 +97,7 @@ export class SettingsController {
   @Get('load_MoePolicy/:page/:pageSize')
   loadMoePolicyGet(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadMoePolicy(page, pageSize);
   }
@@ -124,7 +125,7 @@ export class SettingsController {
   @HttpCode(HttpStatus.OK)
   loadObecPolicy(
     @Param('page', ParseIntPipe) page: number,
-    @Param('page_size', ParseIntPipe) pageSize: number,
+    @Param('page_size', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadObecPolicy(page, pageSize);
   }
@@ -152,7 +153,7 @@ export class SettingsController {
   @HttpCode(HttpStatus.OK)
   loadQuickWin(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadQuickWin(page, pageSize);
   }
@@ -160,7 +161,7 @@ export class SettingsController {
   @Get('load_QuickWin/:page/:pageSize')
   loadQuickWinGet(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadQuickWin(page, pageSize);
   }
@@ -188,7 +189,7 @@ export class SettingsController {
   @HttpCode(HttpStatus.OK)
   loadSao(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadSao(page, pageSize);
   }
@@ -196,7 +197,7 @@ export class SettingsController {
   @Get('load_Sao/:page/:pageSize')
   loadSaoGet(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadSao(page, pageSize);
   }
@@ -217,7 +218,7 @@ export class SettingsController {
   @HttpCode(HttpStatus.OK)
   loadClassroomBudget(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadClassroomBudget(page, pageSize);
   }
@@ -225,7 +226,7 @@ export class SettingsController {
   @Get('load_classroom_budget/:page/:pageSize')
   loadClassroomBudgetGet(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadClassroomBudget(page, pageSize);
   }
@@ -236,7 +237,7 @@ export class SettingsController {
   loadBudgetType(
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadBudgetType(scId, page, pageSize);
   }
@@ -245,7 +246,7 @@ export class SettingsController {
   loadBudgetTypeGet(
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.settingsService.loadBudgetType(scId, page, pageSize);
   }

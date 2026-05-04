@@ -2,11 +2,10 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus } from 'lucide-react'
+import { Plus, Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
-import { DataTable } from '@/components/shared/data-table'
-import { FormDialog } from '@/components/shared/form-dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -15,16 +14,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { apiGet, apiPost } from '@/lib/api'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface BudgetCategory {
   pbc_id: number
   bg_cate_id: number
-  bg_cate_name: string
+  budget_cate: string
   budget_income: number
-  _percents?: string
-  up_by: string
-  up_date: string
+  percents: number
+  total: number
+  budget_year: string | number
 }
 
 interface MasterCategory {
@@ -32,40 +33,66 @@ interface MasterCategory {
   bg_cate_name: string
 }
 
+interface IncomeType {
+  bg_type_id: number
+  budget_type: string
+}
+
+interface BudgetDetail {
+  pbcd_id: number
+  bg_type_id: number
+  budget_type: string
+  budget: number
+  budget_year: string
+}
+
+interface BitGroupItem {
+  pbcd_id: number
+  bg_type_id: number
+  budget_type: string
+  budget: number
+  other_allocated: number
+}
+
+interface TypeSummary {
+  bg_type_id: number
+  budget_type: string
+  total_allocated: number
+}
+
+const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })
+
 export default function BudgetCategoryPage() {
+  const { scId, adminId, budgetYear: budgetYearRaw, syId: _syId, budgetSyId } = useAppContext()
+  const syId = budgetSyId || _syId
+  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
-  const [page, setPage] = useState(0)
-  const pageSize = 25
-  const [dialogOpen, setDialogOpen] = useState(false)
+
+  // ── state: add dialog ──────────────────────────────────────────────────────
+  const [addOpen, setAddOpen] = useState(false)
   const [selectedCateId, setSelectedCateId] = useState('')
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [budgetYear, setBudgetYear] = useState('')
+
+  // ── state: edit dialog ─────────────────────────────────────────────────────
+  const [editOpen, setEditOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState<BudgetCategory | null>(null)
+  const [bitGroup, setBitGroup] = useState<BitGroupItem[]>([])
+  const [pendingDetails, setPendingDetails] = useState<BudgetDetail[]>([])
+  const [typeSummary, setTypeSummary] = useState<TypeSummary[]>([])
+  const [loadingDetails, setLoadingDetails] = useState(false)
+
+  // ── state: estimate budget ─────────────────────────────────────────────────
   const [totalBudget, setTotalBudget] = useState(0)
   const [hasEstimate, setHasEstimate] = useState(false)
   const [checkLoading, setCheckLoading] = useState(false)
 
+  // ── check estimate ─────────────────────────────────────────────────────────
   useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.budget_date?.sy_id) setSyId(Number(years.budget_date.sy_id))
-      else if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-      if (years?.budget_date?.budget_year) setBudgetYear(String(years.budget_date.budget_year))
-    } catch {}
-  }, [])
-
-  // Check budget on year before loading categories
-  useEffect(() => {
-    if (scId > 0 && syId > 0 && budgetYear) {
+    if (scId > 0 && syId > 0 && apiYear) {
       setCheckLoading(true)
-      apiPost('Budget/checkBudgetCategoryOnYear', { sc_id: scId, sy_id: syId, budget_date: budgetYear })
+      apiPost('Budget/checkBudgetCategoryOnYear', { sc_id: scId, sy_id: syId, budget_date: apiYear })
         .then((res: any) => {
           if (res.valid) {
-            setTotalBudget(Math.ceil(res.budget - 0))
+            setTotalBudget(Math.ceil(res.budget))
             setHasEstimate(res.budget > 0)
           } else {
             setHasEstimate(false)
@@ -73,157 +100,415 @@ export default function BudgetCategoryPage() {
         })
         .finally(() => setCheckLoading(false))
     }
-  }, [scId, syId, budgetYear])
+  }, [scId, syId, apiYear])
 
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ['budget-category', scId, syId, budgetYear],
-    queryFn: async () => {
-      const res = await apiGet<BudgetCategory[]>(`Budget/loadPLNBudgetCategory/${scId}/${syId}/${budgetYear}`)
-      let budgetReceive = 0
-      const items = res.map((el) => {
-        budgetReceive += Number(el.budget_income)
-        return {
-          ...el,
-          _percents: totalBudget > 0
-            ? ((Number(el.budget_income) * 100) / totalBudget).toFixed(2)
-            : '0.00',
-        }
-      })
-      return items
-    },
-    enabled: scId > 0 && syId > 0 && budgetYear !== '' && hasEstimate,
+  // ── load categories ────────────────────────────────────────────────────────
+  const { data, isLoading } = useQuery({
+    queryKey: ['budget-category', scId, syId, apiYear],
+    queryFn: () => apiGet<BudgetCategory[]>(`Budget/loadPLNBudgetCategory/${scId}/${syId}/${apiYear}`),
+    enabled: scId > 0 && syId > 0 && !!apiYear && hasEstimate,
   })
+  const rows = Array.isArray(data) ? data : []
+  const totalReceive = rows.reduce((s, r) => s + Number(r.budget_income ?? r.total ?? 0), 0)
 
+  // ── load master categories (for add dialog) ────────────────────────────────
   const { data: masterCats } = useQuery({
     queryKey: ['master-budget-categories'],
     queryFn: () => apiGet<MasterCategory[]>('Budget/loadMasterBudgetCategories'),
-    enabled: dialogOpen,
+    enabled: addOpen,
   })
 
-  const addedCateIds = new Set((data ?? []).map((d) => d.bg_cate_id))
+  // ── load income types (for edit dialog) ───────────────────────────────────
+  const { data: incomeTypes } = useQuery({
+    queryKey: ['budget-income-types'],
+    queryFn: () => apiGet<IncomeType[]>('Budget/loadBudgetIncomeType'),
+    enabled: editOpen,
+  })
+
+  // ── open edit dialog → load existing details ──────────────────────────────
+  async function openEdit(cat: BudgetCategory) {
+    setEditTarget(cat)
+    setBitGroup([])
+    setPendingDetails([])
+    setTypeSummary([])
+    setLoadingDetails(true)
+    setEditOpen(true)
+    try {
+      const [details, summary] = await Promise.all([
+        apiGet<BudgetDetail[]>(`Budget/loadBudgetIncome/${cat.pbc_id}/${syId}`),
+        apiGet<TypeSummary[]>(`Budget/loadBudgetIncomeTypeSummary/${scId}/${syId}/${apiYear}`),
+      ])
+      setPendingDetails(details ?? [])
+      setTypeSummary(summary ?? [])
+    } catch {
+      setPendingDetails([])
+      setTypeSummary([])
+    } finally {
+      setLoadingDetails(false)
+    }
+  }
+
+  // merge incomeTypes + pendingDetails + typeSummary → bitGroup
+  useEffect(() => {
+    if (!editOpen || !incomeTypes || incomeTypes.length === 0) return
+    const summaryMap = new Map(typeSummary.map((s) => [s.bg_type_id, s.total_allocated]))
+    setBitGroup(
+      incomeTypes.map((it) => {
+        const existing = pendingDetails.find((d) => d.bg_type_id === it.bg_type_id)
+        const thisAmount = existing?.budget ?? 0
+        const totalAllocated = summaryMap.get(it.bg_type_id) ?? 0
+        return {
+          pbcd_id: existing?.pbcd_id ?? 0,
+          bg_type_id: it.bg_type_id,
+          budget_type: it.budget_type,
+          budget: thisAmount,
+          other_allocated: totalAllocated - thisAmount,
+        }
+      })
+    )
+  }, [incomeTypes, pendingDetails, typeSummary, editOpen])
+
+  function setBitAmount(bg_type_id: number, value: string) {
+    setBitGroup((prev) =>
+      prev.map((b) => b.bg_type_id === bg_type_id ? { ...b, budget: Number(value) || 0 } : b)
+    )
+  }
+
+  const addedCateIds = new Set(rows.map((r) => r.bg_cate_id))
   const availableCats = (masterCats ?? []).filter((c) => !addedCateIds.has(c.bg_cate_id))
 
+  // ── mutation: เพิ่มหมวดใหม่ ────────────────────────────────────────────────
   const addMutation = useMutation({
     mutationFn: () => {
       const cat = availableCats.find((c) => String(c.bg_cate_id) === selectedCateId)
-      if (!cat) throw new Error('No category selected')
-      return apiPost('Budget/addPLNBudgetCategory', {
-        pbc_id: cat.bg_cate_id,
-        bit_group: [],
-        up_by: 0,
+      if (!cat) throw new Error('ยังไม่ได้เลือกหมวดงบประมาณ')
+      return apiPost('Budget/addNewBudgetCategory', {
+        sc_id: scId,
+        sy_id: syId,
+        bg_cate_id: cat.bg_cate_id,
+        budget_year: apiYear,
+        up_by: adminId,
       })
     },
     onSuccess: (res: any) => {
       if (res.flag) {
-        toast.success('เพิ่มหมวดงบประมาณเรียบร้อยแล้ว')
+        toast.success('เพิ่มหมวดงบประมาณสำเร็จ')
         qc.invalidateQueries({ queryKey: ['budget-category'] })
-        setDialogOpen(false)
+        setAddOpen(false)
         setSelectedCateId('')
       } else {
-        toast.error(res.ms || 'มีปัญหาในการเพิ่ม')
+        toast.error(res.ms || 'ไม่สามารถเพิ่มได้')
       }
     },
     onError: () => toast.error('เกิดข้อผิดพลาด'),
   })
 
-  const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })
-  const rows = Array.isArray(data) ? data : []
-  const totalReceive = rows.reduce((s, r) => s + Number(r.budget_income), 0)
-
-  const columns = [
-    { header: 'หมวดงบประมาณ', key: 'bg_cate_name' as keyof BudgetCategory },
-    {
-      header: 'งบที่ได้รับ (บาท)',
-      render: (item: BudgetCategory) => (
-        <span className="text-right block">{fmt(Number(item.budget_income))}</span>
-      ),
+  // ── mutation: บันทึกยอดเงินในหมวด ─────────────────────────────────────────
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      if (!editTarget) throw new Error('ไม่มีข้อมูลหมวดที่เลือก')
+      // ส่งเฉพาะ type ที่มียอด > 0 หรือมี pbcd_id (กรณีต้องการอัปเดตเป็น 0)
+      const bit_group = bitGroup
+        .filter((b) => b.budget > 0 || b.pbcd_id > 0)
+        .map((b) => ({
+          pbcd_id: b.pbcd_id > 0 ? b.pbcd_id : undefined,
+          bg_type_id: b.bg_type_id,
+          budget: b.budget,
+          budget_year: apiYear,
+        }))
+      return apiPost('Budget/addPLNBudgetCategory', {
+        pbc_id: editTarget.pbc_id,
+        bit_group,
+        up_by: adminId,
+      })
     },
-    {
-      header: 'สัดส่วน (%)',
-      render: (item: BudgetCategory) => (
-        <span className="text-right block">{item._percents ?? '0.00'} %</span>
-      ),
+    onSuccess: (res: any) => {
+      if (res.flag) {
+        toast.success('บันทึกสำเร็จ')
+        qc.invalidateQueries({ queryKey: ['budget-category'] })
+        setEditOpen(false)
+        setEditTarget(null)
+      } else {
+        toast.error(res.ms || 'ไม่สามารถบันทึกได้')
+      }
     },
-  ]
+    onError: () => toast.error('เกิดข้อผิดพลาด'),
+  })
 
+  // ── render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-auto min-w-0">
       <PageHeader
         title="หมวดงบประมาณ"
         actions={
           hasEstimate ? (
-            <Button onClick={() => setDialogOpen(true)} disabled={isLoading}>
-              <Plus className="h-4 w-4" />
+            <Button onClick={() => setAddOpen(true)} disabled={isLoading}>
+              <Plus className="h-4 w-4 mr-1" />
               เพิ่มหมวดงบ
             </Button>
           ) : undefined
         }
       />
+
       <div className="p-4 space-y-4">
+        {/* คำเตือนถ้ายังไม่มีประมาณการ */}
         {!hasEstimate && !checkLoading && (
           <div className="bg-yellow-50 border border-yellow-300 rounded p-4 text-sm text-yellow-800">
-            ยังไม่มีข้อมูลประมาณการงบประมาณปีนี้ กรุณาไปตั้งค่าที่หน้า &quot;ประมาณการปีการศึกษา&quot; ก่อน
+            ยังไม่มีข้อมูลประมาณการงบประมาณปีนี้ กรุณาไปตั้งค่าที่หน้า <strong>ประมาณการปีการศึกษา</strong> ก่อน
           </div>
         )}
 
+        {/* สรุปยอด */}
         {hasEstimate && (
-          <div className="grid grid-cols-3 gap-4 mb-2">
-            <div className="bg-blue-50 rounded p-3 text-center">
-              <div className="text-xs text-blue-600">งบประมาณทั้งหมด</div>
-              <div className="font-bold text-blue-700">{fmt(totalBudget)} บาท</div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-blue-50 rounded-lg p-4 text-center border border-blue-100">
+              <div className="text-xs text-blue-600 mb-1">งบประมาณทั้งหมด (ประมาณการ)</div>
+              <div className="font-bold text-blue-700 text-lg">{fmt(totalBudget)} บาท</div>
             </div>
-            <div className="bg-green-50 rounded p-3 text-center">
-              <div className="text-xs text-green-600">งบที่กระจายแล้ว</div>
-              <div className="font-bold text-green-700">{fmt(totalReceive)} บาท</div>
+            <div className="bg-green-50 rounded-lg p-4 text-center border border-green-100">
+              <div className="text-xs text-green-600 mb-1">งบที่กระจายแล้ว</div>
+              <div className="font-bold text-green-700 text-lg">{fmt(totalReceive)} บาท</div>
             </div>
-            <div className="bg-orange-50 rounded p-3 text-center">
-              <div className="text-xs text-orange-600">คงเหลือ</div>
-              <div className="font-bold text-orange-700">{fmt(totalBudget - totalReceive)} บาท</div>
+            <div className="bg-orange-50 rounded-lg p-4 text-center border border-orange-100">
+              <div className="text-xs text-orange-600 mb-1">คงเหลือ</div>
+              <div className="font-bold text-orange-700 text-lg">{fmt(totalBudget - totalReceive)} บาท</div>
             </div>
           </div>
         )}
 
-        <DataTable
-          columns={columns}
-          data={rows}
-          total={rows.length}
-          page={page}
-          pageSize={pageSize}
-          onPageChange={setPage}
-          loading={isLoading || checkLoading}
-        />
+        {/* ตารางหมวดงบประมาณ */}
+        {(isLoading || checkLoading) ? (
+          <div className="text-center text-gray-400 py-12">กำลังโหลด...</div>
+        ) : rows.length === 0 && hasEstimate ? (
+          <div className="text-center text-gray-400 py-12">ยังไม่มีหมวดงบประมาณ กดปุ่ม &quot;เพิ่มหมวดงบ&quot; เพื่อเริ่มต้น</div>
+        ) : (
+          <div className="rounded-lg border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">หมวดงบประมาณ</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600">งบที่ได้รับ (บาท)</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600">สัดส่วน (%)</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-24">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {rows.map((row) => {
+                  const income = Number(row.budget_income ?? row.total ?? 0)
+                  const pct = totalBudget > 0 ? ((income * 100) / totalBudget).toFixed(2) : '0.00'
+                  return (
+                    <tr key={row.pbc_id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 font-medium">{row.budget_cate}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{fmt(income)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{pct} %</td>
+                      <td className="px-4 py-3 text-center">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openEdit(row)}
+                          className="h-7 px-2"
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          กรอก
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot className="bg-gray-50 border-t border-gray-200 font-semibold">
+                <tr>
+                  <td className="px-4 py-3">รวมทั้งหมด</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{fmt(totalReceive)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {totalBudget > 0 ? ((totalReceive * 100) / totalBudget).toFixed(2) : '0.00'} %
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </div>
 
-      <FormDialog
-        open={dialogOpen}
-        onClose={() => { setDialogOpen(false); setSelectedCateId('') }}
-        title="เพิ่มหมวดงบประมาณ"
-        onSubmit={() => addMutation.mutate()}
-        loading={addMutation.isPending}
-      >
-        <div className="space-y-3">
-          <div>
-            <Label>เลือกหมวดงบประมาณ *</Label>
-            <Select value={selectedCateId} onValueChange={setSelectedCateId}>
-              <SelectTrigger><SelectValue placeholder="เลือกหมวดงบประมาณ" /></SelectTrigger>
-              <SelectContent>
-                {availableCats.length === 0 ? (
-                  <SelectItem value="none" disabled>ไม่มีหมวดที่สามารถเพิ่มได้แล้ว</SelectItem>
-                ) : (
-                  availableCats.map((c) => (
-                    <SelectItem key={c.bg_cate_id} value={String(c.bg_cate_id)}>
-                      {c.bg_cate_name}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+      {/* ── Dialog: เพิ่มหมวดงบใหม่ ─────────────────────────────────────────── */}
+      <Dialog open={addOpen} onOpenChange={(v) => { if (!v) { setAddOpen(false); setSelectedCateId('') } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>เพิ่มหมวดงบประมาณ</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label>เลือกหมวดงบประมาณ *</Label>
+              <Select value={selectedCateId} onValueChange={setSelectedCateId}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="เลือกหมวดงบประมาณ" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableCats.length === 0 ? (
+                    <SelectItem value="__none__" disabled>ไม่มีหมวดที่สามารถเพิ่มได้แล้ว</SelectItem>
+                  ) : (
+                    availableCats.map((c) => (
+                      <SelectItem key={c.bg_cate_id} value={String(c.bg_cate_id)}>
+                        {c.bg_cate_name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <p className="text-xs text-gray-500">
-            สามารถแก้ไขงบประมาณในแต่ละหมวดได้ภายหลังจากหน้ารายละเอียด
-          </p>
-        </div>
-      </FormDialog>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setAddOpen(false); setSelectedCateId('') }}>
+              ยกเลิก
+            </Button>
+            <Button
+              onClick={() => addMutation.mutate()}
+              disabled={!selectedCateId || addMutation.isPending}
+            >
+              {addMutation.isPending ? 'กำลังบันทึก...' : 'เพิ่มหมวดงบ'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog: กรอกยอดเงินต่อประเภทรายรับ ──────────────────────────────── */}
+      <Dialog open={editOpen} onOpenChange={(v) => { if (!v) { setEditOpen(false); setEditTarget(null) } }}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              กำหนดงบประมาณ
+              {editTarget && <span className="ml-2 text-indigo-600">— {editTarget.budget_cate}</span>}
+            </DialogTitle>
+          </DialogHeader>
+
+          {(loadingDetails || (editOpen && (!incomeTypes || incomeTypes.length === 0))) ? (
+            <div className="text-center text-gray-400 py-8">กำลังโหลดข้อมูล...</div>
+          ) : (() => {
+            // ── คำนวณค่าหลัก ─────────────────────────────────────────
+            const overallRemaining = Math.max(0, totalBudget - totalReceive)
+            const currentSaved = Number(editTarget?.budget_income ?? editTarget?.total ?? 0)
+            // วงเงินที่หมวดนี้ใช้ได้ = ที่ยังเหลือทั้งหมด + ที่หมวดนี้เคยจองไว้แล้ว
+            const categoryAvailable = Math.max(0, overallRemaining + currentSaved)
+            const currentTotal = bitGroup.reduce((s, b) => s + b.budget, 0)
+            const dynamicRemaining = categoryAvailable - currentTotal
+            const overBudget = dynamicRemaining < 0
+            const visibleRows = bitGroup.filter((b) => b.other_allocated > 0 || b.budget > 0)
+            const hiddenCount = bitGroup.length - visibleRows.length
+
+            return (
+              <div className="space-y-3">
+                {/* ── Header summary — ตัวเลขชัด ตรงประเด็น ─────────────── */}
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="bg-blue-50 border border-blue-100 rounded p-2 text-center">
+                    <div className="text-blue-600">วงเงินหมวดนี้ใช้ได้</div>
+                    <div className="font-bold text-blue-700 text-sm">{fmt(categoryAvailable)} บาท</div>
+                  </div>
+                  <div className="bg-indigo-50 border border-indigo-100 rounded p-2 text-center">
+                    <div className="text-indigo-600">กรอกแล้ว</div>
+                    <div className="font-bold text-indigo-700 text-sm">{fmt(currentTotal)} บาท</div>
+                  </div>
+                  <div className={`border rounded p-2 text-center ${overBudget ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-100'}`}>
+                    <div className={overBudget ? 'text-red-600' : 'text-green-600'}>
+                      {overBudget ? 'เกินวงเงิน' : 'เหลือกรอก'}
+                    </div>
+                    <div className={`font-bold text-sm ${overBudget ? 'text-red-700' : 'text-green-700'}`}>
+                      {fmt(Math.abs(dynamicRemaining))} บาท
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-500">
+                  กรอกยอดเงินตามประเภทรายรับ ยอดรวมต้องไม่เกินวงเงินหมวดนี้ ({fmt(categoryAvailable)} บาท)
+                </p>
+
+                {/* ── ตารางกรอกยอด ─────────────────────────────────────── */}
+                <div className="rounded-md border border-gray-200 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="text-left px-3 py-2 text-gray-600">ประเภทรายรับ</th>
+                        <th className="text-right px-3 py-2 text-gray-600 w-40">จำนวนเงิน (บาท)</th>
+                        <th className="text-right px-3 py-2 text-gray-600 w-20">สัดส่วน</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {visibleRows.map((b) => {
+                        const pct = categoryAvailable > 0 ? (b.budget * 100 / categoryAvailable) : 0
+                        return (
+                          <tr key={b.bg_type_id} className="hover:bg-gray-50">
+                            <td className="px-3 py-2">{b.budget_type}</td>
+                            <td className="px-3 py-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                value={b.budget || ''}
+                                onChange={(e) => setBitAmount(b.bg_type_id, e.target.value)}
+                                className={`h-7 text-right tabular-nums text-sm ${overBudget ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                              {pct > 0 ? `${pct.toFixed(1)}%` : '—'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                      {visibleRows.length === 0 && (
+                        <tr>
+                          <td colSpan={3} className="px-3 py-6 text-center text-gray-400">
+                            ยังไม่มีประเภทรายรับ — กรอกยอดด้านล่างเพื่อเริ่มกระจายงบ
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot className="bg-gray-50 border-t font-semibold text-sm">
+                      <tr>
+                        <td className="px-3 py-2">
+                          รวม
+                          {hiddenCount > 0 && (
+                            <span className="ml-2 text-xs font-normal text-gray-400">
+                              (ซ่อน {hiddenCount} ประเภทที่ยังไม่มียอด)
+                            </span>
+                          )}
+                        </td>
+                        <td className={`px-3 py-2 text-right tabular-nums ${overBudget ? 'text-red-600' : 'text-indigo-700'}`}>
+                          {fmt(currentTotal)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                          {categoryAvailable > 0 ? `${(currentTotal * 100 / categoryAvailable).toFixed(1)}%` : '—'}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )
+          })()}
+
+          <DialogFooter className="mt-2">
+            <Button variant="outline" onClick={() => { setEditOpen(false); setEditTarget(null) }}>
+              ยกเลิก
+            </Button>
+            {(() => {
+              const avail = Math.max(0,
+                (totalBudget - totalReceive) + Number(editTarget?.budget_income ?? editTarget?.total ?? 0)
+              )
+              const total = bitGroup.reduce((s, b) => s + b.budget, 0)
+              const over = total > avail
+              return (
+                <Button
+                  onClick={() => saveMutation.mutate()}
+                  disabled={saveMutation.isPending || loadingDetails || over}
+                  title={over ? 'ยอดรวมเกินวงเงินหมวดนี้' : ''}
+                >
+                  {saveMutation.isPending ? 'กำลังบันทึก...' : 'บันทึก'}
+                </Button>
+              )
+            })()}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

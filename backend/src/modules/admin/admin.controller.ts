@@ -12,10 +12,18 @@ import {
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { AdminService } from './admin.service';
 import { Public } from '../auth/public.decorator';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { LoginDto } from './dto/login.dto';
 import { AddAdminDto } from './dto/add-admin.dto';
 import { UpdateAdminDto } from './dto/update-admin.dto';
 import { UpdateAdminStatusDto } from './dto/update-admin-status.dto';
+import { PageSizePipe } from '../../common/pipes/page-size.pipe';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('B_admin')
 export class AdminController {
@@ -29,79 +37,109 @@ export class AdminController {
     return this.adminService.login(payload);
   }
 
+  // ── Super Admin only: จัดการ admin ข้ามโรงเรียน ─────────────────
+
   @Post('load_admin/:page/:pageSize')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(1)
   loadAdminsPost(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.adminService.loadAdmins(page, pageSize);
   }
 
   @Get('load_admin/:page/:pageSize')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(1)
   loadAdmins(
     @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
   ) {
     return this.adminService.loadAdmins(page, pageSize);
   }
 
-  @Post('load_user/:scId/:page/:pageSize')
-  @HttpCode(HttpStatus.OK)
-  loadUsersPost(
-    @Param('scId', ParseIntPipe) scId: number,
-    @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
-  ) {
-    return this.adminService.loadUsersBySchool(scId, page, pageSize);
-  }
-
-  @Get('load_user/:scId/:page/:pageSize')
-  @HttpCode(HttpStatus.OK)
-  loadUsers(
-    @Param('scId', ParseIntPipe) scId: number,
-    @Param('page', ParseIntPipe) page: number,
-    @Param('pageSize', ParseIntPipe) pageSize: number,
-  ) {
-    return this.adminService.loadUsersBySchool(scId, page, pageSize);
-  }
-
-  @Post('remove_admin')
-  @HttpCode(HttpStatus.OK)
-  removeAdmin(@Body() payload: UpdateAdminStatusDto) {
-    return this.adminService.removeAdmin(payload);
-  }
-
   @Post('addAdmin')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(1)
   addAdmin(@Body() payload: AddAdminDto) {
     return this.adminService.addAdmin(payload);
   }
 
   @Post('updateAdmin')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(1)
   updateAdmin(@Body() payload: UpdateAdminDto) {
     return this.adminService.updateAdmin(payload);
   }
 
+  @Post('remove_admin')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(1)
+  removeAdmin(@Body() payload: UpdateAdminStatusDto) {
+    return this.adminService.removeAdmin(payload);
+  }
+
+  // ── Admin + School Admin: จัดการ user ภายในโรงเรียน ────────────
+
+  @Post('load_user/:scId/:page/:pageSize')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(1, 2)
+  loadUsersPost(
+    @Param('scId', ParseIntPipe) scId: number,
+    @Param('page', ParseIntPipe) page: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
+    return this.adminService.loadUsersBySchool(scId, page, pageSize);
+  }
+
+  @Get('load_user/:scId/:page/:pageSize')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(1, 2)
+  loadUsers(
+    @Param('scId', ParseIntPipe) scId: number,
+    @Param('page', ParseIntPipe) page: number,
+    @Param('pageSize', PageSizePipe) pageSize: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
+    return this.adminService.loadUsersBySchool(scId, page, pageSize);
+  }
+
   @Post('add_user')
   @HttpCode(HttpStatus.OK)
-  addUser(@Body() payload: any) {
+  @UseGuards(RolesGuard)
+  @Roles(1, 2)
+  addUser(@Body() payload: AddAdminDto) {
     return this.adminService.addAdmin(payload);
   }
 
   @Post('update_user')
   @HttpCode(HttpStatus.OK)
-  updateUser(@Body() payload: any) {
+  @UseGuards(RolesGuard)
+  @Roles(1, 2)
+  updateUser(@Body() payload: UpdateAdminDto) {
     return this.adminService.updateAdmin(payload);
   }
 
   @Post('remove_user')
   @HttpCode(HttpStatus.OK)
-  removeUser(@Body() payload: any) {
+  @UseGuards(RolesGuard)
+  @Roles(1, 2)
+  removeUser(@Body() payload: UpdateAdminStatusDto) {
     return this.adminService.removeAdmin(payload);
   }
+
+  // ── Public data (ใช้ JWT ตรวจสิทธิ์แค่ว่า login แล้ว) ──────────
 
   @Get('loadPosition')
   @HttpCode(HttpStatus.OK)

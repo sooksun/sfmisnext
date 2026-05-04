@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SchoolYear } from '../school-year/entities/school-year.entity';
@@ -8,6 +8,8 @@ import { PlnRealBudget } from './entities/pln-real-budget.entity';
 
 @Injectable()
 export class PolicyService {
+  private readonly logger = new Logger(PolicyService.name);
+
   constructor(
     @InjectRepository(SchoolYear)
     private readonly schoolYearRepository: Repository<SchoolYear>,
@@ -165,7 +167,7 @@ export class PolicyService {
       await this.plnRealBudgetRepository.save(row);
       return { flag: true, ms: 'บันทึกเรียบร้อยแล้ว' };
     } catch (err) {
-      console.error('addRealBudget error:', err);
+      this.logger.error('addRealBudget error:', err);
       return { flag: false, ms: 'บันทึกไม่สำเร็จ' };
     }
   }
@@ -198,7 +200,7 @@ export class PolicyService {
       await this.plnRealBudgetRepository.save(row);
       return { flag: true, ms: 'บันทึกเรียบร้อยแล้ว' };
     } catch (err) {
-      console.error('updateRealBudget error:', err);
+      this.logger.error('updateRealBudget error:', err);
       return { flag: false, ms: 'บันทึกไม่สำเร็จ' };
     }
   }
@@ -220,7 +222,7 @@ export class PolicyService {
       await this.plnRealBudgetRepository.save(row);
       return { flag: true, ms: 'ลบเรียบร้อยแล้ว' };
     } catch (err) {
-      console.error('removeRealBudget error:', err);
+      this.logger.error('removeRealBudget error:', err);
       return { flag: false, ms: 'ลบไม่สำเร็จ' };
     }
   }

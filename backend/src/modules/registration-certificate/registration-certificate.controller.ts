@@ -5,9 +5,14 @@ import {
   ParseIntPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { RegistrationCertificateService } from './registration-certificate.service';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
+@UseGuards(RolesGuard)
+@Roles(1, 2, 5, 8)
 @Controller('Registration_certificate')
 export class RegistrationCertificateController {
   constructor(

@@ -7,6 +7,7 @@ import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
 import { Partner } from '../general-db/entities/partner.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { FinancialAuditModule } from '../financial-audit/financial-audit.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
       Admin,
       BudgetIncomeType,
     ]),
+    FinancialAuditModule,
   ],
   controllers: [InvoiceController],
   providers: [InvoiceService],

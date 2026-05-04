@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import type { PaginatedResponse } from '@/lib/types'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface Supply {
   supp_id: number
@@ -58,20 +59,13 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export default function SuppliesPage() {
+  const { scId } = useAppContext()
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Supply | null>(null)
   const [editing, setEditing] = useState<Supply | null>(null)
-  const [scId, setScId] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['supplies', scId, page, pageSize],
@@ -157,7 +151,7 @@ export default function SuppliesPage() {
     setDialogOpen(true)
   }
 
-  const columns = [
+  const columns = useMemo(() => [
     {
       header: 'จัดการ',
       render: (item: Supply) => (
@@ -182,7 +176,7 @@ export default function SuppliesPage() {
         <small className="text-gray-500">{item.update_date ?? '-'}</small>
       ),
     },
-  ]
+  ], [])
 
   return (
     <div className="flex flex-col flex-auto min-w-0">

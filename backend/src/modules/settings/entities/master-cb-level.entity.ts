@@ -14,7 +14,13 @@ export class MasterCbLevel {
   @Column({ name: 'level_name', type: 'varchar', length: 100 })
   levelName: string;
 
-  @Column({ name: 'budget_amount', type: 'decimal', precision: 15, scale: 2, default: 0 })
+  @Column({
+    name: 'budget_amount',
+    type: 'decimal',
+    precision: 15,
+    scale: 2,
+    default: 0,
+  })
   budgetAmount: number;
 
   @Column({ type: 'int', default: 0 })

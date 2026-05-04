@@ -1,9 +1,10 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { apiGet } from '@/lib/api'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface EstimateGroup {
   budget_type_id: number
@@ -15,29 +16,17 @@ interface EstimateGroup {
 }
 
 export default function EstimateAcadyearPage() {
+  const { scId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const year = budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543
+  const apiYear = budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543
   const [page, setPage] = useState(0)
   const pageSize = 25
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [year, setYear] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-      if (years?.budget_date?.budget_year) setYear(Number(years.budget_date.budget_year))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['estimate-acadyear', scId, year, syId],
+    queryKey: ['estimate-acadyear', scId, apiYear, syId],
     queryFn: () =>
-      apiGet<EstimateGroup[]>(`Budget/loadEstimateAcadyearGroup/${scId}/${year}/${syId}`),
-    enabled: scId > 0 && syId > 0 && year > 0,
+      apiGet<EstimateGroup[]>(`Budget/loadEstimateAcadyearGroup/${scId}/${apiYear}/${syId}`),
+    enabled: scId > 0 && syId > 0 && apiYear > 0,
   })
 
   const rows = Array.isArray(data) ? data : []

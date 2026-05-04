@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, FindOptionsWhere } from 'typeorm';
 import { PlnBudgetCategory } from './entities/pln-budget-category.entity';
@@ -17,6 +17,8 @@ import { UpdateRealBudgetDto } from './dto/update-real-budget.dto';
 
 @Injectable()
 export class BudgetService {
+  private readonly logger = new Logger(BudgetService.name);
+
   constructor(
     @InjectRepository(PlnBudgetCategory)
     private readonly plnBudgetCategoryRepository: Repository<PlnBudgetCategory>,
@@ -33,17 +35,12 @@ export class BudgetService {
   ) {}
 
   async loadEstimateAcadyearGroup(scId: number, year: number, syId: number) {
-    try {
-      if (!scId || scId <= 0) {
-        throw new Error('Invalid sc_id');
-      }
-      if (!year || year <= 0) {
-        throw new Error('Invalid year');
-      }
-      if (!syId || syId <= 0) {
-        throw new Error('Invalid sy_id');
-      }
+    const empty = { data: [], totalrealbudget: 0, totalsumbudget: 0 };
+    if (!scId || scId <= 0 || !year || year <= 0 || !syId || syId <= 0) {
+      return empty;
+    }
 
+    try {
       const categories = await this.masterBudgetCategoryRepository.find({
         order: { bgCateId: 'ASC' },
       });
@@ -68,110 +65,92 @@ export class BudgetService {
 
       const totalEstimate = estimate?.eaBudget || 0;
 
-      // Get budget category for each category
-      const data = await Promise.all(
-        categories.map(async (category) => {
-          try {
-            // Get budget category for this school/year/category
-            const plnBudget = await this.plnBudgetCategoryRepository.findOne({
+      // ── Batch-load เพื่อหลีกเลี่ยง N+1 ──────────────────────────────────────
+      const bgCateIds = categories.map((c) => c.bgCateId);
+
+      // 1. โหลด PlnBudgetCategory ทุก category ในรอบเดียว
+      const plnBudgets =
+        bgCateIds.length > 0
+          ? await this.plnBudgetCategoryRepository.find({
               where: {
                 scId,
                 acadYear: syId,
-                bgCateId: category.bgCateId,
+                bgCateId: In(bgCateIds),
                 budgetYear: year.toString(),
                 del: 0,
               },
-            });
+            })
+          : [];
+      const plnBudgetMap = new Map(plnBudgets.map((p) => [p.bgCateId, p]));
 
-            // Calculate total budget from details (real_budget)
-            let totalBudget = 0;
-            let expenses = 0;
-            if (plnBudget) {
-              const details = await this.plnBudgetCategoryDetailRepository.find(
-                {
-                  where: {
-                    pbcId: plnBudget.pbcId,
-                    del: 0,
-                  },
-                },
-              );
-              totalBudget = details.reduce(
-                (sum, detail) => sum + detail.budget,
-                0,
-              );
+      // 2. โหลด PlnBudgetCategoryDetail ทุก pbc ในรอบเดียว
+      const pbcIds = plnBudgets.map((p) => p.pbcId);
+      const allDetails =
+        pbcIds.length > 0
+          ? await this.plnBudgetCategoryDetailRepository.find({
+              where: { pbcId: In(pbcIds), del: 0 },
+            })
+          : [];
+      const detailsByPbcId = new Map<number, typeof allDetails>();
+      for (const d of allDetails) {
+        if (d.pbcId == null) continue;
+        const list = detailsByPbcId.get(d.pbcId) ?? [];
+        list.push(d);
+        detailsByPbcId.set(d.pbcId, list);
+      }
 
-              // Calculate expenses from tb_expenses table
-              // Get all bg_type_id from budget category details
-              const bgTypeIds = details
-                .map((detail) => detail.bgTypeId)
-                .filter((id) => id !== null && id !== undefined);
+      // 3. โหลด TbExpenses ทุก bg_type_id ในรอบเดียว
+      const allBgTypeIds = [
+        ...new Set(
+          allDetails.map((d) => d.bgTypeId).filter((id) => id != null),
+        ),
+      ] as number[];
+      const allExpenses =
+        allBgTypeIds.length > 0
+          ? await this.tbExpensesRepository.find({
+              where: { scId, exYearOut: year, bgTypeId: In(allBgTypeIds) },
+            })
+          : [];
+      const expensesByBgTypeId = new Map<number, number>();
+      for (const exp of allExpenses) {
+        if (exp.bgTypeId == null) continue;
+        expensesByBgTypeId.set(
+          exp.bgTypeId,
+          (expensesByBgTypeId.get(exp.bgTypeId) ?? 0) + (exp.exMoney || 0),
+        );
+      }
 
-              if (bgTypeIds.length > 0) {
-                try {
-                  // Get expenses for this school, budget year, and budget types
-                  const expensesList = await this.tbExpensesRepository.find({
-                    where: {
-                      scId,
-                      exYearOut: year,
-                      bgTypeId: In(bgTypeIds),
-                    },
-                  });
-
-                  // Sum all expenses (including pending approval - ex_status = 0)
-                  expenses = expensesList.reduce(
-                    (sum, exp) => sum + (exp.exMoney || 0),
-                    0,
-                  );
-                } catch (expenseError) {
-                  console.error(
-                    'Error calculating expenses for category:',
-                    category.bgCateId,
-                    expenseError,
-                  );
-                  expenses = 0; // Set to 0 if error occurs
-                }
-              }
-            }
-
-            const categoryEstimate = totalEstimate;
-
-            return {
-              ea_id: estimate?.eaId || 0,
-              bg_cate_id: category.bgCateId,
-              budget_cate: category.budgetCate,
-              budget_type: category.budgetCate, // For compatibility
-              ea_budget: categoryEstimate,
-              sum_budget: categoryEstimate, // For compatibility
-              real_budget: totalBudget,
-              ea_status: estimate?.eaStatus || 0,
-              sc_id: scId,
-              sy_id: syId,
-              budget_year: year.toString(),
-              expenses: expenses,
-            };
-          } catch (categoryError) {
-            console.error(
-              'Error processing category:',
-              category.bgCateId,
-              categoryError,
-            );
-            return {
-              ea_id: estimate?.eaId || 0,
-              bg_cate_id: category.bgCateId,
-              budget_cate: category.budgetCate,
-              budget_type: category.budgetCate,
-              ea_budget: totalEstimate,
-              sum_budget: totalEstimate,
-              real_budget: 0,
-              ea_status: estimate?.eaStatus || 0,
-              sc_id: scId,
-              sy_id: syId,
-              budget_year: year.toString(),
-              expenses: 0,
-            };
-          }
-        }),
-      );
+      const data = categories.map((category) => {
+        const plnBudget = plnBudgetMap.get(category.bgCateId);
+        let totalBudget = 0;
+        let expenses = 0;
+        if (plnBudget) {
+          const details = detailsByPbcId.get(plnBudget.pbcId) ?? [];
+          totalBudget = details.reduce((sum, d) => sum + d.budget, 0);
+          expenses = details.reduce(
+            (sum, d) =>
+              sum +
+              (d.bgTypeId != null
+                ? (expensesByBgTypeId.get(d.bgTypeId) ?? 0)
+                : 0),
+            0,
+          );
+        }
+        return {
+          ea_id: estimate?.eaId || 0,
+          bg_cate_id: category.bgCateId,
+          budget_cate: category.budgetCate,
+          budget_type: category.budgetCate,
+          ea_budget: totalEstimate,
+          sum_budget: totalEstimate,
+          real_budget: totalBudget,
+          ea_status: estimate?.eaStatus || 0,
+          sc_id: scId,
+          sy_id: syId,
+          budget_year: year.toString(),
+          expenses,
+        };
+      });
 
       const totalrealbudget = data.reduce(
         (sum, item) => sum + item.real_budget,
@@ -188,12 +167,8 @@ export class BudgetService {
         totalsumbudget,
       };
     } catch (error) {
-      console.error('loadEstimateAcadyearGroup error:', error);
-      return {
-        data: [],
-        totalrealbudget: 0,
-        totalsumbudget: 0,
-      };
+      this.logger.error('loadEstimateAcadyearGroup error:', error);
+      throw new InternalServerErrorException('โหลดข้อมูลงบประมาณล้มเหลว');
     }
   }
 
@@ -210,73 +185,53 @@ export class BudgetService {
         throw new Error('Invalid budget_year');
       }
 
+      // query 1: master categories
       const categories = await this.masterBudgetCategoryRepository.find({
         order: { bgCateId: 'ASC' },
       });
 
-      const data = await Promise.all(
-        categories.map(async (category) => {
-          try {
-            const plnBudget = await this.plnBudgetCategoryRepository.findOne({
-              where: {
-                scId,
-                acadYear: syId,
-                bgCateId: category.bgCateId,
-                budgetYear,
-                del: 0,
-              },
-            });
+      // query 2: all pln_budget_category rows for this school/year in one shot
+      const plnBudgets = await this.plnBudgetCategoryRepository.find({
+        where: { scId, acadYear: syId, budgetYear, del: 0 },
+      });
+      const plnByCategory = new Map(plnBudgets.map((p) => [p.bgCateId, p]));
 
-            // Get budget details
-            let budgetIncome = 0;
-            if (plnBudget) {
-              const details = await this.plnBudgetCategoryDetailRepository.find(
-                {
-                  where: {
-                    pbcId: plnBudget.pbcId,
-                    del: 0,
-                  },
-                },
-              );
-              budgetIncome = details.reduce(
-                (sum, detail) => sum + detail.budget,
-                0,
-              );
-            }
+      // query 3: all details for those pbc_ids in one shot
+      const pbcIds = plnBudgets.map((p) => p.pbcId);
+      const allDetails = pbcIds.length
+        ? await this.plnBudgetCategoryDetailRepository.find({
+            where: { pbcId: In(pbcIds), del: 0 },
+          })
+        : [];
+      const incomeSumByPbc = new Map<number, number>();
+      for (const d of allDetails) {
+        if (d.pbcId != null) {
+          incomeSumByPbc.set(
+            d.pbcId,
+            (incomeSumByPbc.get(d.pbcId) ?? 0) + (d.budget ?? 0),
+          );
+        }
+      }
 
-            return {
-              pbc_id: plnBudget?.pbcId || 0,
-              bg_cate_id: category.bgCateId,
-              budget_cate: category.budgetCate,
-              percents: plnBudget?.percents || 0,
-              total: plnBudget?.total || 0,
-              budget_income: budgetIncome,
-              acad_year: syId,
-              budget_year: budgetYear,
-            };
-          } catch (categoryError) {
-            console.error(
-              'Error processing category:',
-              category.bgCateId,
-              categoryError,
-            );
-            return {
-              pbc_id: 0,
-              bg_cate_id: category.bgCateId,
-              budget_cate: category.budgetCate,
-              percents: 0,
-              total: 0,
-              budget_income: 0,
-              acad_year: syId,
-              budget_year: budgetYear,
-            };
-          }
-        }),
-      );
+      const data = categories.map((category) => {
+        const plnBudget = plnByCategory.get(category.bgCateId);
+        return {
+          pbc_id: plnBudget?.pbcId ?? 0,
+          bg_cate_id: category.bgCateId,
+          budget_cate: category.budgetCate,
+          percents: plnBudget?.percents ?? 0,
+          total: plnBudget?.total ?? 0,
+          budget_income: plnBudget
+            ? (incomeSumByPbc.get(plnBudget.pbcId) ?? 0)
+            : 0,
+          acad_year: syId,
+          budget_year: budgetYear,
+        };
+      });
 
       return data;
     } catch (error) {
-      console.error('loadPLNBudgetCategory error:', error);
+      this.logger.error('loadPLNBudgetCategory error:', error);
       return [];
     }
   }
@@ -342,7 +297,7 @@ export class BudgetService {
 
       return { valid: true, budget };
     } catch (error) {
-      console.error('checkBudgetCategoryOnYear error:', error);
+      this.logger.error('checkBudgetCategoryOnYear error:', error);
       return {
         valid: false,
         budget: 0,
@@ -417,7 +372,7 @@ export class BudgetService {
         percent: percent.toFixed(2),
       };
     } catch (error) {
-      console.error('checkBudgetCategoryOnYears error:', error);
+      this.logger.error('checkBudgetCategoryOnYears error:', error);
       return {
         flag: false,
         ms:
@@ -442,16 +397,24 @@ export class BudgetService {
         spacial_type: item.spacialType,
       }));
     } catch (error) {
-      console.error('loadBudgetIncomeType error:', error);
+      this.logger.error('loadBudgetIncomeType error:', error);
       return [];
     }
   }
 
-  async loadBudgetIncome(pbcId: number, _syId: number) {
+  async loadBudgetIncome(pbcId: number, _syId: number, userScId?: number, userType?: number) {
     try {
-      // Validate input
       if (!pbcId || pbcId <= 0) {
         return [];
+      }
+
+      if (userType !== undefined && userType !== 1 && userScId !== undefined) {
+        const category = await this.plnBudgetCategoryRepository.findOne({
+          where: { pbcId, del: 0 },
+        });
+        if (!category || category.scId !== userScId) {
+          throw new ForbiddenException('ไม่มีสิทธิ์เข้าถึงข้อมูลงบประมาณของโรงเรียนนี้');
+        }
       }
 
       const details = await this.plnBudgetCategoryDetailRepository.find({
@@ -480,14 +443,39 @@ export class BudgetService {
         };
       });
     } catch (error) {
-      console.error('loadBudgetIncome error:', error);
+      this.logger.error('loadBudgetIncome error:', error);
       return [];
     }
   }
 
-  async addPLNBudgetCategory(payload: AddPlnBudgetCategoryDto) {
+  async loadBudgetIncomeTypeSummary(scId: number, syId: number, budgetYear: string) {
     try {
-      // Validate input
+      const incomeTypes = await this.budgetIncomeTypeRepository.find({ where: { del: 0 } });
+      const categories = await this.plnBudgetCategoryRepository.find({
+        where: { scId, acadYear: syId, budgetYear, del: 0 },
+      });
+      if (!categories.length) {
+        return incomeTypes.map((it) => ({ bg_type_id: it.bgTypeId, budget_type: it.budgetType, total_allocated: 0 }));
+      }
+      const pbcIds = categories.map((c) => c.pbcId);
+      const details = await this.plnBudgetCategoryDetailRepository.find({ where: { pbcId: In(pbcIds), del: 0 } });
+      const map = new Map<number, number>();
+      for (const d of details) {
+        if (d.bgTypeId != null) map.set(d.bgTypeId, (map.get(d.bgTypeId) ?? 0) + d.budget);
+      }
+      return incomeTypes.map((it) => ({
+        bg_type_id: it.bgTypeId,
+        budget_type: it.budgetType,
+        total_allocated: map.get(it.bgTypeId) ?? 0,
+      }));
+    } catch (error) {
+      this.logger.error('loadBudgetIncomeTypeSummary error:', error);
+      return [];
+    }
+  }
+
+  async addPLNBudgetCategory(payload: AddPlnBudgetCategoryDto, userScId?: number, userType?: number) {
+    try {
       if (!payload.pbc_id || payload.pbc_id <= 0) {
         return { flag: false, ms: 'ไม่พบข้อมูล pbc_id' };
       }
@@ -498,6 +486,12 @@ export class BudgetService {
 
       if (!plnBudget) {
         return { flag: false, ms: 'ไม่พบข้อมูลหมวดงบประมาณ' };
+      }
+
+      if (userType !== undefined && userType !== 1 && userScId !== undefined) {
+        if (plnBudget.scId !== userScId) {
+          throw new ForbiddenException('ไม่มีสิทธิ์แก้ไขงบประมาณของโรงเรียนนี้');
+        }
       }
       // Delete old details if specified
       if (payload.budget_del && payload.budget_del.length > 0) {
@@ -575,7 +569,7 @@ export class BudgetService {
 
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Add PLN Budget Category error:', error);
+      this.logger.error('Add PLN Budget Category error:', error);
       return {
         flag: false,
         ms:
@@ -654,7 +648,7 @@ export class BudgetService {
         pbc_id: plnBudget.pbcId,
       };
     } catch (error) {
-      console.error('Add new budget category error:', error);
+      this.logger.error('Add new budget category error:', error);
       return {
         flag: false,
         ms:
@@ -675,12 +669,16 @@ export class BudgetService {
         budget_cate: category.budgetCate,
       }));
     } catch (error) {
-      console.error('loadMasterBudgetCategories error:', error);
+      this.logger.error('loadMasterBudgetCategories error:', error);
       return [];
     }
   }
 
-  async updateEstimate(payload: UpdateEstimateDto) {
+  async updateEstimate(
+    payload: UpdateEstimateDto,
+    userScId?: number,
+    userType?: number,
+  ) {
     try {
       const estimate = await this.tbEstimateAcadyearRepository.findOne({
         where: { eaId: payload.ea_id, del: 0 },
@@ -690,8 +688,11 @@ export class BudgetService {
         return { flag: false, ms: 'ไม่พบข้อมูลงบประมาณ' };
       }
 
-      if (payload.sc_id !== undefined) {
-        estimate.scId = payload.sc_id;
+      // ตรวจ tenant โดยใช้ sc_id จาก DB record (ไม่ใช่จาก body)
+      if (userType !== undefined && userType !== 1 && userScId !== undefined) {
+        if (estimate.scId !== userScId) {
+          throw new ForbiddenException('ไม่มีสิทธิ์แก้ไขงบประมาณของโรงเรียนนี้');
+        }
       }
       if (payload.ea_status !== undefined) {
         estimate.eaStatus = payload.ea_status;
@@ -705,7 +706,7 @@ export class BudgetService {
       await this.tbEstimateAcadyearRepository.save(estimate);
       return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Update estimate error:', error);
+      this.logger.error('Update estimate error:', error);
       return {
         flag: false,
         ms:
@@ -777,7 +778,7 @@ export class BudgetService {
 
       return { flag: true, ms: 'อัปเดตงบประมาณจริงสำเร็จ' };
     } catch (error) {
-      console.error('Update real budget error:', error);
+      this.logger.error('Update real budget error:', error);
       return {
         flag: false,
         ms:
@@ -859,7 +860,7 @@ export class BudgetService {
         ea_id: saved.eaId,
       };
     } catch (error) {
-      console.error('Add estimate acadyear error:', error);
+      this.logger.error('Add estimate acadyear error:', error);
       return {
         flag: false,
         ms:

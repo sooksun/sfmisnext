@@ -5,9 +5,13 @@ import { ReceiptService } from './receipt.service';
 import { Receipt } from './entities/receipt.entity';
 import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity';
+import { FinancialAuditModule } from '../financial-audit/financial-audit.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Receipt, PlnReceive, PlnReceiveDetail])],
+  imports: [
+    TypeOrmModule.forFeature([Receipt, PlnReceive, PlnReceiveDetail]),
+    FinancialAuditModule,
+  ],
   controllers: [ReceiptController],
   providers: [ReceiptService],
   exports: [ReceiptService],

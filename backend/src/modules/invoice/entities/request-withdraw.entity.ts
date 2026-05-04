@@ -1,12 +1,15 @@
 import {
   Column,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
 @Entity('request_withdraw')
+@Index(['scId', 'del'])
+@Index(['scId', 'syId', 'del'])
 export class RequestWithdraw {
   @PrimaryGeneratedColumn({ name: 'rw_id' })
   rwId: number;
@@ -117,9 +120,33 @@ export class RequestWithdraw {
     type: 'int',
     default: 0,
     comment:
-      '0 = กำลังทำ | 100 = ส่งหัวหน้าการเงิน | 101 = หัวหน้าไม่อนุมัติ | 102 = หัวหน้าอนุมัติ | 200 = ผอ. อนุมัติ | 201 = ยกเลิกเช็ค | 202 = ออกเช็ค',
+      '0 = ร่าง | 50 = รอเจ้าหน้าที่ตรวจฎีกา | 51 = ตรวจไม่ผ่าน (ส่งกลับแก้ไข) | 100 = ตรวจแล้ว รอหัวหน้าอนุมัติ | 101 = หัวหน้าไม่อนุมัติ | 102 = หัวหน้าอนุมัติ | 200 = ผอ. อนุมัติ | 201 = ยกเลิกเช็ค | 202 = ออกเช็ค',
   })
   status: number;
+
+  @Column({
+    name: 'precheck_by',
+    type: 'int',
+    nullable: true,
+    comment: 'admin_id เจ้าหน้าที่ตรวจฎีกา (type=5)',
+  })
+  precheckBy: number | null;
+
+  @Column({
+    name: 'precheck_date',
+    type: 'datetime',
+    nullable: true,
+    comment: 'วันที่ตรวจฎีกา',
+  })
+  precheckDate: Date | null;
+
+  @Column({
+    name: 'precheck_note',
+    type: 'text',
+    nullable: true,
+    comment: 'หมายเหตุการตรวจฎีกา / เหตุผลตีกลับ',
+  })
+  precheckNote: string | null;
 
   @Column({ type: 'text', nullable: true })
   remark: string | null;
@@ -135,6 +162,99 @@ export class RequestWithdraw {
 
   @Column({ type: 'int', default: 0 })
   del: number;
+
+  // ── ข้อมูลเงินยืม (rw_type = 1) ─────────────────────────────────────────
+
+  @Column({
+    name: 'loan_type',
+    type: 'int',
+    nullable: true,
+    comment: '1=เงินสวัสดิการ | 2=โครงการ | 3=กิจกรรม',
+  })
+  loanType: number | null;
+
+  @Column({
+    name: 'loan_start_date',
+    type: 'date',
+    nullable: true,
+    comment: 'วันที่ยืมเงิน',
+  })
+  loanStartDate: string | null;
+
+  @Column({
+    name: 'loan_return_due_date',
+    type: 'date',
+    nullable: true,
+    comment: 'กำหนดส่งคืน (auto: loan_start_date + 30 วัน)',
+  })
+  loanReturnDueDate: string | null;
+
+  @Column({
+    name: 'loan_returned_date',
+    type: 'date',
+    nullable: true,
+    comment: 'วันที่คืนจริง',
+  })
+  loanReturnedDate: string | null;
+
+  @Column({
+    name: 'loan_return_cash',
+    type: 'float',
+    nullable: true,
+    default: 0,
+    comment: 'เงินสดคืน',
+  })
+  loanReturnCash: number | null;
+
+  @Column({
+    name: 'loan_return_voucher_amount',
+    type: 'float',
+    nullable: true,
+    default: 0,
+    comment: 'ใบสำคัญคืน',
+  })
+  loanReturnVoucherAmount: number | null;
+
+  // ── ข้อมูลบัญชีโรงเรียน (Finance module) ───────────────────────────────────
+
+  /**
+   * ประเภทรายจ่าย (expense_type):
+   * 1=ลูกจ้างชั่วคราว 2=ค่าตอบแทน 3=ค่าใช้สอย 4=ค่าวัสดุ 5=สาธารณูปโภค
+   * 6=ครุภัณฑ์ 7=ที่ดินสิ่งก่อสร้าง 8=เงินฝาก 9=ทุนการศึกษา
+   */
+  @Column({
+    name: 'expense_type',
+    type: 'int',
+    nullable: true,
+    comment:
+      '1=ลูกจ้าง|2=ตอบแทน|3=ใช้สอย|4=วัสดุ|5=สาธารณูปโภค|6=ครุภัณฑ์|7=ที่ดิน|8=เงินฝาก|9=ทุน',
+  })
+  expenseType: number | null;
+
+  @Column({
+    name: 'is_check',
+    type: 'tinyint',
+    default: 0,
+    comment: '1=จ่ายด้วยเช็ค',
+  })
+  isCheck: number;
+
+  @Column({
+    name: 'payee_name',
+    type: 'varchar',
+    length: 200,
+    nullable: true,
+    comment: 'ผู้รับเงิน/ผู้รับเช็ค',
+  })
+  payeeName: string | null;
+
+  @Column({
+    name: 'main_register_id',
+    type: 'int',
+    nullable: true,
+    comment: 'FK main_register.mr_id',
+  })
+  mainRegisterId: number | null;
 
   @CreateDateColumn({ name: 'create_date', type: 'datetime', nullable: true })
   createDate: Date | null;

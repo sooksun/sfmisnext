@@ -3,8 +3,10 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
+@Index(['del'])
 @Entity('school')
 export class School {
   @PrimaryGeneratedColumn({ name: 'sc_id' })

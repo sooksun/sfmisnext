@@ -9,7 +9,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
-import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { DeleteWithReasonDialog } from '@/components/shared/delete-with-reason-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -73,8 +73,7 @@ export default function MoePolicyPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (item: MoePolicy) =>
-      apiPost('B_settings/remove_moe_policy', { ...item, del: 1 }),
+    mutationFn: ({ item, reason }: { item: MoePolicy; reason: string }) => apiPost('B_settings/remove_moe_policy', { ...item, del: 1, reason }),
     onSuccess: () => {
       toast.success('ลบเรียบร้อยแล้ว')
       qc.invalidateQueries({ queryKey: ['moe_policy'] })
@@ -163,14 +162,11 @@ export default function MoePolicyPage() {
         </div>
       </FormDialog>
 
-      <ConfirmDialog
+      <DeleteWithReasonDialog
         open={!!deleteTarget}
-        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
-        onCancel={() => setDeleteTarget(null)}
-        title="ยืนยันการลบ"
-        description={`ต้องการลบนโยบาย "${deleteTarget?.policy_name}" หรือไม่?`}
-        confirmLabel="ลบ"
-        variant="destructive"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={(reason) => { if (deleteTarget) deleteMutation.mutate({ item: deleteTarget, reason }) }}
+        loading={deleteMutation.isPending}
       />
     </div>
   )

@@ -109,8 +109,8 @@ describeIfDb('SFMIS E2E Tests', () => {
         .get('/api/B_admin/load_admin/0/100')
         .expect(200);
 
-      const e2eAdmin = res.body.data.find((a: any) =>
-        a.name === 'E2E Test User',
+      const e2eAdmin = res.body.data.find(
+        (a: any) => a.name === 'E2E Test User',
       );
       if (e2eAdmin) {
         createdAdminId = e2eAdmin.admin_id;

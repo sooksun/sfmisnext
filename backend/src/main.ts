@@ -1,3 +1,4 @@
+import './instrument'; // Sentry — must be first import
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
@@ -29,7 +30,7 @@ async function bootstrap() {
       whitelist: true,
       transform: true,
       skipNullProperties: false,
-      skipMissingProperties: true,
+      skipMissingProperties: false, // บังคับ validate ทุก field — ใช้ @IsOptional() ใน DTO สำหรับ optional
       transformOptions: {
         enableImplicitConversion: true,
       },

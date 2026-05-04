@@ -6,6 +6,7 @@ node_modules/
 dist/
 .next/
 out/
+*.tsbuildinfo
 
 # ── Environment / secrets ─────────────────────────────────────────────────────
 .env
@@ -78,8 +79,9 @@ report.*.json
 call
 ng
 subscribe
-scripts/
+/scripts/
 .cursorrules
+seed_mock_data.sql
 
 # ── Claude Code config ─────────────────────────────────────────────────────
 # Share `.claude/commands/` (slash commands) + `.claude/settings.json` (project allowlist)

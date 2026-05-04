@@ -8,6 +8,7 @@
   "scripts": {
     "build": "nest build",
     "seed": "ts-node src/seeds.ts",
+    "seed:prod": "node dist/seeds.js",
     "seed:test-users": "ts-node scripts/seed-test-users.ts",
     "test:users-e2e": "ts-node scripts/test-users-e2e.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -23,7 +24,9 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/data-source.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
-    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts"
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts",
+    "migration:run:prod": "typeorm migration:run -d dist/data-source.js",
+    "migration:revert:prod": "typeorm migration:revert -d dist/data-source.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

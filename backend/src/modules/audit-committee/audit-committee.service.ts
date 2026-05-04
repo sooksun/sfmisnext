@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
@@ -6,6 +6,8 @@ import { UpdateSetCommitteeDto } from './dto/update-set-committee.dto';
 
 @Injectable()
 export class AuditCommitteeService {
+  private readonly logger = new Logger(AuditCommitteeService.name);
+
   constructor(
     @InjectRepository(ParcelOrder)
     private readonly parcelOrderRepository: Repository<ParcelOrder>,
@@ -122,7 +124,7 @@ export class AuditCommitteeService {
         // Also set due_date from date_deadline
         order.dueDate = new Date(dto.date_deadline);
       } catch (error) {
-        console.error('Error parsing date_deadline:', error);
+        this.logger.error('Error parsing date_deadline:', error);
       }
     }
 
@@ -134,7 +136,7 @@ export class AuditCommitteeService {
 
     try {
       await this.parcelOrderRepository.save(order);
-      console.log('Committee saved successfully:', {
+      this.logger.debug('Committee saved successfully:', {
         order_id: order.orderId,
         committee1: order.committee1,
         committee2: order.committee2,
@@ -144,7 +146,7 @@ export class AuditCommitteeService {
       });
       return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
     } catch (error) {
-      console.error('Error saving committee:', error);
+      this.logger.error('Error saving committee:', error);
       return {
         flag: false,
         ms: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล: ' + (error as Error).message,

@@ -1,0 +1,117 @@
+import { Injectable } from '@nestjs/common';
+import { DataSource } from 'typeorm';
+import { DocumentCounter } from './entities/document-counter.entity';
+import { GetNextNumberDto, ResetCounterDto } from './dto/doc-counter.dto';
+
+/** แมปรหัสเอกสาร → คำนำหน้าภาษาไทย */
+const DOC_TYPE_PREFIX: Record<string, string> = {
+  BC: 'บค.',
+  BJ: 'บจ.',
+  BY: 'บย.',
+  BG: 'บง.',
+};
+
+const ALL_DOC_TYPES = ['BC', 'BJ', 'BY', 'BG'];
+
+@Injectable()
+export class DocCounterService {
+  constructor(private readonly dataSource: DataSource) {}
+
+  /** ดึงเลขที่ถัดไป พร้อม lock row เพื่อป้องกัน race condition */
+  async getNextNumber(dto: GetNextNumberDto) {
+    const { sc_id, budget_year, doc_type } = dto;
+    const repo = this.dataSource.getRepository(DocumentCounter);
+    const qr = this.dataSource.createQueryRunner();
+
+    await qr.connect();
+    await qr.startTransaction();
+    try {
+      // upsert row ถ้ายังไม่มี แล้ว lock
+      let row = await qr.manager.findOne(DocumentCounter, {
+        where: { scId: sc_id, budgetYear: budget_year, docType: doc_type },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!row) {
+        // สร้าง row ใหม่ (ยังไม่มีใน transaction) แล้ว lock ใหม่อีกครั้ง
+        const newRow = qr.manager.create(DocumentCounter, {
+          scId: sc_id,
+          budgetYear: budget_year,
+          docType: doc_type,
+          lastNo: 0,
+        });
+        await qr.manager.save(DocumentCounter, newRow);
+        row = await qr.manager.findOne(DocumentCounter, {
+          where: { scId: sc_id, budgetYear: budget_year, docType: doc_type },
+          lock: { mode: 'pessimistic_write' },
+        });
+      }
+
+      row!.lastNo += 1;
+      await qr.manager.save(DocumentCounter, row!);
+      await qr.commitTransaction();
+
+      const next_no = row!.lastNo;
+      const prefix = DOC_TYPE_PREFIX[doc_type] ?? doc_type;
+      const formatted = `${prefix}${next_no}/${budget_year}`;
+
+      return { flag: true, ms: 'success', data: { next_no, formatted } };
+    } catch (error: unknown) {
+      await qr.rollbackTransaction();
+      const msg = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
+      return { flag: false, ms: msg };
+    } finally {
+      await qr.release();
+    }
+  }
+
+  /** โหลดสรุปทุก doc_type สำหรับโรงเรียน + ปีงบประมาณ (คืน 4 rows เสมอ) */
+  async loadCounters(scId: number, budgetYear: string) {
+    const repo = this.dataSource.getRepository(DocumentCounter);
+    const rows = await repo.find({ where: { scId, budgetYear } });
+
+    const map = new Map(rows.map((r) => [r.docType, r]));
+
+    const data = ALL_DOC_TYPES.map((docType) => {
+      const row = map.get(docType);
+      const lastNo = row?.lastNo ?? 0;
+      const prefix = DOC_TYPE_PREFIX[docType] ?? docType;
+      return {
+        doc_type: docType,
+        last_no: lastNo,
+        next_no: lastNo + 1,
+        formatted_next: `${prefix}${lastNo + 1}/${budgetYear}`,
+        budget_year: budgetYear,
+      };
+    });
+
+    return { data, count: data.length };
+  }
+
+  /** รีเซ็ต (หรือตั้งค่า) last_no ของ row */
+  async resetCounter(dto: ResetCounterDto) {
+    const { sc_id, budget_year, doc_type, reset_to } = dto;
+    const repo = this.dataSource.getRepository(DocumentCounter);
+
+    let row = await repo.findOne({
+      where: { scId: sc_id, budgetYear: budget_year, docType: doc_type },
+    });
+
+    if (!row) {
+      row = repo.create({
+        scId: sc_id,
+        budgetYear: budget_year,
+        docType: doc_type,
+        lastNo: reset_to,
+      });
+    } else {
+      row.lastNo = reset_to;
+    }
+
+    await repo.save(row);
+    return {
+      flag: true,
+      ms: `รีเซ็ตเลขที่เอกสาร ${doc_type} เป็น ${reset_to} เรียบร้อยแล้ว`,
+    };
+  }
+}

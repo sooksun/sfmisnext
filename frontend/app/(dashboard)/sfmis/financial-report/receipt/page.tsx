@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -23,6 +23,7 @@ import {
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface ReceiptRow {
   r_id: number
@@ -53,38 +54,26 @@ const receiptSchema = z.object({
 type ReceiptForm = z.infer<typeof receiptSchema>
 
 export default function ReceiptPage() {
+  const { scId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const year = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
+  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ReceiptRow | null>(null)
   const [editing, setEditing] = useState<ReceiptRow | null>(null)
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [year, setYear] = useState('')
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-      if (years?.budget_date?.budget_year) setYear(String(years.budget_date.budget_year))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['receipt', scId, syId, year],
-    queryFn: () => apiGet<ReceiptRow[]>(`Receipt/loadReceipt/${scId}/${syId}/${year}`),
-    enabled: scId > 0 && syId > 0 && year !== '',
+    queryKey: ['receipt', scId, syId, apiYear],
+    queryFn: () => apiGet<ReceiptRow[]>(`Receipt/loadReceipt/${scId}/${syId}/${apiYear}`),
+    enabled: scId > 0 && syId > 0 && apiYear !== '',
   })
 
   const { data: receives } = useQuery({
-    queryKey: ['receives-ref', scId, syId, year],
-    queryFn: () => apiGet<ReceiveRef[]>(`Receipt/loadReceive/${scId}/${syId}/${year}`),
-    enabled: scId > 0 && syId > 0 && year !== '',
+    queryKey: ['receives-ref', scId, syId, apiYear],
+    queryFn: () => apiGet<ReceiveRef[]>(`Receipt/loadReceive/${scId}/${syId}/${apiYear}`),
+    enabled: scId > 0 && syId > 0 && apiYear !== '',
   })
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } =
@@ -99,7 +88,7 @@ export default function ReceiptPage() {
 
   const saveMutation = useMutation({
     mutationFn: (form: ReceiptForm) => {
-      const payload = { ...form, sc_id: scId, sy_id: syId, year }
+      const payload = { ...form, sc_id: scId, sy_id: syId, year: apiYear }
       if (editing) return apiPost('Receipt/updateReceipt', { ...payload, r_id: editing.r_id })
       return apiPost('Receipt/addReceipt', payload)
     },
@@ -152,7 +141,7 @@ export default function ReceiptPage() {
   const rows = Array.isArray(data) ? data : []
   const receiveList = Array.isArray(receives) ? receives : []
 
-  const columns = [
+  const columns = useMemo(() => [
     {
       header: 'จัดการ',
       render: (item: ReceiptRow) => (
@@ -184,7 +173,7 @@ export default function ReceiptPage() {
         </div>
       ),
     },
-  ]
+  ], [])
 
   return (
     <div className="flex flex-col flex-auto min-w-0">

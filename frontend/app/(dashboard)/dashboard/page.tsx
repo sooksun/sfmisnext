@@ -1,43 +1,18 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { School, CalendarDays, User } from 'lucide-react'
-
-interface UserData {
-  name?: string
-  sc_name?: string
-}
-
-interface YearInfo {
-  sy_year?: number
-  budget_year?: number
-}
+import { School, CalendarDays, User, Sparkles, Brain, AlertTriangle, GitMerge } from 'lucide-react'
+import Link from 'next/link'
+import { useAppContext } from '@/hooks/use-app-context'
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<UserData | null>(null)
-  const [yearInfo, setYearInfo] = useState<YearInfo | null>(null)
+  const { userName, scName, syYear, budgetYear: budgetYearRaw } = useAppContext()
 
-  useEffect(() => {
-    try {
-      const data = JSON.parse(localStorage.getItem('data') || '{}')
-      if (data?.name) setUser(data)
-    } catch {
-      // ignore
-    }
-
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date || years?.budget_date) {
-        setYearInfo({
-          sy_year: years?.sy_date?.sy_year,
-          budget_year: years?.budget_date?.budget_year
-            ? years.budget_date.budget_year + 543
-            : undefined,
-        })
+  const user = userName ? { name: userName, sc_name: scName } : null
+  const yearInfo = (syYear > 0 || budgetYearRaw > 0)
+    ? {
+        sy_year: syYear,
+        budget_year: budgetYearRaw > 0 ? (budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543) : undefined,
       }
-    } catch {
-      // ignore
-    }
-  }, [])
+    : null
 
   return (
     <div className="flex flex-col gap-6">
@@ -92,6 +67,55 @@ export default function DashboardPage() {
               {yearInfo?.budget_year ?? '—'}
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* AI Assistant cards */}
+      <div className="rounded-xl border bg-gradient-to-r from-emerald-50 to-teal-50 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles className="h-5 w-5 text-emerald-600" />
+          <h2 className="text-base font-semibold text-gray-900">AI Assistant</h2>
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+            Google Gemini
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Link
+            href="/sfmis/ai-insights"
+            className="flex items-center gap-3 rounded-lg border bg-white p-3 shadow-sm hover:shadow-md transition-shadow"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 shrink-0">
+              <Brain className="h-5 w-5 text-blue-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-900">วิเคราะห์รายงาน</p>
+              <p className="text-xs text-gray-500">AI สรุปข้อมูลการเงิน</p>
+            </div>
+          </Link>
+          <Link
+            href="/sfmis/ai-alerts"
+            className="flex items-center gap-3 rounded-lg border bg-white p-3 shadow-sm hover:shadow-md transition-shadow"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 shrink-0">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-900">ตรวจสอบข้อมูล</p>
+              <p className="text-xs text-gray-500">แจ้งเตือนผิดปกติ</p>
+            </div>
+          </Link>
+          <Link
+            href="/sfmis/ai-merge"
+            className="flex items-center gap-3 rounded-lg border bg-white p-3 shadow-sm hover:shadow-md transition-shadow"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100 shrink-0">
+              <GitMerge className="h-5 w-5 text-purple-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-900">นำเข้าข้อมูล</p>
+              <p className="text-xs text-gray-500">AI ช่วย merge Excel</p>
+            </div>
+          </Link>
         </div>
       </div>
     </div>

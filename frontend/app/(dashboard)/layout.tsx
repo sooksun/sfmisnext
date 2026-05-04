@@ -1,6 +1,7 @@
 import { SidebarNav } from '@/components/layout/sidebar'
 import { Topbar } from '@/components/layout/topbar'
 import { SessionSync } from '@/components/session-sync'
+import { AiChatLoader } from '@/components/ai/ai-chat-loader'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -12,6 +13,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <SessionSync>{children}</SessionSync>
         </main>
       </div>
+      <AiChatLoader />
     </div>
   )
 }

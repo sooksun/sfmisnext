@@ -40,6 +40,9 @@ import { ParcelOrder } from './modules/project-approve/entities/parcel-order.ent
 import { ParcelDetail } from './modules/project-approve/entities/parcel-detail.entity';
 import { ReceiveParcelOrder } from './modules/supplie/entities/receive-parcel-order.entity';
 import { ReceiveParcelDetail } from './modules/supplie/entities/receive-parcel-detail.entity';
+import { MainRegister } from './modules/general-db/entities/main-register.entity';
+import { BudgetRequest } from './modules/budget-request/entities/budget-request.entity';
+import { OpeningBalance } from './modules/opening-balance/entities/opening-balance.entity';
 
 dotenv.config();
 
@@ -88,6 +91,9 @@ const AppDataSource = new DataSource({
     ParcelDetail,
     ReceiveParcelOrder,
     ReceiveParcelDetail,
+    MainRegister,
+    BudgetRequest,
+    OpeningBalance,
   ],
   synchronize: false,
 });
@@ -417,6 +423,28 @@ async function seedFinancialTransactions() {
   const scId = 1; // โรงเรียน ID
   const upBy = 1; // ผู้สร้างข้อมูล
 
+  // ดึงรายการ school_year ทั้งหมดสำหรับ scId นี้ เพื่อ map วันที่ → sy_id/budget_year/semester
+  const schoolYearRepo = AppDataSource.getRepository(SchoolYear);
+  const schoolYears = await schoolYearRepo.find({
+    where: { scId, del: 0 },
+    order: { syId: 'ASC' },
+  });
+
+  /** หา school_year record ที่ครอบคลุมวันที่นั้น */
+  function findSchoolYear(date: Date) {
+    return (
+      schoolYears.find(
+        (sy) =>
+          sy.syDateS &&
+          sy.syDateE &&
+          date >= new Date(sy.syDateS) &&
+          date <= new Date(sy.syDateE),
+      ) ??
+      schoolYears[schoolYears.length - 1] ??
+      null
+    );
+  }
+
   // สร้างข้อมูล 12 เดือน (ปี 2567-2568)
   // ปี 2567 = 2024 CE, ปี 2568 = 2025 CE
   // เริ่มจาก 1 ม.ค. 2567 (2024-01-01) ถึง 31 ธ.ค. 2568 (2025-12-31)
@@ -479,29 +507,48 @@ async function seedFinancialTransactions() {
       let prdId = 0;
       let rwId = 0;
 
+      // money_channel: 1=cash (เงินสด), 2=bank (เงินฝากธนาคาร)
+      // สำหรับ seed: สุ่ม 35% cash, 65% bank (สมจริงกับโรงเรียน)
+      let moneyChannel = Math.random() < 0.35 ? 1 : 2;
+      let linkedMoneyType: number | null = null;
+
       if (type === 1 && receives.length > 0) {
-        // รายรับ - เชื่อมโยงกับ PlnReceive
+        // รายรับ - เชื่อมโยงกับ PlnReceive + ใช้ receiveMoneyType เป็นตัวกำหนด channel
         const receive = receives[Math.floor(Math.random() * receives.length)];
         prId = receive.prId;
-        prdId = receive.prId; // Use prId as prdId for simplicity
+        prdId = receive.prId;
+        linkedMoneyType = receive.receiveMoneyType ?? null;
+        // 2 = เงินสด → cash(1), 1 = เช็ค / 3 = โอน → bank(2)
+        if (linkedMoneyType === 2) moneyChannel = 1;
+        else if (linkedMoneyType === 1 || linkedMoneyType === 3)
+          moneyChannel = 2;
       } else if (type === -1 && withdraws.length > 0) {
-        // รายจ่าย - เชื่อมโยงกับ RequestWithdraw
+        // รายจ่าย - เชื่อมโยงกับ RequestWithdraw (ส่วนใหญ่จ่ายผ่านเช็ค → bank)
         const withdraw =
           withdraws[Math.floor(Math.random() * withdraws.length)];
         rwId = withdraw.rwId;
+        // ใบสำคัญจ่ายมี offer_check → ส่วนใหญ่จ่ายผ่านธนาคาร 80%
+        moneyChannel = Math.random() < 0.8 ? 2 : 1;
       }
+
+      const sy = findSchoolYear(transactionDate);
 
       const transaction = financialTransactionsRepo.create({
         type,
         bgTypeId,
         amount,
         scId,
+        syId: sy?.syId ?? null,
+        budgetYear: sy?.budgetYear ?? null,
+        semester: sy?.semester ?? null,
         upBy,
         prId,
         prdId,
         rwId,
         prbId: 0,
-        del: '0',
+        moneyChannel,
+        baId: null, // seed ไม่ link bank account (จะเติมภายหลังเมื่อมี bank_account seed)
+        del: 0,
         createDate: transactionTime,
         updateDate: transactionTime,
       });
@@ -1325,10 +1372,9 @@ async function seedMockRequestWithdraw() {
         userRequest: 1,
         userOfferCheck: status >= 200 ? 1 : 0,
         offerCheckDate:
-          status >= 200
-            ? new Date(dateRequest.getTime() + 7 * 86400000)
-            : null,
-        checkNoDoc: status >= 200 ? `CHK-${String(seq).padStart(6, '0')}` : null,
+          status >= 200 ? new Date(dateRequest.getTime() + 7 * 86400000) : null,
+        checkNoDoc:
+          status >= 200 ? `CHK-${String(seq).padStart(6, '0')}` : null,
         typeOfferCheck: status >= 200 ? randPick([1, 2]) : 0,
         status,
         syId,
@@ -1377,9 +1423,21 @@ async function seedUnit() {
     return;
   }
   const units = [
-    'กล่อง', 'ชิ้น', 'แพ็ค', 'โหล', 'รีม',
-    'อัน', 'แผ่น', 'ขวด', 'ถุง', 'ม้วน',
-    'กระป๋อง', 'หลอด', 'ชุด', 'เล่ม', 'คู่',
+    'กล่อง',
+    'ชิ้น',
+    'แพ็ค',
+    'โหล',
+    'รีม',
+    'อัน',
+    'แผ่น',
+    'ขวด',
+    'ถุง',
+    'ม้วน',
+    'กระป๋อง',
+    'หลอด',
+    'ชุด',
+    'เล่ม',
+    'คู่',
   ];
   for (const unName of units) {
     await repo.save(repo.create({ unName, scId: 1, uStatus: 1, upBy: 1 }));
@@ -1394,14 +1452,41 @@ async function seedMasterObecPolicy() {
     return;
   }
   const policies = [
-    { obecPolicy: 'นโยบายด้านความปลอดภัย สพฐ.', detail: 'โรงเรียนต้องจัดให้มีมาตรการรักษาความปลอดภัยของนักเรียน ครู และบุคลากรอย่างเข้มแข็ง' },
-    { obecPolicy: 'นโยบายการศึกษาเพื่อพัฒนาทักษะอาชีพ', detail: 'ส่งเสริมการเรียนการสอนที่เชื่อมโยงกับทักษะวิชาชีพและการทำงานในศตวรรษที่ 21' },
-    { obecPolicy: 'นโยบายลดภาระครูและบุคลากรทางการศึกษา', detail: 'ลดงานด้านเอกสาร เพิ่มเวลาสอน นำเทคโนโลยีมาใช้บริหารจัดการ' },
-    { obecPolicy: 'นโยบายพัฒนาคุณภาพผู้เรียน', detail: 'พัฒนาผลสัมฤทธิ์ทางการเรียน ส่งเสริมศักยภาพนักเรียนรายบุคคล' },
-    { obecPolicy: 'นโยบายพัฒนาสมรรถนะครูและบุคลากร', detail: 'ส่งเสริมการพัฒนาวิชาชีพครู จัดอบรมประจำปีอย่างต่อเนื่อง' },
-    { obecPolicy: 'นโยบายการสร้างโอกาสทางการศึกษา', detail: 'จัดการศึกษาให้ทั่วถึง เท่าเทียม ลดความเหลื่อมล้ำ' },
-    { obecPolicy: 'นโยบายด้านการบริหารงบประมาณโปร่งใส', detail: 'การใช้งบประมาณต้องโปร่งใส ตรวจสอบได้ เน้นประสิทธิผลและประสิทธิภาพ' },
-    { obecPolicy: 'นโยบายส่งเสริมสุขภาวะนักเรียน', detail: 'ดูแลสุขภาพกาย สุขภาพจิต และโภชนาการของนักเรียน' },
+    {
+      obecPolicy: 'นโยบายด้านความปลอดภัย สพฐ.',
+      detail:
+        'โรงเรียนต้องจัดให้มีมาตรการรักษาความปลอดภัยของนักเรียน ครู และบุคลากรอย่างเข้มแข็ง',
+    },
+    {
+      obecPolicy: 'นโยบายการศึกษาเพื่อพัฒนาทักษะอาชีพ',
+      detail:
+        'ส่งเสริมการเรียนการสอนที่เชื่อมโยงกับทักษะวิชาชีพและการทำงานในศตวรรษที่ 21',
+    },
+    {
+      obecPolicy: 'นโยบายลดภาระครูและบุคลากรทางการศึกษา',
+      detail: 'ลดงานด้านเอกสาร เพิ่มเวลาสอน นำเทคโนโลยีมาใช้บริหารจัดการ',
+    },
+    {
+      obecPolicy: 'นโยบายพัฒนาคุณภาพผู้เรียน',
+      detail: 'พัฒนาผลสัมฤทธิ์ทางการเรียน ส่งเสริมศักยภาพนักเรียนรายบุคคล',
+    },
+    {
+      obecPolicy: 'นโยบายพัฒนาสมรรถนะครูและบุคลากร',
+      detail: 'ส่งเสริมการพัฒนาวิชาชีพครู จัดอบรมประจำปีอย่างต่อเนื่อง',
+    },
+    {
+      obecPolicy: 'นโยบายการสร้างโอกาสทางการศึกษา',
+      detail: 'จัดการศึกษาให้ทั่วถึง เท่าเทียม ลดความเหลื่อมล้ำ',
+    },
+    {
+      obecPolicy: 'นโยบายด้านการบริหารงบประมาณโปร่งใส',
+      detail:
+        'การใช้งบประมาณต้องโปร่งใส ตรวจสอบได้ เน้นประสิทธิผลและประสิทธิภาพ',
+    },
+    {
+      obecPolicy: 'นโยบายส่งเสริมสุขภาวะนักเรียน',
+      detail: 'ดูแลสุขภาพกาย สุขภาพจิต และโภชนาการของนักเรียน',
+    },
   ];
   for (const p of policies) {
     await repo.save(repo.create({ ...p, upBy: 1, del: 0 }));
@@ -1439,36 +1524,42 @@ async function seedTbEstimateAcadyear() {
     return;
   }
   const budgetTypes = await budgetTypeRepo.find({ where: { del: 0 } });
-  const schoolYears = await schoolYearRepo.find({ where: { del: 0 }, order: { syYear: 'DESC' }, take: 2 });
+  const schoolYears = await schoolYearRepo.find({
+    where: { del: 0 },
+    order: { syYear: 'DESC' },
+    take: 2,
+  });
   if (!budgetTypes.length || !schoolYears.length) return;
 
   const budgetAmounts: Record<string, number> = {
-    'เงินอุดหนุนทั่วไป': 1200000,
-    'เงินอุดหนุนเฉพาะกิจ': 800000,
-    'เงินรายได้': 350000,
-    'เงินรายได้จากการขาย': 80000,
-    'เงินรายได้จากการให้บริการ': 60000,
-    'เงินรายได้จากการบริจาค': 150000,
-    'เงินรายได้จากดอกผล': 25000,
-    'เงินรายได้อื่นๆ': 45000,
-    'เงินกองทุน': 200000,
-    'เงินรายได้แผ่นดิน': 500000,
+    เงินอุดหนุนทั่วไป: 1200000,
+    เงินอุดหนุนเฉพาะกิจ: 800000,
+    เงินรายได้: 350000,
+    เงินรายได้จากการขาย: 80000,
+    เงินรายได้จากการให้บริการ: 60000,
+    เงินรายได้จากการบริจาค: 150000,
+    เงินรายได้จากดอกผล: 25000,
+    เงินรายได้อื่นๆ: 45000,
+    เงินกองทุน: 200000,
+    เงินรายได้แผ่นดิน: 500000,
   };
 
   let count = 0;
   for (const sy of schoolYears) {
     for (const bt of budgetTypes) {
       const ea = budgetAmounts[bt.budgetType] ?? randInt(50000, 500000);
-      await repo.save(repo.create({
-        scId: 1,
-        syId: sy.syId,
-        budgetYear: String(sy.syYear),
-        eaBudget: ea,
-        realBudget: Math.floor(ea * (0.7 + Math.random() * 0.4)),
-        eaStatus: 1,
-        del: 0,
-        upBy: 1,
-      }));
+      await repo.save(
+        repo.create({
+          scId: 1,
+          syId: sy.syId,
+          budgetYear: String(sy.syYear),
+          eaBudget: ea,
+          realBudget: Math.floor(ea * (0.7 + Math.random() * 0.4)),
+          eaStatus: 1,
+          del: 0,
+          upBy: 1,
+        }),
+      );
       count++;
     }
   }
@@ -1488,40 +1579,51 @@ async function seedPlnBudgetCategory() {
   }
   const categories = await categoryRepo.find();
   const budgetTypes = await budgetTypeRepo.find({ where: { del: 0 } });
-  const schoolYears = await schoolYearRepo.find({ where: { del: 0 }, order: { syYear: 'DESC' }, take: 2 });
+  const schoolYears = await schoolYearRepo.find({
+    where: { del: 0 },
+    order: { syYear: 'DESC' },
+    take: 2,
+  });
   if (!categories.length || !schoolYears.length) return;
 
-  let pbcCount = 0, pbcdCount = 0;
+  let pbcCount = 0,
+    pbcdCount = 0;
   for (const sy of schoolYears) {
     for (const cat of categories) {
       const total = randInt(100000, 800000);
-      const pbc = await pbcRepo.save(pbcRepo.create({
-        scId: 1,
-        acadYear: sy.syYear,
-        budgetYear: String(sy.syYear),
-        bgCateId: cat.bgCateId,
-        percents: randInt(10, 40),
-        total,
-        del: 0,
-        upBy: 1,
-      }));
+      const pbc = await pbcRepo.save(
+        pbcRepo.create({
+          scId: 1,
+          acadYear: sy.syYear,
+          budgetYear: String(sy.syYear),
+          bgCateId: cat.bgCateId,
+          percents: randInt(10, 40),
+          total,
+          del: 0,
+          upBy: 1,
+        }),
+      );
       pbcCount++;
       // สร้าง detail 2-4 รายการต่อหมวด
       const typesToLink = budgetTypes.slice(0, randInt(2, 4));
       for (const bt of typesToLink) {
-        await pbcdRepo.save(pbcdRepo.create({
-          bgTypeId: bt.bgTypeId,
-          pbcId: pbc.pbcId,
-          budget: Math.floor(total / typesToLink.length),
-          budgetYear: sy.syYear,
-          del: 0,
-          upBy: 1,
-        }));
+        await pbcdRepo.save(
+          pbcdRepo.create({
+            bgTypeId: bt.bgTypeId,
+            pbcId: pbc.pbcId,
+            budget: Math.floor(total / typesToLink.length),
+            budgetYear: sy.syYear,
+            del: 0,
+            upBy: 1,
+          }),
+        );
         pbcdCount++;
       }
     }
   }
-  console.log(`สร้าง PlnBudgetCategory สำเร็จ (${pbcCount} หมวด, ${pbcdCount} detail)`);
+  console.log(
+    `สร้าง PlnBudgetCategory สำเร็จ (${pbcCount} หมวด, ${pbcdCount} detail)`,
+  );
 }
 
 async function seedPlnRealBudget() {
@@ -1534,7 +1636,11 @@ async function seedPlnRealBudget() {
     return;
   }
   const budgetTypes = await budgetTypeRepo.find({ where: { del: 0 } });
-  const schoolYears = await schoolYearRepo.find({ where: { del: 0 }, order: { syYear: 'DESC' }, take: 2 });
+  const schoolYears = await schoolYearRepo.find({
+    where: { del: 0 },
+    order: { syYear: 'DESC' },
+    take: 2,
+  });
   if (!budgetTypes.length || !schoolYears.length) return;
 
   let count = 0;
@@ -1543,18 +1649,20 @@ async function seedPlnRealBudget() {
     for (const bt of budgetTypes) {
       for (let seq = 1; seq <= 3; seq++) {
         const amount = randInt(20000, 400000);
-        await repo.save(repo.create({
-          scId: 1,
-          acadYear: sy.syYear,
-          autoNumbers: seq,
-          bgTypeId: bt.bgTypeId,
-          receivetype: randPick(receiveTypes),
-          recieveAcadyear: sy.syYear,
-          detail: `รับจัดสรรงบประมาณ ${bt.budgetType} งวดที่ ${seq}/${sy.syYear}`,
-          amount,
-          upBy: 1,
-          del: 0,
-        }));
+        await repo.save(
+          repo.create({
+            scId: 1,
+            acadYear: sy.syYear,
+            autoNumbers: seq,
+            bgTypeId: bt.bgTypeId,
+            receivetype: randPick(receiveTypes),
+            recieveAcadyear: sy.syYear,
+            detail: `รับจัดสรรงบประมาณ ${bt.budgetType} งวดที่ ${seq}/${sy.syYear}`,
+            amount,
+            upBy: 1,
+            del: 0,
+          }),
+        );
         count++;
       }
     }
@@ -1574,7 +1682,11 @@ async function seedTbExpenses() {
   }
   const budgetTypes = await budgetTypeRepo.find({ where: { del: 0 } });
   const partners = await partnerRepo.find({ where: { scId: 1, del: 0 } });
-  const schoolYears = await schoolYearRepo.find({ where: { del: 0 }, order: { syYear: 'DESC' }, take: 1 });
+  const schoolYears = await schoolYearRepo.find({
+    where: { del: 0 },
+    order: { syYear: 'DESC' },
+    take: 1,
+  });
   if (!budgetTypes.length) return;
 
   const rows: TbExpenses[] = [];
@@ -1582,18 +1694,20 @@ async function seedTbExpenses() {
   for (let i = 0; i < 50; i++) {
     const bt = randPick(budgetTypes);
     const partner = partners.length ? randPick(partners) : null;
-    rows.push(repo.create({
-      scId: 1,
-      exYearIn: year,
-      bgTypeId: bt.bgTypeId,
-      exTypeBudget: randPick([1, 2, 3]),
-      pId: partner?.pId ?? 0,
-      exYearOut: year,
-      exRemark: `รายจ่ายประเภท ${bt.budgetType} รายการที่ ${i + 1}`,
-      exMoney: randInt(5000, 150000),
-      exStatus: randPick([0, 1]),
-      upBy: 1,
-    }));
+    rows.push(
+      repo.create({
+        scId: 1,
+        exYearIn: year,
+        bgTypeId: bt.bgTypeId,
+        exTypeBudget: randPick([1, 2, 3]),
+        pId: partner?.pId ?? 0,
+        exYearOut: year,
+        exRemark: `รายจ่ายประเภท ${bt.budgetType} รายการที่ ${i + 1}`,
+        exMoney: randInt(5000, 150000),
+        exStatus: randPick([0, 1]),
+        upBy: 1,
+      }),
+    );
   }
   await saveInChunks(repo, rows, 'TbExpenses');
   console.log(`สร้าง TbExpenses สำเร็จ (${rows.length} รายการ)`);
@@ -1614,22 +1728,30 @@ async function seedMasterClassroomBudget() {
 
   // อัตราเงินอุดหนุนรายหัว (บาท/คน) แยกตามระดับ
   const rateMap: Record<string, number> = {
-    'อนุบาล': 1700, 'ประถม': 1900, 'มัธยมต้น': 3500,
-    'มัธยมปลาย': 3800, 'ป.ว.ช.': 7600,
+    อนุบาล: 1700,
+    ประถม: 1900,
+    มัธยมต้น: 3500,
+    มัธยมปลาย: 3800,
+    'ป.ว.ช.': 7600,
   };
 
   let count = 0;
   const mainBt = budgetTypes[0]; // เงินอุดหนุนทั่วไป
   for (const cls of classrooms) {
-    const level = Object.keys(rateMap).find(k => cls.classLev?.includes(k.substring(0, 3))) ?? 'ประถม';
+    const level =
+      Object.keys(rateMap).find((k) =>
+        cls.classLev?.includes(k.substring(0, 3)),
+      ) ?? 'ประถม';
     const amount = rateMap[level] ?? 1900;
-    await repo.save(repo.create({
-      classId: cls.classId,
-      bgTypeId: mainBt.bgTypeId,
-      amount,
-      upBy: 1,
-      del: 0,
-    }));
+    await repo.save(
+      repo.create({
+        classId: cls.classId,
+        bgTypeId: mainBt.bgTypeId,
+        amount,
+        upBy: 1,
+        del: 0,
+      }),
+    );
     count++;
   }
   console.log(`สร้าง MasterClassroomBudget สำเร็จ (${count} รายการ)`);
@@ -1645,16 +1767,20 @@ async function seedSubmittingStudentRecords() {
   }
   const schoolYears = await schoolYearRepo.find({ where: { del: 0 } });
   for (const sy of schoolYears) {
-    await repo.save(repo.create({
-      status: 100,
-      syId: sy.syId,
-      year: sy.syYear,
-      scId: 1,
-      upBy: 1,
-      del: 0,
-    }));
+    await repo.save(
+      repo.create({
+        status: 100,
+        syId: sy.syId,
+        year: sy.syYear,
+        scId: 1,
+        upBy: 1,
+        del: 0,
+      }),
+    );
   }
-  console.log(`สร้าง SubmittingStudentRecords สำเร็จ (${schoolYears.length} รายการ)`);
+  console.log(
+    `สร้าง SubmittingStudentRecords สำเร็จ (${schoolYears.length} รายการ)`,
+  );
 }
 
 async function seedParcelOrders() {
@@ -1670,16 +1796,27 @@ async function seedParcelOrders() {
     console.log('ParcelOrder มีข้อมูลอยู่แล้ว ข้ามการสร้าง');
     return;
   }
-  const projects = await projectRepo.find({ where: { scId: 1, del: 0 }, take: 30 });
-  const supplies = await suppliesRepo.find({ where: { scId: 1, del: 0 }, take: 50 });
+  const projects = await projectRepo.find({
+    where: { scId: 1, del: 0 },
+    take: 30,
+  });
+  const supplies = await suppliesRepo.find({
+    where: { scId: 1, del: 0 },
+    take: 50,
+  });
   const budgetTypes = await budgetTypeRepo.find({ where: { del: 0 } });
   const partners = await partnerRepo.find({ where: { scId: 1, del: 0 } });
-  const schoolYears = await schoolYearRepo.find({ where: { del: 0 }, order: { syYear: 'DESC' }, take: 1 });
+  const schoolYears = await schoolYearRepo.find({
+    where: { del: 0 },
+    order: { syYear: 'DESC' },
+    take: 1,
+  });
   if (!projects.length || !supplies.length) return;
 
   const year = schoolYears[0]?.syYear ?? new Date().getFullYear();
   const adminId = 1;
-  let orderCount = 0, detailCount = 0;
+  let orderCount = 0,
+    detailCount = 0;
 
   for (let i = 0; i < 30; i++) {
     const proj = randPick(projects);
@@ -1689,49 +1826,55 @@ async function seedParcelOrders() {
     const orderStatus = randPick([1, 3, 5, 7, 9]);
     const budget = randInt(20000, 300000);
 
-    const order = await orderRepo.save(orderRepo.create({
-      projectId: proj.projId,
-      projectType: randPick([1, 2]),
-      scId: 1,
-      bgTypeId: bt?.bgTypeId ?? 1,
-      adminId,
-      orderDate,
-      orderStatus,
-      remark: `หมายเหตุคำสั่งซื้อที่ ${i + 1}`,
-      del: 0,
-      acadYear: year,
-      numbers: randInt(1, 10),
-      details: `รายละเอียดการจัดซื้อจัดจ้างลำดับที่ ${i + 1}`,
-      pId: partner?.pId ?? 0,
-      resources: randPick([1, 2, 3]),
-      budgets: budget,
-      jobType: randPick([1, 2, 3]),
-      noteNumber: i + 1,
-      buyDate: orderDate,
-      buyReason: `เหตุผลการจัดซื้อ ${i + 1}`,
-      departments: randPick([1, 2, 3]),
-      dueDate: new Date(orderDate.getTime() + randInt(15, 60) * 86400000),
-      committee1: 1,
-      committee2: 1,
-      committee3: 1,
-      dayDeadline: randInt(7, 30),
-      upBy: adminId,
-    }));
+    const order = await orderRepo.save(
+      orderRepo.create({
+        projectId: proj.projId,
+        projectType: randPick([1, 2]),
+        scId: 1,
+        bgTypeId: bt?.bgTypeId ?? 1,
+        adminId,
+        orderDate,
+        orderStatus,
+        remark: `หมายเหตุคำสั่งซื้อที่ ${i + 1}`,
+        del: 0,
+        acadYear: year,
+        numbers: randInt(1, 10),
+        details: `รายละเอียดการจัดซื้อจัดจ้างลำดับที่ ${i + 1}`,
+        pId: partner?.pId ?? 0,
+        resources: randPick([1, 2, 3]),
+        budgets: budget,
+        jobType: randPick([1, 2, 3]),
+        noteNumber: i + 1,
+        buyDate: orderDate,
+        buyReason: `เหตุผลการจัดซื้อ ${i + 1}`,
+        departments: randPick([1, 2, 3]),
+        dueDate: new Date(orderDate.getTime() + randInt(15, 60) * 86400000),
+        committee1: 1,
+        committee2: 1,
+        committee3: 1,
+        dayDeadline: randInt(7, 30),
+        upBy: adminId,
+      }),
+    );
     orderCount++;
 
     // สร้าง 2-4 รายการพัสดุต่อคำสั่งซื้อ
     const suppliesToLink = supplies.slice(0, randInt(2, 4));
     for (const supp of suppliesToLink) {
-      await detailRepo.save(detailRepo.create({
-        orderId: order.orderId,
-        suppId: supp.suppId,
-        pcTotal: randInt(1, 20),
-        del: 0,
-      }));
+      await detailRepo.save(
+        detailRepo.create({
+          orderId: order.orderId,
+          suppId: supp.suppId,
+          pcTotal: randInt(1, 20),
+          del: 0,
+        }),
+      );
       detailCount++;
     }
   }
-  console.log(`สร้าง ParcelOrder สำเร็จ (${orderCount} คำสั่งซื้อ, ${detailCount} รายการพัสดุ)`);
+  console.log(
+    `สร้าง ParcelOrder สำเร็จ (${orderCount} คำสั่งซื้อ, ${detailCount} รายการพัสดุ)`,
+  );
 }
 
 async function seedReceiveParcelOrders() {
@@ -1749,31 +1892,38 @@ async function seedReceiveParcelOrders() {
     where: { scId: 1, orderStatus: 7, del: 0 },
     take: 20,
   });
-  const schoolYears = await schoolYearRepo.find({ where: { del: 0 }, order: { syYear: 'DESC' }, take: 1 });
+  const schoolYears = await schoolYearRepo.find({
+    where: { del: 0 },
+    order: { syYear: 'DESC' },
+    take: 1,
+  });
   if (!orders.length) {
     console.log('ไม่มี ParcelOrder ที่อนุมัติแล้ว ข้าม ReceiveParcelOrder');
     return;
   }
 
   const syYear = schoolYears[0]?.syYear ?? new Date().getFullYear();
-  let receiveCount = 0, detailCount = 0;
+  let receiveCount = 0,
+    detailCount = 0;
 
   for (const order of orders) {
     const receiveDate = new Date(order.orderDate ?? new Date());
     receiveDate.setDate(receiveDate.getDate() + randInt(7, 30));
 
-    const receive = await receiveRepo.save(receiveRepo.create({
-      adminId: 1,
-      agentAdminId: 0,
-      userPacelId: 1,
-      scId: 1,
-      orderId: order.orderId,
-      syYear,
-      title: `ใบรับพัสดุคำสั่งซื้อ ${order.orderId}`,
-      del: 0,
-      receiveDate,
-      receiveStatus: randPick([1, 2, 3]),
-    }));
+    const receive = await receiveRepo.save(
+      receiveRepo.create({
+        adminId: 1,
+        agentAdminId: 0,
+        userPacelId: 1,
+        scId: 1,
+        orderId: order.orderId,
+        syYear,
+        title: `ใบรับพัสดุคำสั่งซื้อ ${order.orderId}`,
+        del: 0,
+        receiveDate,
+        receiveStatus: randPick([1, 2, 3]),
+      }),
+    );
     receiveCount++;
 
     // สร้าง detail จาก parcel_detail ของ order นี้
@@ -1781,16 +1931,198 @@ async function seedReceiveParcelOrders() {
       where: { orderId: order.orderId, del: 0 },
     });
     for (const pd of parcelDetails) {
-      await receiveDetailRepo.save(receiveDetailRepo.create({
-        receiveId: receive.receiveId,
-        suppId: pd.suppId ?? 0,
-        rpTotal: Math.floor((pd.pcTotal ?? 1) * (0.5 + Math.random() * 0.5)),
-        del: 0,
-      }));
+      await receiveDetailRepo.save(
+        receiveDetailRepo.create({
+          receiveId: receive.receiveId,
+          suppId: pd.suppId ?? 0,
+          rpTotal: Math.floor((pd.pcTotal ?? 1) * (0.5 + Math.random() * 0.5)),
+          del: 0,
+        }),
+      );
       detailCount++;
     }
   }
-  console.log(`สร้าง ReceiveParcelOrder สำเร็จ (${receiveCount} ใบรับ, ${detailCount} รายการ)`);
+  console.log(
+    `สร้าง ReceiveParcelOrder สำเร็จ (${receiveCount} ใบรับ, ${detailCount} รายการ)`,
+  );
+}
+
+async function seedMainRegisters() {
+  const repo = AppDataSource.getRepository(MainRegister);
+  const count = await repo.count();
+  if (count > 0) {
+    console.log('MainRegister มีข้อมูลแล้ว ข้ามการสร้าง');
+    return;
+  }
+  const items = [
+    // category 1 = เงินอุดหนุน
+    {
+      mrCode: 'S01',
+      mrName: 'ทะเบียนประเภทเงินอุดหนุน (General Subsidy)',
+      category: 1,
+      sortOrder: 1,
+    },
+    {
+      mrCode: 'S02',
+      mrName: 'เงินอุดหนุนอาหารกลางวัน',
+      category: 1,
+      sortOrder: 2,
+    },
+    {
+      mrCode: 'S03',
+      mrName: 'เงินกองทุนอาหารกลางวันเพื่อเพิ่มผลผลิต',
+      category: 1,
+      sortOrder: 3,
+    },
+    {
+      mrCode: 'S04',
+      mrName: 'เงินกองทุนอาหารกลางวันเพื่อนักเรียนทุพโภชนาการ',
+      category: 1,
+      sortOrder: 4,
+    },
+    {
+      mrCode: 'S05',
+      mrName: 'เงินอุดหนุนโรงเรียนในฝัน',
+      category: 1,
+      sortOrder: 5,
+    },
+    {
+      mrCode: 'S06',
+      mrName: 'เงินอุดหนุนจากท้องถิ่น (Local Govt)',
+      category: 1,
+      sortOrder: 6,
+    },
+    { mrCode: 'S10', mrName: 'งบประมาณฝากจ่าย', category: 1, sortOrder: 10 },
+    {
+      mrCode: 'S12',
+      mrName: 'เงินนอกงบประมาณโครงการเรียนฟรี 15 ปี',
+      category: 7,
+      sortOrder: 12,
+    },
+    {
+      mrCode: 'S13',
+      mrName: 'เงินอุดหนุน คชจ.รายหัว ก่อนประถม',
+      category: 1,
+      sortOrder: 13,
+    },
+    {
+      mrCode: 'S14',
+      mrName: 'เงินอุดหนุน คชจ.รายหัว ประถม',
+      category: 1,
+      sortOrder: 14,
+    },
+    {
+      mrCode: 'S15',
+      mrName: 'เงินอุดหนุน คชจ.รายหัว มัธยม',
+      category: 1,
+      sortOrder: 15,
+    },
+    {
+      mrCode: 'S16',
+      mrName: 'เงินอุดหนุนปัจจัยพื้นฐาน ประถม',
+      category: 1,
+      sortOrder: 16,
+    },
+    {
+      mrCode: 'S17',
+      mrName: 'เงินอุดหนุนปัจจัยพื้นฐาน มัธยม',
+      category: 1,
+      sortOrder: 17,
+    },
+    {
+      mrCode: 'S19',
+      mrName: 'เงินอุดหนุนนักเรียนประจำพักนอน',
+      category: 1,
+      sortOrder: 19,
+    },
+    {
+      mrCode: 'S22',
+      mrName: 'เงิน กสศ. (Education Equity Fund)',
+      category: 1,
+      sortOrder: 22,
+    },
+    {
+      mrCode: 'S24',
+      mrName: 'กองทุนสานอนาคตการศึกษา Connex ED',
+      category: 1,
+      sortOrder: 24,
+    },
+    { mrCode: 'S25', mrName: 'กองทุนประชารัฐ', category: 1, sortOrder: 25 },
+    {
+      mrCode: 'S26',
+      mrName: 'เงินอุดหนุนค่าพาหนะรับส่งนักเรียน',
+      category: 1,
+      sortOrder: 26,
+    },
+    {
+      mrCode: 'S30',
+      mrName: 'อุดหนุนอาหารกลางวัน มัธยม',
+      category: 1,
+      sortOrder: 30,
+    },
+    {
+      mrCode: 'S31',
+      mrName: 'ทบ.คุมอาหารกลางวัน (2)',
+      category: 1,
+      sortOrder: 31,
+    },
+    // category 2 = รายได้สถานศึกษา
+    {
+      mrCode: 'R20',
+      mrName: 'เงินรายได้สถานศึกษา',
+      category: 2,
+      sortOrder: 20,
+    },
+    {
+      mrCode: 'R27',
+      mrName: 'รายได้สถานศึกษา (เพิ่มเติม 1)',
+      category: 2,
+      sortOrder: 27,
+    },
+    {
+      mrCode: 'R28',
+      mrName: 'รายได้สถานศึกษา (เพิ่มเติม 2)',
+      category: 2,
+      sortOrder: 28,
+    },
+    {
+      mrCode: 'R29',
+      mrName: 'รายได้สถานศึกษา (เพิ่มเติม 3)',
+      category: 2,
+      sortOrder: 29,
+    },
+    // category 3 = รายได้แผ่นดิน
+    {
+      mrCode: 'G08',
+      mrName: 'การรับและนำส่งเงินรายได้แผ่นดิน',
+      category: 3,
+      sortOrder: 8,
+    },
+    // category 4 = เงินฝาก/ประกัน
+    { mrCode: 'D09', mrName: 'เงินประกันสัญญา', category: 4, sortOrder: 9 },
+    // category 5 = ภาษีหักณที่จ่าย
+    {
+      mrCode: 'T11',
+      mrName: 'เงินภาษีหัก ณ ที่จ่าย',
+      category: 5,
+      sortOrder: 11,
+    },
+    // category 6 = ประกันสังคม
+    {
+      mrCode: 'SS18',
+      mrName: 'เงินนอกงบประมาณประกันสังคม',
+      category: 6,
+      sortOrder: 18,
+    },
+    // category 8 = อื่นๆ
+    { mrCode: 'O07', mrName: 'เงินอื่นๆ', category: 8, sortOrder: 7 },
+    { mrCode: 'O21', mrName: 'กฎกระทรวง', category: 8, sortOrder: 21 },
+    { mrCode: 'O23', mrName: 'เงินรอการตรวจสอบ', category: 8, sortOrder: 23 },
+  ];
+
+  const entities = items.map((i) => repo.create({ ...i, isActive: 1 }));
+  await repo.save(entities);
+  console.log(`สร้าง MainRegister ${entities.length} รายการสำเร็จ`);
 }
 
 async function run() {
@@ -1838,6 +2170,7 @@ async function run() {
     // Mock พัสดุ (ต้องการ Supplies ก่อน)
     await seedParcelOrders();
     await seedReceiveParcelOrders();
+    await seedMainRegisters();
 
     console.log('Seeding เสร็จสมบูรณ์');
   } catch (error) {

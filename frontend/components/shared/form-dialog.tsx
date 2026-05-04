@@ -12,7 +12,7 @@ interface FormDialogProps {
   onSubmit?: () => void
   submitLabel?: string
   loading?: boolean
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl'
 }
 
 const sizeMap = {
@@ -20,6 +20,7 @@ const sizeMap = {
   md: 'max-w-md',
   lg: 'max-w-lg',
   xl: 'max-w-2xl',
+  '2xl': 'max-w-3xl',
 }
 
 export function FormDialog({

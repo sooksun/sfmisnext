@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { ReceiveParcelOrder } from './entities/receive-parcel-order.entity';
 import { ReceiveParcelDetail } from './entities/receive-parcel-detail.entity';
 import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
@@ -8,6 +8,7 @@ import { ParcelDetail } from '../project-approve/entities/parcel-detail.entity';
 import { Supplies } from './entities/supplies.entity';
 import { TransactionSupplies } from './entities/transaction-supplies.entity';
 import { Admin } from '../admin/entities/admin.entity';
+import { SupInspection } from './entities/sup-inspection.entity';
 import { EditReceiveParcelDto } from './dto/edit-receive-parcel.dto';
 import { UpdateSupplieOrderDto } from './dto/update-supplie-order.dto';
 import { ConfirmWithdrawParcelDto } from './dto/confirm-withdraw-parcel.dto';
@@ -30,6 +31,9 @@ export class SupplieService {
     private readonly transactionSuppliesRepository: Repository<TransactionSupplies>,
     @InjectRepository(Admin)
     private readonly adminRepository: Repository<Admin>,
+    @InjectRepository(SupInspection)
+    private readonly supInspectionRepository: Repository<SupInspection>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async loadReceive(scId: number, syId: number) {
@@ -72,28 +76,36 @@ export class SupplieService {
       order: { orderId: 'DESC' },
     });
 
-    const result = await Promise.all(
-      orders.map(async (order) => {
-        const details = await this.parcelDetailRepository.find({
-          where: {
-            orderId: order.orderId,
-            del: 0,
-          },
-        });
+    // Batch-load all details in 1 query then group by orderId (ป้องกัน N+1)
+    const orderIds = orders.map((o) => o.orderId);
+    const allDetails =
+      orderIds.length > 0
+        ? await this.parcelDetailRepository.find({
+            where: { orderId: In(orderIds), del: 0 },
+          })
+        : [];
+    const detailsByOrderId = new Map<number, typeof allDetails>();
+    for (const d of allDetails) {
+      if (d.orderId === null) continue;
+      const list = detailsByOrderId.get(d.orderId) ?? [];
+      list.push(d);
+      detailsByOrderId.set(d.orderId, list);
+    }
 
-        return {
-          order_id: order.orderId,
-          project_id: order.projectId,
-          details: order.details,
-          resources: order.resources || 0,
-          budgets: order.budgets,
-          data_detail: details.map((detail) => ({
-            supp_id: detail.suppId,
-            pc_total: detail.pcTotal,
-          })),
-        };
-      }),
-    );
+    const result = orders.map((order) => {
+      const details = detailsByOrderId.get(order.orderId) ?? [];
+      return {
+        order_id: order.orderId,
+        project_id: order.projectId,
+        details: order.details,
+        resources: order.resources || 0,
+        budgets: order.budgets,
+        data_detail: details.map((detail) => ({
+          supp_id: detail.suppId,
+          pc_total: detail.pcTotal,
+        })),
+      };
+    });
 
     // Calculate balance from transactions
     const balance = await this.calculateBalance(scId);
@@ -323,72 +335,64 @@ export class SupplieService {
   }
 
   async editReceiveParcel(dto: EditReceiveParcelDto) {
-    // Create or update receive_parcel_order
-    let receive: ReceiveParcelOrder;
-    if (dto.receive_id && dto.receive_id > 0) {
-      const foundReceive = await this.receiveParcelOrderRepository.findOne({
-        where: { receiveId: dto.receive_id, del: 0 },
-      });
-      if (!foundReceive) {
-        return { flag: false, ms: 'ไม่พบข้อมูลการเบิกพัสดุ' };
+    return this.dataSource.transaction(async (manager) => {
+      // Create or update receive_parcel_order
+      let receive: ReceiveParcelOrder;
+      if (dto.receive_id && dto.receive_id > 0) {
+        const foundReceive = await manager.findOne(ReceiveParcelOrder, {
+          where: { receiveId: dto.receive_id, del: 0 },
+        });
+        if (!foundReceive) {
+          return { flag: false, ms: 'ไม่พบข้อมูลการเบิกพัสดุ' };
+        }
+        receive = foundReceive;
+      } else {
+        receive = manager.create(ReceiveParcelOrder, {});
       }
-      receive = foundReceive;
-    } else {
-      receive = this.receiveParcelOrderRepository.create({});
-    }
 
-    receive.adminId = dto.admin_id;
-    receive.agentAdminId = dto.agent || 0;
-    receive.scId = dto.sc_id;
-    receive.orderId = dto.order_id;
-    receive.syYear = dto.sy_year;
-    receive.title = dto.title;
-    receive.receiveDate = new Date(dto.receive_date);
-    receive.receiveStatus = 1; // กำลังรออนุมัติ
+      receive.adminId = dto.admin_id;
+      receive.agentAdminId = dto.agent || 0;
+      receive.scId = dto.sc_id;
+      receive.orderId = dto.order_id;
+      receive.syYear = dto.sy_year;
+      receive.title = dto.title;
+      receive.receiveDate = new Date(dto.receive_date);
+      receive.receiveStatus = 1;
 
-    await this.receiveParcelOrderRepository.save(receive);
+      await manager.save(ReceiveParcelOrder, receive);
 
-    // Handle receive details
-    if (dto.cart && dto.cart.length > 0) {
-      for (const cartItem of dto.cart) {
+      for (const cartItem of dto.cart ?? []) {
         let detail: ReceiveParcelDetail;
         if (cartItem.rp_id && cartItem.rp_id > 0) {
-          const foundDetail = await this.receiveParcelDetailRepository.findOne({
+          const foundDetail = await manager.findOne(ReceiveParcelDetail, {
             where: { rpId: cartItem.rp_id, del: 0 },
           });
-          if (!foundDetail) {
-            continue;
-          }
+          if (!foundDetail) continue;
           detail = foundDetail;
         } else {
-          detail = this.receiveParcelDetailRepository.create({
+          detail = manager.create(ReceiveParcelDetail, {
             receiveId: receive.receiveId,
           });
         }
-
         detail.suppId = cartItem.supp_id;
         detail.rpTotal = cartItem.receive;
-
-        await this.receiveParcelDetailRepository.save(detail);
+        await manager.save(ReceiveParcelDetail, detail);
       }
-    }
 
-    // Handle deleted details
-    if (dto.cart_receive_del && dto.cart_receive_del.length > 0) {
-      for (const cartItem of dto.cart_receive_del) {
+      for (const cartItem of dto.cart_receive_del ?? []) {
         if (cartItem.rp_id && cartItem.rp_id > 0) {
-          const detail = await this.receiveParcelDetailRepository.findOne({
+          const detail = await manager.findOne(ReceiveParcelDetail, {
             where: { rpId: cartItem.rp_id, del: 0 },
           });
           if (detail) {
             detail.del = 1;
-            await this.receiveParcelDetailRepository.save(detail);
+            await manager.save(ReceiveParcelDetail, detail);
           }
         }
       }
-    }
 
-    return { flag: true };
+      return { flag: true };
+    });
   }
 
   async removeReceiveParcel(receiveId: number) {
@@ -397,12 +401,24 @@ export class SupplieService {
     });
 
     if (!receive) {
-      return { flag: false, ms: 'ไม่พบข้อมูลการเบิกพัสดุ' };
+      return { flag: false, ms: 'ไม่พบข้อมูลการรับพัสดุ' };
+    }
+
+    // M5: block ลบถ้า inspection ลงสต็อกแล้ว (stockPosted=1)
+    if (receive.orderId) {
+      const postedInsp = await this.supInspectionRepository.findOne({
+        where: { orderId: receive.orderId, stockPosted: 1, del: 0 },
+      });
+      if (postedInsp) {
+        return {
+          flag: false,
+          ms: 'ไม่สามารถลบได้: ตรวจรับและลงสต็อกแล้ว',
+        };
+      }
     }
 
     receive.del = 1;
     await this.receiveParcelOrderRepository.save(receive);
-
     return { flag: true };
   }
 
@@ -424,44 +440,52 @@ export class SupplieService {
     return { flag: true };
   }
 
-  async confirmWithDrawParcel(dto: ConfirmWithdrawParcelDto) {
-    const receive = await this.receiveParcelOrderRepository.findOne({
-      where: { receiveId: dto.order.receive_id, del: 0 },
-    });
-
-    if (!receive) {
-      return { flag: false, ms: 'ไม่พบข้อมูลการเบิกพัสดุ' };
-    }
-
-    // Update receive status
-    receive.receiveStatus = dto.order.receive_status;
-    await this.receiveParcelOrderRepository.save(receive);
-
-    // Create transactions
-    for (const detail of dto.detail) {
-      // Get last balance for this supply
-      const lastTransaction = await this.transactionSuppliesRepository
-        .createQueryBuilder('trans')
-        .where('trans.supp_id = :suppId', { suppId: detail.supp_id })
-        .andWhere('trans.del = 0')
-        .orderBy('trans.trans_id', 'DESC')
-        .getOne();
-
-      const lastBalance = lastTransaction?.transBalance || 0;
-      const newBalance = lastBalance - detail.trans_out;
-
-      const transaction = this.transactionSuppliesRepository.create({
-        suppId: detail.supp_id,
-        transIn: detail.trans_in,
-        transOut: detail.trans_out,
-        transBalance: newBalance,
-        transComment: 'เบิกพัสดุ',
+  // M4: "ยืนยันรับพัสดุ" = รับเข้าสต็อก (trans_in) ไม่ใช่จ่ายออก
+  // ชื่อเดิม confirmWithDrawParcel แต่ semantics คือ "ยืนยันรับ" = trans_in
+  async confirmReceiveParcel(dto: ConfirmWithdrawParcelDto) {
+    return this.dataSource.transaction(async (manager) => {
+      const receive = await manager.findOne(ReceiveParcelOrder, {
+        where: { receiveId: dto.order.receive_id, del: 0 },
       });
 
-      await this.transactionSuppliesRepository.save(transaction);
-    }
+      if (!receive) {
+        return { flag: false, ms: 'ไม่พบข้อมูลการรับพัสดุ' };
+      }
 
-    return { flag: true };
+      receive.receiveStatus = dto.order.receive_status;
+      await manager.save(ReceiveParcelOrder, receive);
+
+      for (const detail of dto.detail) {
+        const lastTransaction = await manager
+          .createQueryBuilder(TransactionSupplies, 'trans')
+          .where('trans.supp_id = :suppId', { suppId: detail.supp_id })
+          .andWhere('trans.del = 0')
+          .orderBy('trans.trans_id', 'DESC')
+          .getOne();
+
+        const lastBalance = lastTransaction?.transBalance || 0;
+        // M4: รับเข้า (+) ไม่ใช่จ่ายออก (-)
+        const inQty = Number(detail.trans_in || 0);
+        const newBalance = lastBalance + inQty;
+
+        const transaction = manager.create(TransactionSupplies, {
+          suppId: detail.supp_id,
+          transIn: inQty,
+          transOut: 0,
+          transBalance: newBalance,
+          transComment: 'รับพัสดุ',
+        });
+
+        await manager.save(TransactionSupplies, transaction);
+      }
+
+      return { flag: true };
+    });
+  }
+
+  // backward-compat alias (L1: typo fix confiirmWithDrawParcel → confirmReceiveParcel)
+  async confirmWithDrawParcel(dto: ConfirmWithdrawParcelDto) {
+    return this.confirmReceiveParcel(dto);
   }
 
   private async calculateBalance(scId: number) {

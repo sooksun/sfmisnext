@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { CheckCircle, XCircle } from 'lucide-react'
@@ -9,6 +9,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime } from '@/lib/utils'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface SupplieOrder {
   order_id: number
@@ -31,29 +32,19 @@ const statusLabel: Record<number, { label: string; color: string }> = {
 }
 
 export default function WithdrawConfirmPage() {
+  const { scId, budgetYear: budgetYearRaw } = useAppContext()
+  const budgetYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
+  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [approveTarget, setApproveTarget] = useState<SupplieOrder | null>(null)
   const [denyTarget, setDenyTarget] = useState<SupplieOrder | null>(null)
-  const [scId, setScId] = useState(0)
-  const [budgetYear, setBudgetYear] = useState('')
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.budget_date?.budget_year) setBudgetYear(String(years.budget_date.budget_year))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['supplie-order-confirm', scId, budgetYear],
-    queryFn: () => apiGet<SupplieOrder[]>(`Supplie/loadSupplieOrder/${scId}/${budgetYear}`),
-    enabled: scId > 0 && budgetYear !== '',
+    queryKey: ['supplie-order-confirm', scId, apiYear],
+    queryFn: () => apiGet<SupplieOrder[]>(`Supplie/loadSupplieOrder/${scId}/${apiYear}`),
+    enabled: scId > 0 && apiYear !== '',
   })
 
   const updateMutation = useMutation({

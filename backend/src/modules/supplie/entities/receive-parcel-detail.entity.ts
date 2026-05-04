@@ -4,8 +4,10 @@ import {
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
+@Index(['receiveId', 'del'])
 @Entity('receive_parcel_detail')
 export class ReceiveParcelDetail {
   @PrimaryGeneratedColumn({ name: 'rp_id' })

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -9,13 +9,14 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
-import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { DeleteWithReasonDialog } from '@/components/shared/delete-with-reason-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiPost } from '@/lib/api'
 import { getThaiDateTime } from '@/lib/utils'
 import type { PaginatedResponse } from '@/lib/types'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface TypeSupply {
   ts_id: number
@@ -32,20 +33,13 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export default function TypeSuppliesPage() {
+  const { scId } = useAppContext()
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<TypeSupply | null>(null)
   const [editing, setEditing] = useState<TypeSupply | null>(null)
-  const [scId, setScId] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['type-supplies', scId, page, pageSize],
@@ -86,8 +80,8 @@ export default function TypeSuppliesPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (item: TypeSupply) =>
-      apiPost('General_db/remove_type_supplie', { ts_id: item.ts_id }),
+    mutationFn: ({ item, reason }: { item: TypeSupply; reason: string }) =>
+      apiPost('General_db/remove_type_supplie', { ts_id: item.ts_id, reason }),
     onSuccess: () => {
       toast.success('ลบเรียบร้อยแล้ว')
       qc.invalidateQueries({ queryKey: ['type-supplies'] })
@@ -177,14 +171,11 @@ export default function TypeSuppliesPage() {
         </div>
       </FormDialog>
 
-      <ConfirmDialog
+      <DeleteWithReasonDialog
         open={!!deleteTarget}
-        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
-        onCancel={() => setDeleteTarget(null)}
-        title="ยืนยันการลบ"
-        description={`ต้องการลบประเภทพัสดุ "${deleteTarget?.ts_name}" หรือไม่?`}
-        confirmLabel="ลบ"
-        variant="destructive"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={(reason) => { if (deleteTarget) deleteMutation.mutate({ item: deleteTarget, reason }) }}
+        loading={deleteMutation.isPending}
       />
     </div>
   )

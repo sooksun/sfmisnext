@@ -8,13 +8,30 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { SupplieService } from './supplie.service';
+
+/** Parse JSON query-string safely — throws 400 if malformed instead of 500 */
+function parseJsonArray(raw: string | undefined): unknown[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    throw new BadRequestException('pc_order ต้องเป็น JSON array ที่ถูกต้อง');
+  }
+}
 import { EditReceiveParcelDto } from './dto/edit-receive-parcel.dto';
 import { UpdateSupplieOrderDto } from './dto/update-supplie-order.dto';
 import { ConfirmWithdrawParcelDto } from './dto/confirm-withdraw-parcel.dto';
 import { LoadStockSupplieDto } from './dto/load-stock-supplie.dto';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
+@UseGuards(RolesGuard)
+@Roles(1, 2, 4, 7)
 @Controller('Supplie')
 export class SupplieController {
   constructor(private readonly supplieService: SupplieService) {}
@@ -79,7 +96,7 @@ export class SupplieController {
     const dto: any = {
       sc_id: scId ? parseInt(scId, 10) : 0,
       receive_id: receiveId ? parseInt(receiveId, 10) : undefined,
-      pc_order: pcOrder ? JSON.parse(pcOrder) : [],
+      pc_order: parseJsonArray(pcOrder),
     };
     return this.supplieService.loadStockSupplie(dto);
   }
@@ -126,9 +143,16 @@ export class SupplieController {
     return this.supplieService.updateSupplieOrder(dto);
   }
 
-  @Post('confiirmWithDrawParcel')
+  @Post('confirmWithDrawParcel')
   @HttpCode(HttpStatus.OK)
   confirmWithDrawParcel(@Body() dto: ConfirmWithdrawParcelDto) {
+    return this.supplieService.confirmWithDrawParcel(dto);
+  }
+
+  // backward-compat: เก็บ endpoint เดิมที่มี typo (double 'i') ไว้เผื่อ Angular legacy
+  @Post('confiirmWithDrawParcel')
+  @HttpCode(HttpStatus.OK)
+  confirmWithDrawParcelLegacy(@Body() dto: ConfirmWithdrawParcelDto) {
     return this.supplieService.confirmWithDrawParcel(dto);
   }
 }
@@ -197,9 +221,33 @@ export class SupplieLowerController {
     const dto: any = {
       sc_id: scId ? parseInt(scId, 10) : 0,
       receive_id: receiveId ? parseInt(receiveId, 10) : undefined,
-      pc_order: pcOrder ? JSON.parse(pcOrder) : [],
+      pc_order: parseJsonArray(pcOrder),
     };
     return this.supplieService.loadStockSupplie(dto);
+  }
+
+  @Get('loadSupplieOrder/:sc_id/:year_id')
+  @HttpCode(HttpStatus.OK)
+  loadSupplieOrder(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('year_id', ParseIntPipe) yearId: number,
+  ) {
+    return this.supplieService.loadSupplieOrder(scId, yearId);
+  }
+
+  @Get('loadGetSupplieOrder/:sc_id/:year_id')
+  @HttpCode(HttpStatus.OK)
+  loadGetSupplieOrder(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('year_id', ParseIntPipe) yearId: number,
+  ) {
+    return this.supplieService.loadGetSupplieOrder(scId, yearId);
+  }
+
+  @Get('loadResourcesPeople/:sc_id')
+  @HttpCode(HttpStatus.OK)
+  loadResourcesPeople(@Param('sc_id', ParseIntPipe) scId: number) {
+    return this.supplieService.loadResourcesPeople(scId);
   }
 
   @Post('editReceiveParcel')
@@ -212,5 +260,17 @@ export class SupplieLowerController {
   @HttpCode(HttpStatus.OK)
   removeReceiveParcel(@Body() body: { receive_id: number }) {
     return this.supplieService.removeReceiveParcel(body.receive_id);
+  }
+
+  @Post('updateSupplieOrder')
+  @HttpCode(HttpStatus.OK)
+  updateSupplieOrder(@Body() dto: UpdateSupplieOrderDto) {
+    return this.supplieService.updateSupplieOrder(dto);
+  }
+
+  @Post('confirmWithDrawParcel')
+  @HttpCode(HttpStatus.OK)
+  confirmWithDrawParcel(@Body() dto: ConfirmWithdrawParcelDto) {
+    return this.supplieService.confirmWithDrawParcel(dto);
   }
 }

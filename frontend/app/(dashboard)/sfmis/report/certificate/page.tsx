@@ -1,10 +1,11 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { apiGet } from '@/lib/api'
 import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface Certificate {
   cert_id: number
@@ -20,26 +21,16 @@ interface Certificate {
 }
 
 export default function CertificatePage() {
+  const { scId, budgetYear: budgetYearRaw } = useAppContext()
+  const year = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
+  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const [page, setPage] = useState(0)
   const pageSize = 25
-  const [scId, setScId] = useState(0)
-  const [year, setYear] = useState('')
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.budget_date?.budget_year) setYear(String(years.budget_date.budget_year))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['certificate', scId, year],
-    queryFn: () => apiGet<Certificate[]>(`Registration_certificate/loadregistrationcertificate/${scId}/${year}`),
-    enabled: scId > 0 && year !== '',
+    queryKey: ['certificate', scId, apiYear],
+    queryFn: () => apiGet<Certificate[]>(`Registration_certificate/loadregistrationcertificate/${scId}/${apiYear}`),
+    enabled: scId > 0 && apiYear !== '',
   })
 
   const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })

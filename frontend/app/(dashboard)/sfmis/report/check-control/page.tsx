@@ -1,10 +1,11 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { apiGet } from '@/lib/api'
 import { fmtDateTH } from '@/lib/utils'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface CheckControl {
   rw_id: number
@@ -31,21 +32,9 @@ const statusLabel: Record<number, { label: string; color: string }> = {
 }
 
 export default function CheckControlPage() {
+  const { scId, syId } = useAppContext()
   const [page, setPage] = useState(0)
   const pageSize = 25
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-    } catch {}
-  }, [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['check-control', scId, syId],

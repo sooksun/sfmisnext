@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
@@ -13,6 +13,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { apiGet } from '@/lib/api'
 import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface BankAccount {
   ba_id: number
@@ -35,24 +36,12 @@ interface BookbankEntry {
 }
 
 export default function BookbankPage() {
+  const { scId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const year = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
+  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const [page, setPage] = useState(0)
   const pageSize = 25
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [year, setYear] = useState('')
   const [selectedBaId, setSelectedBaId] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-      if (years?.budget_date?.budget_year) setYear(String(years.budget_date.budget_year))
-    } catch {}
-  }, [])
 
   const { data: bankAccounts } = useQuery({
     queryKey: ['bank-accounts-report', scId],
@@ -61,11 +50,11 @@ export default function BookbankPage() {
   })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['bookbank', selectedBaId, scId, syId, year],
+    queryKey: ['bookbank', selectedBaId, scId, syId, apiYear],
     queryFn: () => apiGet<BookbankEntry[]>(
-      `ReportRegisterBookbank/loadReportRegisterBookbank/${selectedBaId}/${scId}/${syId}/${year}`
+      `ReportRegisterBookbank/loadReportRegisterBookbank/${selectedBaId}/${scId}/${syId}/${apiYear}`
     ),
-    enabled: selectedBaId > 0 && scId > 0 && syId > 0 && year !== '',
+    enabled: selectedBaId > 0 && scId > 0 && syId > 0 && apiYear !== '',
   })
 
   const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })

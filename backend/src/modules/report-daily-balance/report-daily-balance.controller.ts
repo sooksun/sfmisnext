@@ -1,13 +1,20 @@
 import {
   Controller,
   Get,
+  Post,
+  Body,
   Param,
   ParseIntPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { ReportDailyBalanceService } from './report-daily-balance.service';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
+@UseGuards(RolesGuard)
+@Roles(1, 2, 5, 8)
 @Controller('ReportDailyBalance')
 export class ReportDailyBalanceController {
   constructor(
@@ -31,9 +38,26 @@ export class ReportDailyBalanceController {
     @Param('date') date: string,
     @Param('syId', ParseIntPipe) syId: number,
   ) {
-    // TODO: Implement PDF generation
-    // For now, return the same data as loadDailyBalance
-    // In the future, this should generate and return a PDF file
     return this.reportDailyBalanceService.loadDailyBalance(scId, date, syId);
+  }
+
+  @Get('cashLimitCheck/:scId')
+  @HttpCode(HttpStatus.OK)
+  cashLimitCheck(@Param('scId', ParseIntPipe) scId: number) {
+    return this.reportDailyBalanceService.loadCashLimitCheck(scId);
+  }
+
+  @Post('setCashLimit')
+  @HttpCode(HttpStatus.OK)
+  setCashLimit(
+    @Body()
+    dto: {
+      sc_id: number;
+      limit_amount: number;
+      note?: string;
+      up_by?: number;
+    },
+  ) {
+    return this.reportDailyBalanceService.setCashLimit(dto);
   }
 }

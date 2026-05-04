@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
@@ -13,6 +13,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { apiGet } from '@/lib/api'
 import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
+import { useAppContext } from '@/hooks/use-app-context'
 
 interface BudgetType {
   bg_type_id: number
@@ -32,24 +33,12 @@ interface MoneyTypeEntry {
 }
 
 export default function MoneyTypePage() {
+  const { scId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const year = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
+  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const [page, setPage] = useState(0)
   const pageSize = 25
-  const [scId, setScId] = useState(0)
-  const [syId, setSyId] = useState(0)
-  const [year, setYear] = useState('')
   const [selectedBgTypeId, setSelectedBgTypeId] = useState(0)
-
-  useEffect(() => {
-    try {
-      const userData = JSON.parse(localStorage.getItem('data') || '{}')
-      if (userData?.sc_id) setScId(Number(userData.sc_id))
-    } catch {}
-    try {
-      const years = JSON.parse(localStorage.getItem('years') || '{}')
-      if (years?.sy_date?.sy_id) setSyId(Number(years.sy_date.sy_id))
-      if (years?.budget_date?.budget_year) setYear(String(years.budget_date.budget_year))
-    } catch {}
-  }, [])
 
   const { data: budgetTypes } = useQuery({
     queryKey: ['budget-types-money'],
@@ -57,11 +46,11 @@ export default function MoneyTypePage() {
   })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['money-type', selectedBgTypeId, scId, syId, year],
+    queryKey: ['money-type', selectedBgTypeId, scId, syId, apiYear],
     queryFn: () => apiGet<MoneyTypeEntry[]>(
-      `Register_control_money_type/load_register_control_money_type/${selectedBgTypeId}/${scId}/${syId}/${year}`
+      `Register_control_money_type/load_register_control_money_type/${selectedBgTypeId}/${scId}/${syId}/${apiYear}`
     ),
-    enabled: selectedBgTypeId > 0 && scId > 0 && syId > 0 && year !== '',
+    enabled: selectedBgTypeId > 0 && scId > 0 && syId > 0 && apiYear !== '',
   })
 
   const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })

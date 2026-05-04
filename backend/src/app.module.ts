@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -18,6 +19,7 @@ import { BudgetModule } from './modules/budget/budget.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { ProjectModule } from './modules/project/project.module';
 import { ProjectApproveModule } from './modules/project-approve/project-approve.module';
+import { ProcurementPlanModule } from './modules/procurement-plan/procurement-plan.module';
 import { ReceiveModule } from './modules/receive/receive.module';
 import { ReceiptModule } from './modules/receipt/receipt.module';
 import { InvoiceModule } from './modules/invoice/invoice.module';
@@ -31,9 +33,39 @@ import { ReportBookbankModule } from './modules/report-bookbank/report-bookbank.
 import { RegisterMoneyTypeModule } from './modules/register-money-type/register-money-type.module';
 import { RegistrationCertificateModule } from './modules/registration-certificate/registration-certificate.module';
 import { HealthModule } from './modules/health/health.module';
+import { FinancialAuditModule } from './modules/financial-audit/financial-audit.module';
+import { GovRevenueModule } from './modules/gov-revenue/gov-revenue.module';
+import { LoanAgreementModule } from './modules/loan-agreement/loan-agreement.module';
+import { CashKeepingModule } from './modules/cash-keeping/cash-keeping.module';
+import { SmpDepositModule } from './modules/smp-deposit/smp-deposit.module';
+import { BankLedgerModule } from './modules/bank-ledger/bank-ledger.module';
+import { FiscalYearBalanceModule } from './modules/fiscal-year-balance/fiscal-year-balance.module';
+import { BankReconciliationModule } from './modules/bank-reconciliation/bank-reconciliation.module';
+import { MonthlySubmissionModule } from './modules/monthly-submission/monthly-submission.module';
+import { ReceiptBookModule } from './modules/receipt-book/receipt-book.module';
+import { DocCounterModule } from './modules/doc-counter/doc-counter.module';
+import { YearEndReportModule } from './modules/year-end-report/year-end-report.module';
+import { UnifiedRegisterModule } from './modules/unified-register/unified-register.module';
+import { GlobalSearchModule } from './modules/global-search/global-search.module';
+import { DayCloseCheckModule } from './modules/day-close-check/day-close-check.module';
+import { AiModule } from './modules/ai/ai.module';
+import { DeleteLogModule } from './modules/delete-log/delete-log.module';
+import { BudgetRequestModule } from './modules/budget-request/budget-request.module';
+import { OpeningBalanceModule } from './modules/opening-balance/opening-balance.module';
+import { FixedAssetModule } from './modules/fixed-asset/fixed-asset.module';
+import { ContractSecurityModule } from './modules/contract-security/contract-security.module';
+import { BudgetTransferModule } from './modules/budget-transfer/budget-transfer.module';
+import { ProjectFollowupModule } from './modules/project-followup/project-followup.module';
+import { EgpAnnouncementModule } from './modules/egp-announcement/egp-announcement.module';
+import { InvoicePreAuditModule } from './modules/invoice-pre-audit/invoice-pre-audit.module';
+import { PlanTraceModule } from './modules/plan-trace/plan-trace.module';
+import { SarReportModule } from './modules/sar-report/sar-report.module';
+import { IntraBankTransferModule } from './modules/intra-bank-transfer/intra-bank-transfer.module';
+import { SupplieRequestModule } from './modules/supplie-request/supplie-request.module';
 
 @Module({
   imports: [
+    ...(process.env.SENTRY_DSN ? [SentryModule.forRoot()] : []),
     ConfigModule.forRoot({
       isGlobal: true,
     }),
@@ -42,6 +74,12 @@ import { HealthModule } from './modules/health/health.module';
         name: 'login',
         ttl: 60000,
         limit: 5,
+      },
+      {
+        // AI endpoints — กัน Gemini cost spike
+        name: 'ai',
+        ttl: 60000,
+        limit: 30,
       },
     ]),
     TypeOrmModule.forRootAsync({
@@ -70,6 +108,7 @@ import { HealthModule } from './modules/health/health.module';
     SettingsModule,
     ProjectModule,
     ProjectApproveModule,
+    ProcurementPlanModule,
     ReceiveModule,
     ReceiptModule,
     InvoiceModule,
@@ -83,10 +122,43 @@ import { HealthModule } from './modules/health/health.module';
     RegisterMoneyTypeModule,
     RegistrationCertificateModule,
     HealthModule,
+    FinancialAuditModule,
+    GovRevenueModule,
+    LoanAgreementModule,
+    CashKeepingModule,
+    SmpDepositModule,
+    BankLedgerModule,
+    FiscalYearBalanceModule,
+    BankReconciliationModule,
+    MonthlySubmissionModule,
+    ReceiptBookModule,
+    DocCounterModule,
+    YearEndReportModule,
+    UnifiedRegisterModule,
+    GlobalSearchModule,
+    DayCloseCheckModule,
+    AiModule,
+    DeleteLogModule,
+    BudgetRequestModule,
+    OpeningBalanceModule,
+    FixedAssetModule,
+    ContractSecurityModule,
+    BudgetTransferModule,
+    ProjectFollowupModule,
+    EgpAnnouncementModule,
+    InvoicePreAuditModule,
+    PlanTraceModule,
+    SarReportModule,
+    IntraBankTransferModule,
+    SupplieRequestModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
+    // Global Sentry exception filter — captures unhandled exceptions when SENTRY_DSN is set
+    ...(process.env.SENTRY_DSN
+      ? [{ provide: APP_FILTER, useClass: SentryGlobalFilter }]
+      : []),
     // Global JWT guard — ทุก endpoint ต้อง authenticate ยกเว้นที่มี @Public()
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],

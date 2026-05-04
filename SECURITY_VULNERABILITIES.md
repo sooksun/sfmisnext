@@ -1,190 +1,187 @@
-# Security Vulnerabilities Report & Fix Guide
+# Security Vulnerabilities Report — SFMIS
 
-รายงาน Security Vulnerabilities และคู่มือการแก้ไขสำหรับ SFMIS System
+รายงาน vulnerabilities ของระบบ SFMIS หลังลบ Angular legacy frontend (เหลือ Backend NestJS + Frontend Next.js เท่านั้น)
 
-**วันที่อัปเดต**: 2024
-**Angular Version**: 16.2.12
-**Total Vulnerabilities**: 38 (7 low, 18 moderate, 10 high, 3 critical)
-
-## ⚠️ สรุป Vulnerabilities หลัก
-
-### Critical (3)
-1. **crypto-js** <4.2.0 - PBKDF2 weakness
-2. **form-data** <2.5.4 - Unsafe random function
-3. **xml2js** <0.5.0 - Prototype pollution
-
-### High (10)
-1. **@angular/common** <19.2.16 - XSRF Token Leakage
-2. **@angular/compiler** <=18.2.14 - Stored XSS
-3. **dompurify** <=3.2.3 - Multiple XSS vulnerabilities
-4. **webpack-dev-middleware** 6.0.0-6.1.1 - Path traversal
-5. **ws** 7.0.0-7.5.9 - DoS vulnerability
-6. และอื่นๆ
-
-### Moderate (18)
-- Angular core, webpack, postcss, quill, sweetalert2, และอื่นๆ
-
-## 🔍 การวิเคราะห์
-
-### 1. crypto-js (Critical)
-- **Version ปัจจุบัน**: 3.3.0
-- **Version แก้ไข**: 4.2.0
-- **การใช้งาน**: ใช้ใน `src/app/mock-api/common/auth/api.ts` สำหรับ JWT token generation (mock API เท่านั้น)
-- **ความเสี่ยง**: Critical - PBKDF2 1,000 times weaker
-- **คำแนะนำ**: 
-  - Mock API ไม่ใช่ production code แต่ควรอัปเดตเพื่อความปลอดภัย
-  - อัปเดตเป็น 4.2.0 (ต้องตรวจสอบ breaking changes)
-
-### 2. Angular Packages (High)
-- **Versions ปัจจุบัน**: 16.2.12
-- **Versions แก้ไข**: 19.2.16+ หรือ 21.0.2
-- **ความเสี่ยง**: XSRF Token Leakage, Stored XSS
-- **คำแนะนำ**: 
-  - ⚠️ **ไม่ควรใช้ `npm audit fix --force`** เพราะจะอัปเดตเป็น Angular 21 ซึ่งเป็น breaking change
-  - ควรอัปเดตแบบค่อยเป็นค่อยไป (16 → 17 → 18 → 19)
-
-### 3. quill (Moderate)
-- **Version ปัจจุบัน**: 1.3.7
-- **Version แก้ไข**: 2.0.3
-- **ความเสี่ยง**: Cross-site Scripting
-- **คำแนะนำ**: อัปเดตเป็น 2.0.3 (ต้องตรวจสอบ breaking changes)
-
-### 4. sweetalert2 (Moderate)
-- **Version ปัจจุบัน**: ^10.16.7
-- **Version แก้ไข**: 11.0.0+
-- **ความเสี่ยง**: Hidden functionality
-- **คำแนะนำ**: อัปเดตเป็น 11.0.0+ (อาจมี breaking changes)
-
-### 5. webpack & webpack-dev-server (Moderate/High)
-- **ความเสี่ยง**: XSS, Path traversal, Source code theft
-- **คำแนะนำ**: อัปเดตผ่าน @angular-devkit/build-angular
-
-## 🛠️ แผนการแก้ไข (แนะนำ)
-
-### Phase 1: แก้ไข Critical Vulnerabilities (ปลอดภัย)
-
-#### 1.1 อัปเดต crypto-js
-```bash
-npm install crypto-js@4.2.0
-npm install --save-dev @types/crypto-js@latest
-```
-
-**ตรวจสอบ breaking changes:**
-- ดูที่ `src/app/mock-api/common/auth/api.ts`
-- Mock API อาจไม่ได้รับผลกระทบมาก
-
-#### 1.2 อัปเดต sweetalert2 (ถ้าไม่มี breaking changes)
-```bash
-npm install sweetalert2@latest
-```
-
-**ตรวจสอบ:**
-- ดูการใช้งานใน `src/@fuse/services/connect.api.service.ts`
-- ทดสอบ UI dialogs
-
-### Phase 2: แก้ไข Moderate Vulnerabilities (ระวัง)
-
-#### 2.1 อัปเดต quill
-```bash
-npm install quill@latest
-npm install ngx-quill@latest
-```
-
-**⚠️ ระวัง**: quill 2.x อาจมี breaking changes
-
-#### 2.2 อัปเดต dependencies อื่นๆ ที่ไม่ใช่ breaking
-```bash
-npm audit fix
-```
-
-**หมายเหตุ**: คำสั่งนี้จะแก้ไขเฉพาะ vulnerabilities ที่ไม่ใช่ breaking changes
-
-### Phase 3: อัปเดต Angular (ต้องระวังมาก)
-
-#### 3.1 ตรวจสอบ Angular Update Guide
-- ดูที่ `docs/angular16_update_guide.md` (ถ้ามี)
-- ตรวจสอบ Angular Update Guide: https://update.angular.io/
-
-#### 3.2 อัปเดตแบบค่อยเป็นค่อยไป
-```bash
-# ตรวจสอบก่อน
-ng update
-
-# อัปเดตทีละ major version
-ng update @angular/core@17 @angular/cli@17
-ng update @angular/core@18 @angular/cli@18
-ng update @angular/core@19 @angular/cli@19
-```
-
-**⚠️ หมายเหตุ**: 
-- ต้องทดสอบทุกขั้นตอน
-- อาจต้องแก้ไข code หลายจุด
-- ควรทำใน branch แยก
-
-## ❌ สิ่งที่ไม่ควรทำ
-
-### 1. อย่าใช้ `npm audit fix --force`
-```bash
-# ❌ อย่าทำ
-npm audit fix --force
-```
-
-**เหตุผล:**
-- จะอัปเดต Angular เป็น 21.x (breaking change ใหญ่)
-- จะอัปเดต dependencies อื่นๆ เป็น breaking versions
-- อาจทำให้ระบบไม่ทำงาน
-
-### 2. อย่าอัปเดตทุกอย่างพร้อมกัน
-- ควรอัปเดตทีละ package
-- ทดสอบทุกครั้งหลังอัปเดต
-
-## ✅ แนวทางที่แนะนำ
-
-### สำหรับ Production (ปัจจุบัน)
-1. **ใช้ `npm audit fix`** (ไม่ใช่ --force) เพื่อแก้ไข vulnerabilities ที่ไม่ใช่ breaking
-2. **อัปเดต crypto-js** เป็น 4.2.0 (critical)
-3. **อัปเดต sweetalert2** เป็น latest (ถ้าไม่มี breaking)
-4. **ติดตาม vulnerabilities** อย่างสม่ำเสมอ
-
-### สำหรับ Development (ระยะยาว)
-1. **วางแผนอัปเดต Angular** จาก 16 → 17 → 18 → 19
-2. **ทดสอบใน development environment** ก่อน
-3. **อัปเดต dependencies อื่นๆ** ตามลำดับความสำคัญ
-4. **เขียน tests** เพื่อให้มั่นใจว่าไม่มี regression
-
-## 📋 Checklist การแก้ไข
-
-### Critical
-- [ ] อัปเดต crypto-js เป็น 4.2.0
-- [ ] ทดสอบ mock API หลังอัปเดต
-- [ ] อัปเดต form-data (ถ้าใช้)
-- [ ] อัปเดต xml2js (ถ้าใช้)
-
-### High
-- [ ] วางแผนอัปเดต Angular (16 → 17 → 18 → 19)
-- [ ] อัปเดต dompurify (ถ้าใช้)
-- [ ] อัปเดต webpack-dev-middleware (ผ่าน Angular CLI)
-
-### Moderate
-- [ ] อัปเดต sweetalert2
-- [ ] อัปเดต quill (ระวัง breaking changes)
-- [ ] รัน `npm audit fix` (ไม่ใช่ --force)
-
-## 🔗 Resources
-
-- [Angular Update Guide](https://update.angular.io/)
-- [npm audit documentation](https://docs.npmjs.com/cli/v8/commands/npm-audit)
-- [Security Advisories](https://github.com/advisories)
-
-## 📝 หมายเหตุ
-
-- **Mock API**: crypto-js ใช้ใน mock API เท่านั้น ไม่ใช่ production code แต่ควรอัปเดตเพื่อความปลอดภัย
-- **Development Dependencies**: vulnerabilities ใน devDependencies (เช่น protractor, karma) มีความเสี่ยงต่ำกว่า
-- **Breaking Changes**: ควรอ่าน changelog ของแต่ละ package ก่อนอัปเดต
+**วันที่สแกน:** 2026-05-04
+**Tool:** `npm audit` (npm 10.x)
 
 ---
 
-**คำแนะนำสุดท้าย**: 
-- สำหรับ production: ใช้ `npm audit fix` (ไม่ใช่ --force) และอัปเดต critical vulnerabilities
-- สำหรับ development: วางแผนอัปเดต Angular แบบค่อยเป็นค่อยไป
+## 📊 Executive Summary
 
+| Stack | Total | 🔴 Critical | 🟠 High | 🟡 Moderate | 🟢 Low |
+|---|---:|---:|---:|---:|---:|
+| Backend (NestJS) | 28 | 1 | 11 | 14 | 2 |
+| Frontend (Next.js) | 3 | 0 | 2 | 1 | 0 |
+| **รวม** | **31** | **1** | **13** | **15** | **2** |
+
+> **หมายเหตุ:** vulnerability ส่วนใหญ่ใน backend อยู่ใน devDependencies (NestJS CLI tooling, build tools) — **ไม่ส่งผลต่อ production runtime** เพราะ deploy ใช้ `npm ci --omit=dev`
+
+---
+
+## 🚨 Production-Critical (ต้องแก้ก่อน deploy)
+
+### Frontend
+
+#### 1. 🟠 HIGH — `next` 16.2.2 (DoS)
+- **Advisory:** GHSA-q4gf-8mx6-v5v3 — Denial of Service with Server Components
+- **CVSS:** 7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H)
+- **Range:** `>=16.0.0-beta.0 <16.2.3`
+- **Fix:** อัปเกรด `next` → 16.2.4 (semver-compatible, ไม่ใช่ breaking change)
+- **คำสั่ง:**
+  ```bash
+  cd frontend && npm install next@16.2.4
+  ```
+
+#### 2. 🟡 MODERATE — `postcss` <8.5.10 (XSS)
+- **Advisory:** GHSA-qx2v-qp2m-jg93 — XSS via Unescaped `</style>` in CSS Stringify
+- **CVSS:** 6.1
+- **Fix:** แก้ไปด้วยกันเมื่ออัปเกรด `next` → 16.2.4 (postcss เป็น transitive dep ของ next)
+
+#### 3. 🟠 HIGH — `xlsx` 0.18.5 ⚠️ **ไม่มี fix จาก npm**
+- **Advisories:**
+  - GHSA-4r6h-8v6p-xvw6 — Prototype Pollution (CVSS 7.8)
+  - GHSA-5pgg-2g8v-p4x9 — ReDoS (CVSS 7.5)
+- **Range:** `<0.20.2` (เวอร์ชันปัจจุบัน 0.18.5)
+- **สาเหตุ:** SheetJS หยุด publish เวอร์ชันใหม่บน npm registry แล้ว — เวอร์ชันใหม่ต้องดาวน์โหลดจาก https://cdn.sheetjs.com/
+- **การใช้งานในโปรเจกต์:** `frontend/lib/export-xlsx.ts` — export รายงานเป็น Excel
+- **ทางเลือก:**
+  - **A.** ติดตั้งจาก CDN: `npm install https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz` (vendored)
+  - **B.** เปลี่ยนไปใช้ `exceljs` (npm) แทน — รองรับ feature ส่วนใหญ่ของ xlsx
+  - **C.** ยอมรับ risk เพราะ:
+    - Prototype Pollution: เกิดเมื่อ parse Excel จาก untrusted source — SFMIS export อย่างเดียว ไม่ import → low impact
+    - ReDoS: เกิดเมื่อ parse — เช่นเดียวกัน
+- **แนะนำ:** **C ในระยะสั้น** (low real impact), **A หรือ B ในระยะยาว**
+
+### Backend
+
+#### 4. 🟠 HIGH — `@nestjs/core` ≤11.1.17
+- **Advisory:** GHSA-36xv-jgw5-4q75 — Injection in output used by downstream component
+- **CVSS:** 6.1 (severity moderate ตาม CVSS แต่ npm รายงาน high)
+- **Fix:** อัปเกรด NestJS family → 11.1.18+ (semver-compatible)
+
+#### 5. 🟠 HIGH — `@nestjs/platform-express` (transitive: multer, path-to-regexp)
+- **Advisories ซ้อน:**
+  - `multer` — DoS via incomplete cleanup, resource exhaustion, uncontrolled recursion
+  - `path-to-regexp` — DoS via sequential optional groups + multiple wildcards (ReDoS)
+- **Risk หลัก:** DoS attack — ส่ง crafted route ทำให้ regex backtrack หนัก
+- **Mitigation ปัจจุบัน:** Helmet + Rate limit (Throttler) ลด attack surface
+- **Fix:** อัปเกรด NestJS family
+
+#### Single command แก้ทั้ง 4-5 ตัว
+```bash
+cd backend && npm install \
+  @nestjs/common@latest \
+  @nestjs/core@latest \
+  @nestjs/platform-express@latest \
+  @nestjs/config@latest \
+  @nestjs/typeorm@latest
+```
+
+> ⚠️ ทดสอบทุก endpoint หลังอัปเกรด (มี 41 modules) — เพราะ NestJS minor bump บางครั้งเปลี่ยนพฤติกรรม pipe/guard
+
+---
+
+## 🛠️ DevDependencies (ไม่กระทบ production runtime)
+
+vulnerabilities เหล่านี้อยู่ใน build tools / CLI tools — **deploy ด้วย `npm ci --omit=dev`** จะไม่ติดตั้งและไม่ติด container
+
+| Package | Severity | สาเหตุ | หมายเหตุ |
+|---|---|---|---|
+| `handlebars` | 🔴 critical | Multiple injection / prototype pollution | ผ่าน `@nestjs/cli` → `@angular-devkit/schematics-cli` |
+| `@nestjs/cli` | 🟠 high | ใช้ตอน scaffold เท่านั้น | ไม่ใช้ runtime |
+| `glob`, `minimatch`, `picomatch` | 🟠 high | ReDoS / command injection ใน CLI | tool ภายใน build |
+| `lodash` | 🟠 high | Prototype Pollution | transitive ของ build chain |
+| `@isaacs/brace-expansion` | 🟠 high | Resource consumption | transitive |
+| `flatted` | 🟠 high | DoS in parse | transitive |
+
+### Mitigation
+- ✅ Production deploy ใช้ `npm ci --omit=dev` (ตาม `PRODUCTION.md` ระบุ)
+- ✅ Docker build (multi-stage) ตัด devDependencies ออกจาก final image
+- ⚠️ ถ้าต้องการลบให้สะอาด: รัน `npm audit fix` ใน backend (ไม่ใช้ `--force`) ทุกไตรมาส
+
+---
+
+## 🔍 Mitigations ที่มีอยู่แล้ว (ลด attack surface)
+
+### Authentication & Authorization
+- ✅ **Global `JwtAuthGuard`** ผ่าน `APP_GUARD` — endpoint ทุกตัว require JWT (ยกเว้น `@Public()`)
+- ✅ **Global `RolesGuard`** + `@Roles(roleId[])` — restrict by user role
+- ✅ **`assertSameSchool()` helper** — กัน multi-tenant data leak (ดู `tenant-guard.ts`)
+- ✅ **bcrypt rounds = 12** — เกินมาตรฐาน OWASP (≥10)
+- ✅ **MD5 → bcrypt auto-migration** — รองรับ legacy password ระหว่าง transition
+
+### Network & Headers
+- ✅ **Helmet** — security headers default (X-Frame-Options, X-Content-Type-Options, etc.)
+- ✅ **CORS** — restricted ใน production via `CORS_ORIGIN` env (ไม่ใช่ `*`)
+- ✅ **HTTPS** — บังคับผ่าน reverse proxy (Nginx/Cloudflare)
+
+### Rate Limiting (DoS protection)
+- ✅ **Login endpoint**: 5 req/min ผ่าน `ThrottlerGuard`
+- ✅ **AI endpoints**: 30 req/min — กัน Gemini/OpenRouter cost spike
+
+### Input Validation
+- ✅ **Global `ValidationPipe`** — `whitelist: true, transform: true` — DTO บังคับ validate
+- ✅ **`PageSizePipe`** — cap `pageSize` ที่ 500 → กัน DB abuse
+- ✅ **TypeORM Repository pattern** — parameterized queries กัน SQL injection
+
+### Secrets & Config
+- ✅ **`.env` gitignored** — ไม่หลุด git (ตรวจแล้ว)
+- ✅ **docker-compose ใช้ `${VAR:?error}`** — fail-fast ถ้าขาด secret (commit 5238bb9)
+- ✅ **JWT_SECRET, AUTH_SECRET** — ต้อง random ≥256-bit
+
+### Monitoring (optional)
+- ✅ **Sentry conditional load** — ถ้า `SENTRY_DSN` set จะ activate global exception filter
+- ✅ **Log policy** — backend ไม่ log password/token/PII (ตรวจ `chat.service.ts:90`)
+
+---
+
+## 📋 Action Plan ก่อน Deploy Production
+
+### P0 — ต้องทำก่อน Deploy
+- [ ] อัปเกรด `next` → 16.2.4 (FE)
+- [ ] อัปเกรด NestJS family ใน backend (BE)
+- [ ] รัน `npm test` หลังอัปเกรด (backend test suite — 257 tests)
+- [ ] รัน `npm run build` หลังอัปเกรด (ทั้ง 2 ฝั่ง)
+
+### P1 — ทำในรอบถัดไป (low real-world impact ใน SFMIS)
+- [ ] ตัดสินใจเรื่อง `xlsx` (ทางเลือก A/B/C ด้านบน)
+- [ ] รัน `npm audit fix` ใน backend ทุกไตรมาส
+- [ ] subscribe GitHub Dependabot alerts สำหรับ repo
+
+### P2 — Hardening เพิ่ม
+- [ ] พิจารณาเพิ่ม WAF (web application firewall) ที่ reverse proxy
+- [ ] Audit log สำหรับ admin actions (เริ่มมี `financial_audit_log` แล้ว — ขยาย scope)
+- [ ] Rotate `JWT_SECRET` schedule (เช่น ทุก 6 เดือน — ใช้ JWT versioning)
+
+---
+
+## ❌ ห้ามทำ
+
+### `npm audit fix --force`
+- จะอัปเกรด NestJS เป็น major version ที่อาจมี breaking change
+- จะอัปเกรด `typeorm` เป็น 0.2.41 (downgrade!) ที่ไม่รองรับ feature ที่ใช้อยู่
+- ทำให้ระบบไม่ work
+
+### `npm install xlsx@latest` (ผ่าน npm registry)
+- npm registry ค้างที่ 0.18.5 — ติดตั้งใหม่จะเอาเวอร์ชันเก่าเดิม
+- ต้องใช้ CDN: `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`
+
+---
+
+## 🔗 References
+
+- [npm audit docs](https://docs.npmjs.com/cli/v10/commands/npm-audit)
+- [GitHub Security Advisories](https://github.com/advisories)
+- [NestJS Security Best Practices](https://docs.nestjs.com/security/helmet)
+- [Next.js Security](https://nextjs.org/docs/app/building-your-application/configuring/content-security-policy)
+- [SheetJS Migration Guide](https://docs.sheetjs.com/docs/getting-started/installation/) — หา xlsx replacement
+
+---
+
+## 📝 ประวัติการสแกน
+
+| วันที่ | Backend | Frontend | หมายเหตุ |
+|---|---|---|---|
+| 2026-05-04 | 28 (1C/11H/14M/2L) | 3 (0C/2H/1M) | หลังลบ Angular legacy |
+| 2024 (เก่า) | — | — | รายงานเก่าสำหรับ Angular 16.2 — **ไม่ relevant** เพราะ Angular ถูกลบแล้ว |

@@ -12,6 +12,7 @@ import { CheckReceiveCommittee } from './entities/check-receive-committee.entity
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 import { calcWithholding } from '../../common/utils/withholding.util';
 import { FinancialAuditService } from '../financial-audit/financial-audit.service';
+import { INVOICE_STATUS } from '../../common/enums/invoice-status.enum';
 
 /**
  * Map type_offer_check → money_channel
@@ -287,9 +288,9 @@ export class CheckService {
         return { flag: false, ms: 'ไม่พบข้อมูลเช็ค' };
       }
 
-      // ── ตรวจสอบคณะกรรมการตรวจรับ เมื่อจะออกเช็ค (status=202) ─────────────
+      // ── ตรวจสอบคณะกรรมการตรวจรับ เมื่อจะออกเช็ค (CHECK_ISSUED) ─────────────
       if (
-        dto.status === 202 &&
+        dto.status === INVOICE_STATUS.CHECK_ISSUED &&
         Number(check.amount) >= this.committeeThreshold
       ) {
         const committee = await committeeRepo.findOne({
@@ -319,9 +320,12 @@ export class CheckService {
       await checkRepo.save(check);
 
       // ── Sync financial_transactions (ledger) ──────────────────────────
-      // เมื่อเปลี่ยนจาก "ยังไม่ออก" → "ออกเช็คแล้ว" (status=202) ให้สร้าง transaction type=-1
-      // ถ้ายกเลิก (status≠202) ให้ soft-delete transaction ที่เคยสร้างไว้
-      if (check.status === 202 && prevStatus !== 202) {
+      // เมื่อเปลี่ยนจาก "ยังไม่ออก" → "ออกเช็คแล้ว" (CHECK_ISSUED) ให้สร้าง transaction type=-1
+      // ถ้ายกเลิก (status≠CHECK_ISSUED) ให้ soft-delete transaction ที่เคยสร้างไว้
+      if (
+        check.status === INVOICE_STATUS.CHECK_ISSUED &&
+        prevStatus !== INVOICE_STATUS.CHECK_ISSUED
+      ) {
         // ป้องกัน double-insert — ตรวจว่ามี ft ของ rwId นี้อยู่แล้วไหม
         // (ภายใน transaction + lock จึง atomic กับ save ของ check ด้านบน)
         const exists = await ftRepo.count({

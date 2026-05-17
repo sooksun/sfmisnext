@@ -9,6 +9,7 @@ import {
   assertSameSchool,
   type JwtUser,
 } from '../../common/utils/tenant-guard';
+import { WC_STATUS } from '../../common/enums/withholding-certificate-status.enum';
 
 @Injectable()
 export class RegistrationCertificateService {
@@ -131,7 +132,7 @@ export class RegistrationCertificateService {
       cerDate: dto.cer_date as any,
       syId: dto.sy_id,
       year: dto.year,
-      status: dto.status ?? 100,
+      status: dto.status ?? WC_STATUS.IN_PROGRESS,
       del: 0,
       upBy: dto.up_by ?? 0,
     });
@@ -163,8 +164,8 @@ export class RegistrationCertificateService {
       assertSameSchool(user, cert.scId);
     }
 
-    // H6: ห้ามแก้ไขหนังสือรับรองที่ออกแล้ว (status=101)
-    if (cert.status === 101 && dto.del !== 1) {
+    // H6: ห้ามแก้ไขหนังสือรับรองที่ออกแล้ว (WC_STATUS.ISSUED)
+    if (cert.status === WC_STATUS.ISSUED && dto.del !== 1) {
       throw new BadRequestException(
         'หนังสือรับรองนี้ออกแล้ว (status=101) ไม่สามารถแก้ไขได้',
       );

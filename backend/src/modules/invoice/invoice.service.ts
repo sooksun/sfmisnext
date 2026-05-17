@@ -8,6 +8,10 @@ import { Partner } from '../general-db/entities/partner.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { FinancialAuditService } from '../financial-audit/financial-audit.service';
+import {
+  INVOICE_STATUS,
+  INVOICE_APPROVED_THRESHOLD,
+} from '../../common/enums/invoice-status.enum';
 
 @Injectable()
 export class InvoiceService {
@@ -132,13 +136,13 @@ export class InvoiceService {
       take: 1000,
     });
 
-    // ยอดเบิกสะสมแล้วต่อประเภทเงิน (status >= 200 = ผ่านอนุมัติ/ออกเช็คแล้ว)
+    // ยอดเบิกสะสมแล้วต่อประเภทเงิน (status >= DIRECTOR_APPROVED = ผ่านอนุมัติ/ออกเช็คแล้ว)
     const withdrawn = await this.requestWithdrawRepository
       .createQueryBuilder('rw')
       .select('rw.bg_type_id', 'bgTypeId')
       .addSelect('SUM(rw.amount)', 'total')
       .where(
-        'rw.sc_id = :scId AND rw.sy_id = :syId AND rw.del = 0 AND rw.status >= 200',
+        `rw.sc_id = :scId AND rw.sy_id = :syId AND rw.del = 0 AND rw.status >= ${INVOICE_APPROVED_THRESHOLD}`,
         { scId, syId },
       )
       .groupBy('rw.bg_type_id')
@@ -346,7 +350,7 @@ export class InvoiceService {
       .andWhere('rw.sy_id = :syId', { syId })
       .andWhere('rw.rw_type = 1')
       .andWhere('rw.del = 0')
-      .andWhere('rw.status >= 200') // อนุมัติและออกเช็คแล้ว
+      .andWhere(`rw.status >= ${INVOICE_APPROVED_THRESHOLD}`) // อนุมัติและออกเช็คแล้ว
       .select('rw.rw_id', 'rw_id')
       .addSelect('rw.no_doc', 'no_doc')
       .addSelect('rw.detail', 'detail')
@@ -539,14 +543,18 @@ export class InvoiceService {
       return { flag: false, ms: 'ไม่พบข้อมูลขอเบิก' };
     }
 
-    const fromPrecheck = invoice.status === 50;
+    const fromPrecheck = invoice.status === INVOICE_STATUS.PRECHECK_PENDING;
     invoice.status = dto.status;
     if (dto.remark !== undefined) {
       invoice.remark = dto.remark;
     }
 
-    // บันทึกข้อมูลเจ้าหน้าที่ตรวจฎีกา เมื่อ transition จาก 50 → 100/51
-    if (fromPrecheck && (dto.status === 100 || dto.status === 51)) {
+    // บันทึกข้อมูลเจ้าหน้าที่ตรวจฎีกา เมื่อ transition จาก PRECHECK_PENDING → PRECHECK_PASSED/PRECHECK_FAILED
+    if (
+      fromPrecheck &&
+      (dto.status === INVOICE_STATUS.PRECHECK_PASSED ||
+        dto.status === INVOICE_STATUS.PRECHECK_FAILED)
+    ) {
       invoice.precheckBy = dto.up_by ?? null;
       invoice.precheckDate = new Date();
       invoice.precheckNote = dto.precheck_note ?? null;

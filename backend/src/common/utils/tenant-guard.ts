@@ -1,4 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
+import { ADMIN_TYPE } from '../enums/admin-type.enum';
 
 /**
  * ผู้ใช้ที่ผ่าน JwtStrategy.validate() — มี shape นี้ (req.user)
@@ -7,14 +8,14 @@ export interface JwtUser {
   admin_id: number;
   username: string;
   sc_id: number;
-  type: number; // 1=Super Admin, 2=ผอ., ฯลฯ
+  type: number; // ดู ADMIN_TYPE enum
 }
 
 /**
  * Super Admin (admin.type = 1) ข้าม school ได้
  * Role อื่นทั้งหมดต้อง sc_id ตรงกับ JWT
  */
-const SUPER_ADMIN_TYPE = 1;
+const SUPER_ADMIN_TYPE = ADMIN_TYPE.SUPER_ADMIN;
 
 /**
  * ป้องกัน multi-tenant leak — ตรวจว่า scId ที่ขอเข้าถึงตรงกับ JWT user.sc_id

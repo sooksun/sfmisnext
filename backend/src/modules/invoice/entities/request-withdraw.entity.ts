@@ -10,6 +10,7 @@ import {
 @Entity('request_withdraw')
 @Index(['scId', 'del'])
 @Index(['scId', 'syId', 'del'])
+@Index(['scId', 'syId', 'status', 'del'])
 export class RequestWithdraw {
   @PrimaryGeneratedColumn({ name: 'rw_id' })
   rwId: number;

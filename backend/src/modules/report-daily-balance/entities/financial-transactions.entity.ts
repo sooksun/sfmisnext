@@ -12,6 +12,7 @@ import {
 @Index(['scId', 'createDate'])
 @Index(['scId', 'syId', 'del'])
 @Index(['scId', 'budgetYear', 'del'])
+@Index(['scId', 'budgetYear', 'createDate', 'del'])
 export class FinancialTransactions {
   @PrimaryGeneratedColumn({ name: 'ft_id' })
   ftId: number;

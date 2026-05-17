@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { LoanAgreement } from './entities/loan-agreement.entity';
 import { LoanReturnEvidence } from './entities/loan-return-evidence.entity';
 import { AddLoanAgreementDto } from './dto/add-loan-agreement.dto';
@@ -32,6 +32,7 @@ export class LoanAgreementService {
     private readonly adminRepo: Repository<Admin>,
     @InjectRepository(BudgetIncomeType)
     private readonly budgetTypeRepo: Repository<BudgetIncomeType>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async loadLoanAgreements(scId: number, syId: number, budgetYear: string) {
@@ -174,26 +175,28 @@ export class LoanAgreementService {
       };
     }
 
-    // update loan
-    loan.returnedDate = dto.returned_date;
-    loan.returnCash = dto.return_cash;
-    loan.returnVoucherAmount = dto.return_voucher_amount;
-    loan.status = 2;
-    loan.upBy = dto.up_by ?? 0;
-    await this.laRepo.save(loan);
+    // Wrap loan update + evidence insert ใน transaction เดียว
+    // ป้องกัน inconsistent state ถ้า evidence insert fail แต่ loan status เปลี่ยนแล้ว
+    await this.dataSource.transaction(async (manager) => {
+      loan.returnedDate = dto.returned_date;
+      loan.returnCash = dto.return_cash;
+      loan.returnVoucherAmount = dto.return_voucher_amount;
+      loan.status = 2;
+      loan.upBy = dto.up_by ?? 0;
+      await manager.save(LoanAgreement, loan);
 
-    // save evidence
-    const evidence = this.lreRepo.create({
-      laId: dto.la_id,
-      evidenceNo: dto.evidence_no ?? null,
-      evidenceDate: dto.returned_date,
-      cashAmount: dto.return_cash,
-      voucherAmount: dto.return_voucher_amount,
-      note: dto.note ?? null,
-      upBy: dto.up_by ?? 0,
-      del: 0,
+      const evidence = manager.create(LoanReturnEvidence, {
+        laId: dto.la_id,
+        evidenceNo: dto.evidence_no ?? null,
+        evidenceDate: dto.returned_date,
+        cashAmount: dto.return_cash,
+        voucherAmount: dto.return_voucher_amount,
+        note: dto.note ?? null,
+        upBy: dto.up_by ?? 0,
+        del: 0,
+      });
+      await manager.save(LoanReturnEvidence, evidence);
     });
-    await this.lreRepo.save(evidence);
 
     return { flag: true, ms: `บันทึกการคืนเงิน บย.${loan.laNo} เรียบร้อยแล้ว` };
   }

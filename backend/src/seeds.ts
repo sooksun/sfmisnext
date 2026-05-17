@@ -46,6 +46,20 @@ import { OpeningBalance } from './modules/opening-balance/entities/opening-balan
 
 dotenv.config();
 
+if (
+  process.env.NODE_ENV === 'production' &&
+  process.env.SEED_CONFIRM !== 'YES_I_KNOW'
+) {
+  console.error(
+    '\n✗ ปฏิเสธรัน seed บน NODE_ENV=production\n' +
+      '  seeds.ts มีคำสั่งลบข้อมูลจริง (เช่น FinancialTransactions ของ sc_id=1)\n' +
+      '  และจะเขียน mock volume data ทับ — รันใน production จะทำให้ข้อมูลการเงินหาย\n\n' +
+      '  ถ้ายืนยันว่าต้องการรันจริง (เช่น seed master data รอบแรกตอน setup):\n' +
+      '    SEED_CONFIRM=YES_I_KNOW npm run seed:prod\n',
+  );
+  process.exit(1);
+}
+
 const AppDataSource = new DataSource({
   type: 'mysql',
   host: process.env.DB_HOST || 'localhost',

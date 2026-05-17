@@ -5,6 +5,10 @@ import { WithholdingCertificate } from './entities/withholding-certificate.entit
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { Partner } from '../general-db/entities/partner.entity';
 import { calcWithholding } from '../../common/utils/withholding.util';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Injectable()
 export class RegistrationCertificateService {
@@ -135,21 +139,29 @@ export class RegistrationCertificateService {
     return { flag: true, ms: 'บันทึกเรียบร้อยแล้ว' };
   }
 
-  async updateWithholdingCertificate(dto: {
-    wc_id: number;
-    sc_id?: number;
-    wc_no?: string;
-    of_id?: number;
-    wc_rank?: number;
-    cer_date?: string;
-    status?: number;
-    del?: number;
-    up_by?: number;
-  }) {
+  async updateWithholdingCertificate(
+    dto: {
+      wc_id: number;
+      sc_id?: number;
+      wc_no?: string;
+      of_id?: number;
+      wc_rank?: number;
+      cer_date?: string;
+      status?: number;
+      del?: number;
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
     const cert = await this.withholdingCertificateRepository.findOne({
       where: { wcId: dto.wc_id, del: 0 },
     });
     if (!cert) return { flag: false, ms: 'ไม่พบข้อมูล' };
+
+    // Defense-in-depth: ตรวจ tenant ระดับ record (กรณี dto ไม่ส่ง sc_id มา)
+    if (user && cert.scId != null) {
+      assertSameSchool(user, cert.scId);
+    }
 
     // H6: ห้ามแก้ไขหนังสือรับรองที่ออกแล้ว (status=101)
     if (cert.status === 101 && dto.del !== 1) {

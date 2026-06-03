@@ -7,6 +7,7 @@ import { FinancialTransactions } from '../report-daily-balance/entities/financia
 import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
+import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
       PlnReceive,
       PlnReceiveDetail,
       RequestWithdraw,
+      OpeningBalance,
     ]),
   ],
   controllers: [RegisterMoneyTypeController],

@@ -6,6 +6,7 @@ import { FinancialTransactions } from '../report-daily-balance/entities/financia
 import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
+import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 
 export interface RegisterTransaction {
   ft_id: number;
@@ -37,6 +38,8 @@ export class RegisterMoneyTypeService {
     private readonly plnReceiveDetailRepository: Repository<PlnReceiveDetail>,
     @InjectRepository(RequestWithdraw)
     private readonly requestWithdrawRepository: Repository<RequestWithdraw>,
+    @InjectRepository(OpeningBalance)
+    private readonly openingBalanceRepository: Repository<OpeningBalance>,
   ) {}
 
   async loadBudgetType() {
@@ -73,7 +76,22 @@ export class RegisterMoneyTypeService {
       where: { bgTypeId },
     });
 
-    // Return empty data if no transactions
+    // ── ยอดยกมาต้นปี (opening_balance) ของประเภทเงินนี้ ─────────────────────
+    // money_type_id = bg_type_id ; storage_type 1=เงินสด 2=ธนาคาร 3=ฝากสพป.
+    const openingRows = await this.openingBalanceRepository.find({
+      where: syId
+        ? { scId, syId, moneyTypeId: bgTypeId, del: 0 }
+        : { scId, moneyTypeId: bgTypeId, del: 0 },
+    });
+    const openingCash = openingRows
+      .filter((o) => o.storageType === 1)
+      .reduce((s, o) => s + Number(o.amount || 0), 0);
+    const openingBank = openingRows
+      .filter((o) => o.storageType === 2 || o.storageType === 3)
+      .reduce((s, o) => s + Number(o.amount || 0), 0);
+    const openingTotal = openingCash + openingBank;
+
+    // Return empty data if no transactions (แต่ยังแสดงยอดยกมา ถ้ามี)
     if (transactions.length === 0) {
       this.logger.debug(
         `No transactions found for bgTypeId: ${bgTypeId}, scId: ${scId}`,
@@ -83,6 +101,7 @@ export class RegisterMoneyTypeService {
         sc_id: scId,
         sy_id: syId,
         year,
+        carry_forward: openingTotal,
         data: [
           {
             budget_type: budgetType?.budgetType || '',
@@ -92,10 +111,10 @@ export class RegisterMoneyTypeService {
       };
     }
 
-    // Process transactions
-    let balance = 0;
-    let cashBalance = 0;
-    let bankBalance = 0;
+    // Process transactions — เริ่มจากยอดยกมาต้นปี
+    let balance = openingTotal;
+    let cashBalance = openingCash;
+    let bankBalance = openingBank;
     const processedTransactions: RegisterTransaction[] = [];
 
     for (const trans of transactions) {
@@ -196,6 +215,7 @@ export class RegisterMoneyTypeService {
       sc_id: scId,
       sy_id: syId,
       year,
+      carry_forward: openingTotal, // ยอดยกมาต้นปี
       revenue: totalIncome, // Frontend expects revenue
       expenses: totalExpense, // Frontend expects expenses
       cash: totalCash, // Frontend expects cash

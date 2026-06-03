@@ -8,6 +8,7 @@ import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
       PlnReceiveDetail,
       RequestWithdraw,
       BudgetIncomeType,
+      OpeningBalance,
     ]),
   ],
   controllers: [ReportDailyBalanceController],

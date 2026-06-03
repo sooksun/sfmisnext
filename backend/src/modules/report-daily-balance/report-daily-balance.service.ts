@@ -7,6 +7,7 @@ import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 
 // วงเงินสำรองจ่ายเริ่มต้น ถ้าโรงเรียนยังไม่ได้ตั้งค่า (บาท)
 const DEFAULT_CASH_LIMIT = 15000;
@@ -26,6 +27,8 @@ export class ReportDailyBalanceService {
     private readonly requestWithdrawRepository: Repository<RequestWithdraw>,
     @InjectRepository(BudgetIncomeType)
     private readonly budgetIncomeTypeRepository: Repository<BudgetIncomeType>,
+    @InjectRepository(OpeningBalance)
+    private readonly openingBalanceRepository: Repository<OpeningBalance>,
   ) {}
 
   async loadDailyBalance(scId: number, date: string, syId: number) {
@@ -87,6 +90,30 @@ export class ReportDailyBalanceService {
         balanceByType[trans.bgTypeId].carryForward -= trans.amount;
       }
     });
+    // ── รวมยอดยกมาต้นปีงบประมาณ (opening_balance) เข้า carryForward ──────────
+    // opening_balance.money_type_id = bg_type_id ; เป็นยอดตั้งต้นก่อนรายการแรก
+    // (balance_date ต้นปี < วันที่เลือก จึงนับเป็นยอดยกมาเสมอ)
+    const openingRows = await this.openingBalanceRepository
+      .createQueryBuilder('ob')
+      .where('ob.sc_id = :scId', { scId })
+      .andWhere('ob.del = :del', { del: 0 })
+      .andWhere(syId ? 'ob.sy_id = :syId' : '1=1', { syId })
+      .andWhere('ob.balance_date < :startDate', { startDate: startOfDay })
+      .getMany();
+
+    openingRows.forEach((ob) => {
+      const typeId = ob.moneyTypeId;
+      if (!balanceByType[typeId]) {
+        balanceByType[typeId] = {
+          carryForward: 0,
+          income: 0,
+          expense: 0,
+          balance: 0,
+        };
+      }
+      balanceByType[typeId].carryForward += Number(ob.amount) || 0;
+    });
+
     // balance เริ่มต้น = ยอดยกมา (ของวันนี้ยังไม่มี)
     for (const typeId of Object.keys(balanceByType)) {
       balanceByType[Number(typeId)].balance =

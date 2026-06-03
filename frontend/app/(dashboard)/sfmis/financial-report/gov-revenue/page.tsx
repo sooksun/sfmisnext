@@ -18,6 +18,7 @@ import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 import { apiGet, apiPost } from '@/lib/api'
 import { fmtDateTH, showNumber } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
+import { InterestReminderPanel } from '@/components/dashboard/interest-reminder-panel'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -434,6 +435,9 @@ export default function GovRevenuePage() {
       <PageHeader title="ทะเบียนคุมการรับและนำส่งเงินรายได้แผ่นดิน" />
 
       <div className="p-4 space-y-4">
+        {/* ── แจ้งเตือนรอบดอกเบี้ย (30 มิ.ย./30 ธ.ค.) → นำส่งรายได้แผ่นดิน ── */}
+        <InterestReminderPanel />
+
         {/* ── Summary Cards ──────────────────────────────────────────────── */}
         {summaryData && summaryData.length > 0 && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

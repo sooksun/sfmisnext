@@ -2,6 +2,8 @@
 import { School, CalendarDays, User, Sparkles, Brain, AlertTriangle, GitMerge } from 'lucide-react'
 import Link from 'next/link'
 import { useAppContext } from '@/hooks/use-app-context'
+import { DashboardBudgetSection } from '@/components/dashboard/dashboard-budget-section'
+import { AlertsWidget } from '@/components/dashboard/alerts-widget'
 
 export default function DashboardPage() {
   const { userName, scName, syYear, budgetYear: budgetYearRaw } = useAppContext()
@@ -69,6 +71,11 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* แจ้งเตือนการเงิน (ดอกเบี้ย/ภาษี/เงินยืม/เงินสดเกินวงเงิน) */}
+      <AlertsWidget />
+
+      <DashboardBudgetSection />
 
       {/* AI Assistant cards */}
       <div className="rounded-xl border bg-gradient-to-r from-emerald-50 to-teal-50 p-4">

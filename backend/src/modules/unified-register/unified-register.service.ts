@@ -6,10 +6,12 @@ import { FinancialTransactions } from '../report-daily-balance/entities/financia
 import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
+import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 
 export interface UnifiedSummaryItem {
   bg_type_id: number;
   budget_type: string;
+  carry_forward: number;
   revenue: number;
   expenses: number;
   balance: number;
@@ -40,11 +42,31 @@ export class UnifiedRegisterService {
     private readonly plnReceiveDetailRepository: Repository<PlnReceiveDetail>,
     @InjectRepository(RequestWithdraw)
     private readonly requestWithdrawRepository: Repository<RequestWithdraw>,
+    @InjectRepository(OpeningBalance)
+    private readonly openingBalanceRepository: Repository<OpeningBalance>,
   ) {}
+
+  /** ยอดยกมาต้นปี รวมต่อ money_type (กรองตาม sy_id ถ้ามี) */
+  private async loadOpeningByType(
+    scId: number,
+    syId: number,
+  ): Promise<Map<number, number>> {
+    const rows = await this.openingBalanceRepository.find({
+      where: syId ? { scId, syId, del: 0 } : { scId, del: 0 },
+    });
+    const map = new Map<number, number>();
+    for (const ob of rows) {
+      map.set(
+        ob.moneyTypeId,
+        (map.get(ob.moneyTypeId) ?? 0) + (Number(ob.amount) || 0),
+      );
+    }
+    return map;
+  }
 
   async getSummary(
     scId: number,
-    _syId: number,
+    syId: number,
     _year: string,
   ): Promise<UnifiedSummaryItem[]> {
     // Load all active budget types
@@ -53,6 +75,7 @@ export class UnifiedRegisterService {
       order: { bgTypeId: 'ASC' },
     });
 
+    const openingByType = await this.loadOpeningByType(scId, syId);
     const results: UnifiedSummaryItem[] = [];
 
     for (const bt of budgetTypes) {
@@ -63,6 +86,8 @@ export class UnifiedRegisterService {
         .addSelect('COUNT(ft.ft_id)', 'cnt')
         .where('ft.sc_id = :scId', { scId })
         .andWhere('ft.del = :del', { del: '0' })
+        // กรองตามปีงบ (sy_id) กัน transaction ข้ามปีปนกัน
+        .andWhere(syId ? 'ft.sy_id = :syId' : '1=1', { syId })
         .andWhere('ft.bg_type_id = :bgTypeId', { bgTypeId: bt.bgTypeId })
         .groupBy('ft.type')
         .getRawMany<{ type: number; total: string; cnt: string }>();
@@ -82,14 +107,17 @@ export class UnifiedRegisterService {
         }
       }
 
-      // Only include types that have transactions
-      if (entry_count > 0) {
+      const carryForward = openingByType.get(bt.bgTypeId) ?? 0;
+
+      // include types ที่มีรายการ หรือมียอดยกมา
+      if (entry_count > 0 || carryForward !== 0) {
         results.push({
           bg_type_id: bt.bgTypeId,
           budget_type: bt.budgetType,
+          carry_forward: carryForward,
           revenue,
           expenses,
-          balance: revenue - expenses,
+          balance: carryForward + revenue - expenses,
           entry_count,
         });
       }
@@ -101,13 +129,14 @@ export class UnifiedRegisterService {
   async getRegisterDetail(
     bgTypeId: number,
     scId: number,
-    _syId: number,
+    syId: number,
     _year: string,
     fromDate?: string,
     toDate?: string,
   ): Promise<{
     bg_type_id: number;
     budget_type: string;
+    carry_forward: number;
     revenue: number;
     expenses: number;
     balance: number;
@@ -117,10 +146,15 @@ export class UnifiedRegisterService {
       where: { bgTypeId },
     });
 
+    // ยอดยกมาต้นปีของประเภทนี้ (ไม่ขึ้นกับ fromDate — เป็นยอดตั้งต้น)
+    const openingByType = await this.loadOpeningByType(scId, syId);
+    const carryForward = openingByType.get(bgTypeId) ?? 0;
+
     const qb = this.financialTransactionsRepository
       .createQueryBuilder('ft')
       .where('ft.sc_id = :scId', { scId })
       .andWhere('ft.del = :del', { del: '0' })
+      .andWhere(syId ? 'ft.sy_id = :syId' : '1=1', { syId })
       .andWhere('ft.bg_type_id = :bgTypeId', { bgTypeId })
       .orderBy('ft.create_date', 'ASC')
       .addOrderBy('ft.ft_id', 'ASC');
@@ -138,7 +172,7 @@ export class UnifiedRegisterService {
 
     const transactions = await qb.getMany();
 
-    let balance = 0;
+    let balance = carryForward; // เริ่มจากยอดยกมาต้นปี
     let revenue = 0;
     let expenses = 0;
     const processed: UnifiedTransactionRow[] = [];
@@ -194,6 +228,7 @@ export class UnifiedRegisterService {
     return {
       bg_type_id: bgTypeId,
       budget_type: budgetType?.budgetType ?? '',
+      carry_forward: carryForward,
       revenue,
       expenses,
       balance,

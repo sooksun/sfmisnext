@@ -16,6 +16,20 @@ node testrun/run.js
 
 ต้องมี backend (`npm run start:dev`, :3000) + MySQL รันอยู่ ผลคาดหวัง: `SUMMARY: 89/89 steps OK`
 
+## งานอัตโนมัติ (ทดสอบด้วย `node testrun/auto.js` — 11/11)
+รันหลัง `setup.sql` + `run.js` แล้วค่อย `node testrun/auto.js`
+
+| ฟีเจอร์ | ทำงานเมื่อ | ผล |
+|---|---|---|
+| A. หักภาษี ณ ที่จ่ายอัตโนมัติ | ออกเช็ค (status=202) ให้ partner cal_vat 0/1 | ลงเงินภาษีเข้าทะเบียนคุมภาษี + ออกหนังสือรับรอง (status=101) |
+| C. บันทึกเก็บรักษาเงินสด | รับเงินสด (receive_money_type=2) | สร้าง cash_keeping_record (ผู้รับเก็บ=ผอ.) |
+| B. เตือนนำส่งภาษี | `GET Register_control_money_type/wht_remit_reminder/:sc/:sy/:year` | สรุปรายเดือน + สถานะ overdue/due_soon (กำหนดวันที่ 7 เดือนถัดไป) |
+| F. เตือนเงินยืม | `GET LoanAgreement/dueReminder/:sc/:sy/:year` | รายการใกล้/เลยกำหนดคืน |
+| E. เตือนเงินสดเกินวงเงิน | `GET ReportDailyBalance/cashLimitCheck/:sc` | cash/bank รวมยอดยกมาแล้ว + flag exceeded |
+| D. ปิดปี→ยกยอด | `POST FiscalYearBalance/finalizeYear` | สร้าง opening_balance ปีถัดไปอัตโนมัติ (ต้องมี school_year ปีถัดไป) |
+
+> ประเภทเงินภาษีหัก ณ ที่จ่าย: ตั้ง `.env WHT_MONEY_TYPE_ID` หรือระบบค้นจากชื่อ `budget_type LIKE '%ภาษีหัก%'`
+
 ## ขอบเขต
 - โหมด: **capability test** — เน้นว่าทุกประเภทรายการ "ลงข้อมูลได้จริง" ผ่าน endpoint ที่ frontend ใช้
 - Sandbox: `sc_id=1`, `school_year` ใหม่ `sy_id=3` (budget_year BE 2556 / transactional CE 2013)

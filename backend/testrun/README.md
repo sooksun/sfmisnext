@@ -27,6 +27,7 @@ node testrun/run.js
 | F. เตือนเงินยืม | `GET LoanAgreement/dueReminder/:sc/:sy/:year` | รายการใกล้/เลยกำหนดคืน |
 | E. เตือนเงินสดเกินวงเงิน | `GET ReportDailyBalance/cashLimitCheck/:sc` | cash/bank รวมยอดยกมาแล้ว + flag exceeded |
 | D. ปิดปี→ยกยอด | `POST FiscalYearBalance/finalizeYear` | สร้าง opening_balance ปีถัดไปอัตโนมัติ (ต้องมี school_year ปีถัดไป) |
+| G. เตือนดอกเบี้ยรายได้แผ่นดิน | `GET GovRevenue/interestReminder/:sc/:sy/:year` | รอบ 30 มิ.ย./30 ธ.ค. + ยอดค้างนำส่ง (>10,000 ใน 3 วันทำการ) |
 
 > ประเภทเงินภาษีหัก ณ ที่จ่าย: ตั้ง `.env WHT_MONEY_TYPE_ID` หรือระบบค้นจากชื่อ `budget_type LIKE '%ภาษีหัก%'`
 

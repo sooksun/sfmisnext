@@ -42,6 +42,82 @@ export class RegisterMoneyTypeService {
     private readonly openingBalanceRepository: Repository<OpeningBalance>,
   ) {}
 
+  /**
+   * เตือนการนำส่งภาษีหัก ณ ที่จ่าย — ต้องนำส่งภายในวันที่ 7 ของเดือนถัดไป
+   *  สรุปภาษีที่หักไว้ (รับเข้าทะเบียนภาษี) − ที่นำส่งแล้ว แยกรายเดือน
+   *  status: overdue (เลยวันที่ 7 แล้วยังค้าง) | due_soon (ใกล้กำหนด) | pending
+   */
+  async whtRemitReminder(scId: number, syId: number, _year: string) {
+    // หาประเภทเงิน "ภาษีหัก ณ ที่จ่าย"
+    const bt = await this.budgetIncomeTypeRepository
+      .createQueryBuilder('bt')
+      .where('bt.budget_type LIKE :n', { n: '%ภาษีหัก%' })
+      .andWhere('bt.del = 0')
+      .orderBy('bt.bg_type_id', 'ASC')
+      .getOne();
+    if (!bt) return { data: [], count: 0, ms: 'ไม่พบประเภทเงินภาษีหัก ณ ที่จ่าย' };
+
+    const txns = await this.financialTransactionsRepository
+      .createQueryBuilder('ft')
+      .where('ft.sc_id = :scId', { scId })
+      .andWhere('ft.del = :del', { del: '0' })
+      .andWhere(syId ? 'ft.sy_id = :syId' : '1=1', { syId })
+      .andWhere('ft.bg_type_id = :bg', { bg: bt.bgTypeId })
+      .getMany();
+
+    // group ตามเดือนของ create_date (YYYY-MM)
+    const byMonth = new Map<string, { collected: number; remitted: number }>();
+    for (const t of txns) {
+      const d = t.createDate ? new Date(t.createDate) : null;
+      if (!d) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!byMonth.has(key)) byMonth.set(key, { collected: 0, remitted: 0 });
+      const m = byMonth.get(key)!;
+      if (t.type === 1) m.collected += Number(t.amount);
+      else if (t.type === -1) m.remitted += Number(t.amount);
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const rows = [...byMonth.entries()]
+      .map(([month, v]) => {
+        const [y, mo] = month.split('-').map(Number);
+        // กำหนดนำส่ง = วันที่ 7 ของเดือนถัดไป
+        const deadline = new Date(y, mo, 7); // mo (1-12) → index mo = เดือนถัดไป
+        deadline.setHours(0, 0, 0, 0);
+        const outstanding = v.collected - v.remitted;
+        const MS = 24 * 60 * 60 * 1000;
+        const daysToDeadline = Math.round(
+          (deadline.getTime() - today.getTime()) / MS,
+        );
+        let status: 'remitted' | 'overdue' | 'due_soon' | 'pending' = 'pending';
+        if (outstanding <= 0.005) status = 'remitted';
+        else if (daysToDeadline < 0) status = 'overdue';
+        else if (daysToDeadline <= 7) status = 'due_soon';
+        return {
+          month,
+          collected: Math.round(v.collected * 100) / 100,
+          remitted: Math.round(v.remitted * 100) / 100,
+          outstanding: Math.round(outstanding * 100) / 100,
+          deadline: deadline.toISOString().slice(0, 10),
+          days_to_deadline: daysToDeadline,
+          status,
+        };
+      })
+      .sort((a, b) => a.month.localeCompare(b.month));
+
+    const needAction = rows.filter(
+      (r) => r.status === 'overdue' || r.status === 'due_soon',
+    );
+    return {
+      data: rows,
+      count: rows.length,
+      need_action: needAction.length,
+      overdue: rows.filter((r) => r.status === 'overdue').length,
+    };
+  }
+
   async loadBudgetType() {
     const budgetTypes = await this.budgetIncomeTypeRepository.find({
       where: { del: 0 },

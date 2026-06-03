@@ -7,6 +7,7 @@ import { AddReceiveDto } from './dto/add-receive.dto';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
+import { CashKeepingRecord } from '../cash-keeping/entities/cash-keeping-record.entity';
 import { FinancialAuditService } from '../financial-audit/financial-audit.service';
 
 /**
@@ -327,8 +328,89 @@ export class ReceiveService {
         await manager.save(FinancialTransactions, ft);
       }
 
+      // ── อัตโนมัติ: รับเงินสด → สร้างบันทึกการเก็บรักษาเงินสด ─────────────
+      // receive_money_type 2 = เงินสด ; สร้าง 1 ฉบับต่อรายการรับเงินสด
+      if (receive.receiveMoneyType === 2) {
+        const cashTotal = activeDetails.reduce(
+          (s, d) => s + Number(d.prdBudget ?? 0),
+          0,
+        );
+        if (cashTotal > 0) {
+          await this.createCashKeeping(manager, receive, cashTotal);
+        }
+      }
+
       return { flag: true };
     });
+  }
+
+  /**
+   * สร้างบันทึกการเก็บรักษาเงินสดอัตโนมัติ
+   *  ผู้ส่งมอบ = ผู้รับเงิน (เจ้าหน้าที่การเงิน) ; ผู้รับเก็บรักษา = ผอ. (type 1/2)
+   *  กันซ้ำ: 1 ฉบับต่อ pr_id (ผูกใน note)
+   */
+  private async createCashKeeping(
+    manager: import('typeorm').EntityManager,
+    receive: PlnReceive,
+    amount: number,
+  ): Promise<void> {
+    const ckRepo = manager.getRepository(CashKeepingRecord);
+    const refNote = `[auto pr:${receive.prId}]`;
+    const exists = await ckRepo
+      .createQueryBuilder('ck')
+      .where('ck.sc_id = :sc', { sc: receive.scId })
+      .andWhere('ck.note LIKE :n', { n: `%${refNote}%` })
+      .andWhere('ck.del = 0')
+      .getCount();
+    if (exists > 0) return;
+
+    const senderId = receive.userReceive || receive.upBy || 0;
+    // ผู้รับเก็บรักษา = ผู้อำนวยการ (admin type 1 หรือ 2) ของโรงเรียน
+    const director = await this.adminRepository.findOne({
+      where: [
+        { scId: receive.scId ?? 0, type: 1, del: 0 },
+        { scId: receive.scId ?? 0, type: 2, del: 0 },
+      ],
+      order: { type: 'ASC', adminId: 'ASC' },
+    });
+    const receiverId = director?.adminId || senderId;
+
+    const snap = async (id: number) => {
+      if (!id) return { name: null as string | null, pos: null as string | null };
+      const a = await this.adminRepository.findOne({ where: { adminId: id } });
+      return {
+        name: a?.name ?? a?.username ?? null,
+        pos: a?.position != null ? String(a.position) : null,
+      };
+    };
+    const s = await snap(senderId);
+    const r = await snap(receiverId);
+
+    const recordDate = (
+      receive.receiveDate ? new Date(receive.receiveDate) : new Date()
+    )
+      .toISOString()
+      .slice(0, 10);
+
+    await ckRepo.save(
+      ckRepo.create({
+        scId: receive.scId ?? 0,
+        syId: receive.syId ?? 0,
+        recordDate,
+        amount,
+        moneyDetail: `รับเงินสดตามใบเสร็จ ${receive.prNo ?? ''}`.trim(),
+        senderId,
+        senderName: s.name,
+        senderPosition: s.pos,
+        receiverId,
+        receiverName: r.name,
+        receiverPosition: r.pos,
+        note: `สร้างอัตโนมัติจากการรับเงินสด ${refNote}`,
+        status: 1,
+        upBy: receive.upBy ?? 0,
+        del: 0,
+      }),
+    );
   }
 
   async deleteReceive(prId: number, scId: number, upBy?: number) {

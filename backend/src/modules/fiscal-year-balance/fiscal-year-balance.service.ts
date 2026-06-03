@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { FiscalYearBalance } from './entities/fiscal-year-balance.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
+import { SchoolYear } from '../school-year/entities/school-year.entity';
 import {
   FinalizeYearDto,
   SaveBalanceDto,
@@ -18,6 +20,10 @@ export class FiscalYearBalanceService {
     @InjectRepository(Admin) private readonly adminRepo: Repository<Admin>,
     @InjectRepository(BudgetIncomeType)
     private readonly budgetTypeRepo: Repository<BudgetIncomeType>,
+    @InjectRepository(OpeningBalance)
+    private readonly openingRepo: Repository<OpeningBalance>,
+    @InjectRepository(SchoolYear)
+    private readonly schoolYearRepo: Repository<SchoolYear>,
   ) {}
 
   /** โหลดยอดยกมาของปีที่ต้องการ */
@@ -142,6 +148,99 @@ export class FiscalYearBalanceService {
       b.note = dto.note ?? b.note;
     }
     await this.fybRepo.save(balances);
-    return { flag: true, ms: `ปิดปีงบประมาณ ${dto.budget_year} เรียบร้อยแล้ว` };
+
+    // ── อัตโนมัติ: ยกยอดคงเหลือเป็นยอดยกมา (opening_balance) ของปีถัดไป ──────
+    const carry = await this.carryForwardToNextYear(dto.sc_id, dto.budget_year);
+
+    return {
+      flag: true,
+      ms:
+        `ปิดปีงบประมาณ ${dto.budget_year} เรียบร้อยแล้ว` +
+        (carry.created > 0
+          ? ` และยกยอดเป็นยอดยกมาปี ${carry.nextYear} จำนวน ${carry.created} รายการ`
+          : carry.skipped
+            ? ` (ยังไม่ยกยอด: ${carry.skipped})`
+            : ''),
+      carry_forward: carry,
+    };
+  }
+
+  /**
+   * ยกยอดคงเหลือสิ้นปี → สร้าง opening_balance ของปีถัดไปอัตโนมัติ
+   *  cash_balance→storage 1, bank_balance→storage 2, smp_balance→storage 3
+   *  idempotent: ลบ opening อัตโนมัติของปีถัดไป (remark มี [auto-carry]) ก่อนสร้างใหม่
+   */
+  private async carryForwardToNextYear(
+    scId: number,
+    budgetYear: string,
+  ): Promise<{
+    nextYear: string;
+    created: number;
+    skipped: string | null;
+  }> {
+    const nextBE = Number(budgetYear) + 1;
+    const nextYear = String(nextBE);
+
+    // หา school_year ของปีถัดไป (budget_year = nextBE)
+    const nextSy = await this.schoolYearRepo.findOne({
+      where: { scId, budgetYear: nextBE, del: 0 },
+      order: { syId: 'ASC' },
+    });
+    if (!nextSy) {
+      return {
+        nextYear,
+        created: 0,
+        skipped: `ยังไม่มีปีการศึกษา/ปีงบ ${nextYear} ในระบบ`,
+      };
+    }
+
+    const balances = await this.fybRepo.find({
+      where: { scId, budgetYear, del: 0 },
+    });
+
+    const balanceDate = nextSy.budgetDateS
+      ? new Date(nextSy.budgetDateS).toISOString().slice(0, 10)
+      : `${nextBE - 543}-10-01`;
+
+    // ลบ opening อัตโนมัติเดิมของปีถัดไป (กันซ้ำเมื่อปิดปีหลายครั้ง)
+    await this.openingRepo
+      .createQueryBuilder()
+      .update(OpeningBalance)
+      .set({ del: 1 })
+      .where('sc_id = :scId', { scId })
+      .andWhere('sy_id = :syId', { syId: nextSy.syId })
+      .andWhere('del = 0')
+      .andWhere("remark LIKE '%[auto-carry]%'")
+      .execute();
+
+    let created = 0;
+    for (const b of balances) {
+      const parts: Array<[number, number]> = [
+        [1, Number(b.cashBalance) || 0],
+        [2, Number(b.bankBalance) || 0],
+        [3, Number(b.smpBalance) || 0],
+      ];
+      for (const [storageType, amount] of parts) {
+        if (amount <= 0) continue;
+        await this.openingRepo.save(
+          this.openingRepo.create({
+            scId,
+            syId: nextSy.syId,
+            budgetYear: nextYear,
+            balanceDate,
+            moneyTypeId: b.moneyTypeId,
+            moneyTypeName: b.moneyTypeName,
+            storageType,
+            amount,
+            remark: `[auto-carry] ยกยอดจากปี ${budgetYear}`,
+            upBy: b.upBy ?? 0,
+            del: 0,
+          }),
+        );
+        created++;
+      }
+    }
+
+    return { nextYear, created, skipped: null };
   }
 }

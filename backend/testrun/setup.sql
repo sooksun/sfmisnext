@@ -46,6 +46,13 @@ DELETE FROM loan_agreement WHERE sc_id=@SC AND budget_year='2556';
 DELETE FROM gov_revenue_entry WHERE sc_id=@SC AND (budget_year='2556' OR sy_id=@SY) OR detail='reload-test';
 DELETE FROM smp_deposit_entry WHERE sc_id=@SC AND budget_year='2556';
 DELETE FROM bank_ledger_entry WHERE sc_id=@SC AND sy_id=@SY;
+-- ล้างข้อมูลทดสอบ automation (rerun ได้)
+DELETE FROM withholding_certificate WHERE sc_id=@SC AND year='2013';
+DELETE FROM cash_keeping_record WHERE sc_id=@SC AND sy_id=@SY;
+DELETE FROM tb_partner WHERE sc_id=@SC AND p_name LIKE 'WHT-TEST%';
+DELETE FROM fiscal_year_balance WHERE sc_id=@SC AND budget_year IN ('2556','2557');
+DELETE FROM opening_balance WHERE sc_id=@SC AND budget_year='2557';
+DELETE FROM school_year WHERE sc_id=@SC AND budget_year=2557;
 
 -- 4) opening loan: นางนิภา ยืมอาหารกลางวัน 13,975 ค้างจากต้นปี (บย.2/55) -------
 --    (เพื่อให้ 12 ต.ค. "ส่งใช้เงินยืม" ผ่าน API ได้) status=1 ค้างชำระ

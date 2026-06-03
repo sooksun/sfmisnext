@@ -10,8 +10,10 @@ import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { CheckReceiveCommittee } from './entities/check-receive-committee.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
+import { WithholdingCertificate } from '../registration-certificate/entities/withholding-certificate.entity';
 import { calcWithholding } from '../../common/utils/withholding.util';
 import { FinancialAuditService } from '../financial-audit/financial-audit.service';
+import { EntityManager } from 'typeorm';
 
 /**
  * Map type_offer_check → money_channel
@@ -27,6 +29,9 @@ function mapCheckChannel(typeOfferCheck: number | null | undefined): number {
 @Injectable()
 export class CheckService {
   private readonly committeeThreshold: number;
+  // ประเภทเงิน "ภาษีหัก ณ ที่จ่าย" สำหรับลงทะเบียนคุมภาษีอัตโนมัติ
+  // ตั้งค่าได้ใน .env: WHT_MONEY_TYPE_ID ; ถ้าไม่ตั้ง จะค้นจากชื่อประเภทเงิน
+  private readonly whtMoneyTypeId: number;
 
   constructor(
     @InjectRepository(RequestWithdraw)
@@ -46,6 +51,111 @@ export class CheckService {
     // วงเงินที่ต้องมีคณะกรรมการตรวจรับ (ตามระเบียบ พัสดุ) — กำหนดได้ใน .env: COMMITTEE_THRESHOLD=5000
     this.committeeThreshold =
       this.configService.get<number>('COMMITTEE_THRESHOLD') ?? 5000;
+    this.whtMoneyTypeId =
+      Number(this.configService.get('WHT_MONEY_TYPE_ID')) || 0;
+  }
+
+  /**
+   * หาประเภทเงิน "ภาษีหัก ณ ที่จ่าย" — จาก .env WHT_MONEY_TYPE_ID ก่อน
+   * ถ้าไม่ตั้ง ค้นจากชื่อประเภทเงินที่ขึ้นต้น/มีคำว่า "ภาษีหัก"
+   */
+  private async resolveWhtTypeId(em: EntityManager): Promise<number | null> {
+    if (this.whtMoneyTypeId > 0) return this.whtMoneyTypeId;
+    const bt = await em
+      .getRepository(BudgetIncomeType)
+      .createQueryBuilder('bt')
+      .where('bt.budget_type LIKE :n', { n: '%ภาษีหัก%' })
+      .andWhere('bt.del = 0')
+      .orderBy('bt.bg_type_id', 'ASC')
+      .getOne();
+    return bt ? bt.bgTypeId : null;
+  }
+
+  /**
+   * อัตโนมัติเมื่อออกเช็คให้ผู้ขายภายนอกที่ต้องหักภาษี ณ ที่จ่าย:
+   *  1) ลงเงินภาษีที่หักไว้เข้า "ทะเบียนคุมเงินภาษีหัก ณ ที่จ่าย" (financial_transactions type=+1)
+   *  2) ออกหนังสือรับรองการหักภาษี ณ ที่จ่าย (status=101 ออกเลย) อัตโนมัติ
+   * เงื่อนไข: partner.cal_vat = 0 (ไม่มี VAT) หรือ 1 (มี VAT) ; 2 = บุคคลภายใน ไม่หัก
+   */
+  private async autoWithholding(
+    em: EntityManager,
+    check: RequestWithdraw,
+    upBy: number,
+  ): Promise<void> {
+    if (!check.pId) return;
+    const partner = await em
+      .getRepository(Partner)
+      .findOne({ where: { pId: check.pId, del: 0 } });
+    const calVat = partner?.calVat ?? 2;
+    if (calVat !== 0 && calVat !== 1) return; // บุคคลภายใน ไม่หักภาษี
+
+    const wht = calcWithholding(Number(check.amount ?? 0), calVat);
+    if (wht.withholdAmount <= 0) return;
+
+    const ftRepo = em.getRepository(FinancialTransactions);
+    const wcRepo = em.getRepository(WithholdingCertificate);
+
+    // 1) ลงทะเบียนคุมภาษีหัก ณ ที่จ่าย (รับเข้า) — กันซ้ำ
+    const whtTypeId = await this.resolveWhtTypeId(em);
+    if (whtTypeId) {
+      const exists = await ftRepo.count({
+        where: { rwId: check.rwId, bgTypeId: whtTypeId, type: 1, del: 0 },
+      });
+      if (exists === 0) {
+        await ftRepo.save(
+          ftRepo.create({
+            type: 1,
+            bgTypeId: whtTypeId,
+            amount: wht.withholdAmount,
+            scId: check.scId ?? 0,
+            syId: check.syId ?? null,
+            upBy,
+            prId: 0,
+            prdId: 0,
+            rwId: check.rwId,
+            prbId: 0,
+            moneyChannel: mapCheckChannel(check.typeOfferCheck),
+            baId: null,
+            del: 0,
+            createDate: check.offerCheckDate ?? new Date(),
+            updateDate: new Date(),
+          }),
+        );
+      }
+    }
+
+    // 2) ออกหนังสือรับรองหักภาษี ณ ที่จ่าย อัตโนมัติ (status=101) — กันซ้ำ
+    const certExists = await wcRepo.count({
+      where: { ofId: check.rwId, del: 0 },
+    });
+    if (certExists === 0) {
+      const last = await wcRepo
+        .createQueryBuilder('wc')
+        .where('wc.sc_id = :s', { s: check.scId })
+        .andWhere('wc.year = :y', { y: check.year })
+        .andWhere('wc.del = 0')
+        .orderBy('wc.wc_id', 'DESC')
+        .getOne();
+      let seq = 1;
+      if (last?.wcNo) {
+        const n = parseInt(last.wcNo, 10);
+        if (!isNaN(n)) seq = n + 1;
+      }
+      await wcRepo.save(
+        wcRepo.create({
+          wcNo: String(seq),
+          ofId: check.rwId,
+          scId: check.scId ?? 0,
+          wcRank: 0,
+          cerDate: check.offerCheckDate ?? new Date(),
+          syId: check.syId ?? 0,
+          year: check.year ?? null,
+          status: 101, // ออกหนังสือรับรองทันที
+          del: 0,
+          upBy,
+        }),
+      );
+    }
   }
 
   async loadCheck(scId: number, syId: number) {
@@ -347,6 +457,8 @@ export class CheckService {
           });
           await ftRepo.save(ft);
         }
+        // ── อัตโนมัติ: หักภาษี ณ ที่จ่าย + ออกหนังสือรับรอง + ลงทะเบียนภาษี ──
+        await this.autoWithholding(em, check, dto.up_by ?? 0);
       } else if (prevStatus === 202 && check.status !== 202) {
         // ยกเลิกออกเช็ค → soft-delete ft
         await ftRepo.update(

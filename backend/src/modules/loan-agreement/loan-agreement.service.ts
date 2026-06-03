@@ -76,6 +76,58 @@ export class LoanAgreementService {
     };
   }
 
+  /**
+   * เตือนเงินยืมใกล้/เลยกำหนดคืน
+   *  - overdue: เลยกำหนดแล้ว (status ค้างชำระ และ due_date < วันนี้)
+   *  - due_soon: ใกล้กำหนด (อีก <= withinDays วัน)
+   */
+  async dueReminder(
+    scId: number,
+    syId: number,
+    budgetYear: string,
+    withinDays = 7,
+  ) {
+    const loans = await this.laRepo.find({
+      where: { scId, syId, budgetYear, status: 1, del: 0 },
+      order: { dueDate: 'ASC' },
+    });
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const MS = 24 * 60 * 60 * 1000;
+
+    const items = loans
+      .map((l) => {
+        const due = l.dueDate ? new Date(l.dueDate) : null;
+        if (due) due.setHours(0, 0, 0, 0);
+        const daysToDue = due
+          ? Math.round((due.getTime() - today.getTime()) / MS)
+          : null;
+        let flag: 'overdue' | 'due_soon' | 'ok' = 'ok';
+        if (daysToDue != null) {
+          if (daysToDue < 0) flag = 'overdue';
+          else if (daysToDue <= withinDays) flag = 'due_soon';
+        }
+        return {
+          la_id: l.laId,
+          la_no: l.laNo,
+          borrower_name: l.borrowerName,
+          amount: l.amount,
+          borrow_date: l.borrowDate,
+          due_date: l.dueDate,
+          days_to_due: daysToDue,
+          flag,
+        };
+      })
+      .filter((x) => x.flag !== 'ok');
+
+    return {
+      data: items,
+      count: items.length,
+      overdue: items.filter((x) => x.flag === 'overdue').length,
+      due_soon: items.filter((x) => x.flag === 'due_soon').length,
+    };
+  }
+
   async addLoanAgreement(dto: AddLoanAgreementDto) {
     // G15: block ยืมใหม่ถ้าผู้ยืมคนเดิมยังมีสัญญาที่ค้างชำระอยู่
     const openLoan = await this.laRepo.findOne({

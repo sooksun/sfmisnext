@@ -41,6 +41,16 @@ export class RegisterMoneyTypeController {
     );
   }
 
+  @Get('wht_remit_reminder/:scId/:syId/:year')
+  @HttpCode(HttpStatus.OK)
+  whtRemitReminder(
+    @Param('scId', ParseIntPipe) scId: number,
+    @Param('syId', ParseIntPipe) syId: number,
+    @Param('year') year: string,
+  ) {
+    return this.registerMoneyTypeService.whtRemitReminder(scId, syId, year);
+  }
+
   @Get('Testload_register_control_money_type/:bgTypeId/:scId/:syId/:year')
   @HttpCode(HttpStatus.OK)
   testLoadRegisterControlMoneyType(

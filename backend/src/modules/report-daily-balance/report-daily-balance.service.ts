@@ -293,10 +293,23 @@ export class ReportDailyBalanceService {
       )
       .getRawOne<{ total_income: string; total_expense: string }>();
 
+    // รวมยอดยกมาต้นปี (opening_balance): storage_type 1=เงินสด, 2=ธนาคาร
+    const openingRows = await this.openingBalanceRepository.find({
+      where: { scId, del: 0 },
+    });
+    const openingCash = openingRows
+      .filter((o) => o.storageType === 1)
+      .reduce((s, o) => s + Number(o.amount || 0), 0);
+    const openingBank = openingRows
+      .filter((o) => o.storageType === 2)
+      .reduce((s, o) => s + Number(o.amount || 0), 0);
+
     const cashBalance =
+      openingCash +
       Number(cashResult?.total_income ?? 0) -
       Number(cashResult?.total_expense ?? 0);
     const bankBalance =
+      openingBank +
       Number(bankResult?.total_income ?? 0) -
       Number(bankResult?.total_expense ?? 0);
     const exceeded = cashBalance > limitAmount;

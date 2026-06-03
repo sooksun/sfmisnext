@@ -58,6 +58,16 @@ export class LoanAgreementController {
     );
   }
 
+  @Get('dueReminder/:sc_id/:sy_id/:budget_year')
+  @HttpCode(HttpStatus.OK)
+  dueReminder(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('sy_id', ParseIntPipe) syId: number,
+    @Param('budget_year') budgetYear: string,
+  ) {
+    return this.loanAgreementService.dueReminder(scId, syId, budgetYear);
+  }
+
   @Get('loadEvidence/:la_id')
   @HttpCode(HttpStatus.OK)
   loadEvidence(@Param('la_id', ParseIntPipe) laId: number) {

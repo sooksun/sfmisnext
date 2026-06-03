@@ -53,7 +53,18 @@ node testrun/run.js
 **แก้:** seed `balance/cash/bank` จากยอดยกมาของประเภทเงินนั้น + คืน `carry_forward`
 ผลหลังแก้: ปัจจัยพื้นฐาน ยกมา 1,500 รับ/จ่าย 43,000 คงเหลือ **1,500** ตรง ตย.9
 
-> ทั้ง 3 fix ผ่าน `tsc --noEmit` และชุดทดสอบเดิม **257/257 tests** ครบ
+### Fix #4 — `UnifiedRegister` ปนข้อมูลข้ามปี + ไม่รวมยอดยกมา
+`getSummary`/`getRegisterDetail` ละเลย `sy_id` (เดิม `_syId`) → รวม `financial_transactions`
+ทุกปีปนกัน และไม่รวม `opening_balance`
+**แก้:** กรอง `ft.sy_id = :syId` + บวกยอดยกมา + คืน `carry_forward`
+([unified-register.service.ts](../src/modules/unified-register/unified-register.service.ts))
+
+> Fix #1–4 ผ่าน `tsc --noEmit` และชุดทดสอบเดิม **257/257 tests** ครบ
+
+### ยังไม่แก้ (ข้อจำกัดที่รู้แล้ว — เกินขอบเขต capability test)
+- `ReportDailyBalance.loadCashLimitCheck` ยังไม่รวมยอดยกมา + ไม่มี context ปีงบ
+  (รับแค่ `scId`) + ระบบไม่มีรายการ "ถอนเงินจากธนาคารเป็นเงินสด" → ยอดเงินสดติดลบ
+  ต้องออกแบบ fiscal-year context + internal cash/bank transfer ก่อนจึงแก้ได้ถูกต้อง
 
 ## ข้อสังเกต (ไม่ใช่บั๊ก — เป็นการจัดประเภท/นอกขอบเขต reconciliation)
 - บางประเภทคงเหลือต่างจากคู่มือ เพราะการจัดประเภทเงินของบางรายการเลือกต่างจากคู่มือ

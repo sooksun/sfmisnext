@@ -87,8 +87,10 @@ export class LoanAgreementService {
     budgetYear: string,
     withinDays = 7,
   ) {
+    // กรองด้วย sy_id เป็นหลัก (unique ต่อปีงบ) เลี่ยงปัญหา budget_year BE/CE
+    void budgetYear;
     const loans = await this.laRepo.find({
-      where: { scId, syId, budgetYear, status: 1, del: 0 },
+      where: { scId, syId, status: 1, del: 0 },
       order: { dueDate: 'ASC' },
     });
     const today = new Date();

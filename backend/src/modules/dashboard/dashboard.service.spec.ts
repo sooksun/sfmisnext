@@ -6,6 +6,10 @@ import { School } from '../school/entities/school.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { TbEstimateAcadyear } from '../budget/entities/tb-estimate-acadyear.entity';
+import { GovRevenueService } from '../gov-revenue/gov-revenue.service';
+import { RegisterMoneyTypeService } from '../register-money-type/register-money-type.service';
+import { LoanAgreementService } from '../loan-agreement/loan-agreement.service';
+import { ReportDailyBalanceService } from '../report-daily-balance/report-daily-balance.service';
 
 // ─── QueryBuilder mock factory ─────────────────────────────────────────────────
 function makeQb(rawResult?: unknown) {
@@ -41,6 +45,10 @@ describe('DashboardService', () => {
         { provide: getRepositoryToken(FinancialTransactions), useValue: ftRepo },
         { provide: getRepositoryToken(BudgetIncomeType), useValue: bgTypeRepo },
         { provide: getRepositoryToken(TbEstimateAcadyear), useValue: estimateRepo },
+        { provide: GovRevenueService, useValue: { interestReminder: jest.fn() } },
+        { provide: RegisterMoneyTypeService, useValue: { whtRemitReminder: jest.fn() } },
+        { provide: LoanAgreementService, useValue: { dueReminder: jest.fn() } },
+        { provide: ReportDailyBalanceService, useValue: { loadCashLimitCheck: jest.fn() } },
       ],
     }).compile();
 

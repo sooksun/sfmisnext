@@ -6,6 +6,18 @@ import { School } from '../school/entities/school.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { TbEstimateAcadyear } from '../budget/entities/tb-estimate-acadyear.entity';
+import { GovRevenueService } from '../gov-revenue/gov-revenue.service';
+import { RegisterMoneyTypeService } from '../register-money-type/register-money-type.service';
+import { LoanAgreementService } from '../loan-agreement/loan-agreement.service';
+import { ReportDailyBalanceService } from '../report-daily-balance/report-daily-balance.service';
+
+export interface DashboardAlert {
+  category: 'interest' | 'tax' | 'loan' | 'cash';
+  level: 'urgent' | 'warning' | 'info';
+  title: string;
+  message: string;
+  link: string;
+}
 
 @Injectable()
 export class DashboardService {
@@ -20,7 +32,98 @@ export class DashboardService {
     private readonly bgTypeRepository: Repository<BudgetIncomeType>,
     @InjectRepository(TbEstimateAcadyear)
     private readonly estimateRepository: Repository<TbEstimateAcadyear>,
+    private readonly govRevenueService: GovRevenueService,
+    private readonly registerMoneyTypeService: RegisterMoneyTypeService,
+    private readonly loanAgreementService: LoanAgreementService,
+    private readonly reportDailyBalanceService: ReportDailyBalanceService,
   ) {}
+
+  /**
+   * รวมแจ้งเตือนทางการเงินทั้งหมดสำหรับแสดงบนแดชบอร์ด
+   *  - ดอกเบี้ยรายได้แผ่นดิน (รอบ 30 มิ.ย./30 ธ.ค.) + ค้างนำส่ง
+   *  - นำส่งภาษีหัก ณ ที่จ่าย (ก่อนวันที่ 7 เดือนถัดไป)
+   *  - เงินยืมใกล้/เลยกำหนดคืน
+   *  - เงินสดคงเหลือเกินวงเงินสำรอง
+   */
+  async loadAlerts(scId: number, syId: number, budgetYear: string) {
+    const [interest, tax, loans, cash] = await Promise.all([
+      this.govRevenueService
+        .interestReminder(scId, syId, budgetYear)
+        .catch(() => null),
+      this.registerMoneyTypeService
+        .whtRemitReminder(scId, syId, budgetYear)
+        .catch(() => null),
+      this.loanAgreementService
+        .dueReminder(scId, syId, budgetYear)
+        .catch(() => null),
+      this.reportDailyBalanceService.loadCashLimitCheck(scId).catch(() => null),
+    ]);
+
+    const alerts: DashboardAlert[] = [];
+    const baht = (n: number) => Number(n).toLocaleString('th-TH');
+
+    // ดอกเบี้ย/รายได้แผ่นดิน
+    interest?.alerts?.forEach((a) =>
+      alerts.push({
+        category: 'interest',
+        level: a.level,
+        title: 'ดอกเบี้ยเงินฝาก / รายได้แผ่นดิน',
+        message: a.message,
+        link: '/sfmis/financial-report/gov-revenue',
+      }),
+    );
+
+    // นำส่งภาษีหัก ณ ที่จ่าย
+    const taxRows = (tax?.data ?? []) as Array<{
+      status: string;
+      month: string;
+      outstanding: number;
+      deadline: string;
+    }>;
+    taxRows
+      .filter((r) => r.status === 'overdue' || r.status === 'due_soon')
+      .forEach((r) =>
+        alerts.push({
+          category: 'tax',
+          level: r.status === 'overdue' ? 'urgent' : 'warning',
+          title: 'นำส่งภาษีหัก ณ ที่จ่าย',
+          message: `เดือน ${r.month} ค้างนำส่ง ${baht(r.outstanding)} บาท (กำหนด ${r.deadline})`,
+          link: '/sfmis/financial-report/gov-revenue',
+        }),
+      );
+
+    // เงินยืมค้างชำระ
+    loans?.data?.forEach((r) =>
+      alerts.push({
+        category: 'loan',
+        level: r.flag === 'overdue' ? 'urgent' : 'warning',
+        title: 'เงินยืมค้างชำระ',
+        message: `บย.${r.la_no} ${r.borrower_name ?? ''} ${baht(r.amount)} บาท (กำหนดคืน ${r.due_date ?? '-'})`,
+        link: '/sfmis/pay-menu/loan-agreement',
+      }),
+    );
+
+    // เงินสดเกินวงเงินสำรอง
+    if (cash?.exceeded) {
+      alerts.push({
+        category: 'cash',
+        level: 'warning',
+        title: 'เงินสดเกินวงเงินสำรองจ่าย',
+        message: `เงินสดคงเหลือ ${baht(cash.cash_balance)} บาท เกินวงเงิน ${baht(cash.limit_amount)} บาท ควรนำฝากธนาคาร`,
+        link: '/sfmis/financial-report/daily-balance',
+      });
+    }
+
+    const order = { urgent: 0, warning: 1, info: 2 };
+    alerts.sort((a, b) => order[a.level] - order[b.level]);
+
+    return {
+      alerts,
+      total: alerts.length,
+      urgent: alerts.filter((a) => a.level === 'urgent').length,
+      warning: alerts.filter((a) => a.level === 'warning').length,
+    };
+  }
 
   // ─── Pie chart: สัดส่วนรายรับตามประเภทเงิน ──────────────────────────────
 

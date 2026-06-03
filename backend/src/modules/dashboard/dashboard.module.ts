@@ -8,6 +8,10 @@ import { School } from '../school/entities/school.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { TbEstimateAcadyear } from '../budget/entities/tb-estimate-acadyear.entity';
+import { GovRevenueModule } from '../gov-revenue/gov-revenue.module';
+import { RegisterMoneyTypeModule } from '../register-money-type/register-money-type.module';
+import { LoanAgreementModule } from '../loan-agreement/loan-agreement.module';
+import { ReportDailyBalanceModule } from '../report-daily-balance/report-daily-balance.module';
 
 @Module({
   imports: [
@@ -18,6 +22,10 @@ import { TbEstimateAcadyear } from '../budget/entities/tb-estimate-acadyear.enti
       BudgetIncomeType,
       TbEstimateAcadyear,
     ]),
+    GovRevenueModule,
+    RegisterMoneyTypeModule,
+    LoanAgreementModule,
+    ReportDailyBalanceModule,
   ],
   controllers: [DashboardController, DashboardTypoController],
   providers: [DashboardService],

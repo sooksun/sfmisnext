@@ -17,6 +17,19 @@ import { assertSameSchool, type JwtUser } from '../../common/utils/tenant-guard'
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
+  /** รวมแจ้งเตือนการเงิน (ดอกเบี้ย/ภาษี/เงินยืม/เงินสดเกินวงเงิน) สำหรับแดชบอร์ด */
+  @Get('alerts/:sc_id/:sy_id/:budget_year')
+  @HttpCode(HttpStatus.OK)
+  loadAlerts(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('sy_id', ParseIntPipe) syId: number,
+    @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
+    return this.dashboardService.loadAlerts(scId, syId, budgetYear);
+  }
+
   @Post('loadChartBudgetType_Pie')
   @HttpCode(HttpStatus.OK)
   loadChartBudgetTypePie(

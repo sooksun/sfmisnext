@@ -133,8 +133,10 @@ export class GovRevenueService {
     const daysSinceLast = Math.round((today.getTime() - lastDate.getTime()) / MS);
 
     // ยอดดอกเบี้ยที่รับ/นำส่ง ในปีงบนี้ แยกประเภท
+    // กรองด้วย sy_id เป็นหลัก (unique ต่อปีงบ) เลี่ยงปัญหา budget_year BE/CE
+    void budgetYear;
     const entries = await this.entryRepo.find({
-      where: { scId, syId, budgetYear, del: 0 },
+      where: { scId, syId, del: 0 },
     });
     const byType = INTEREST_TYPES.map((rt) => {
       const list = entries.filter((e) => e.revenueType === rt);

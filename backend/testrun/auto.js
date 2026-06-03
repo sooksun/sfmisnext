@@ -85,6 +85,13 @@ async function main() {
   rec('สร้าง opening ปี 2557 อัตโนมัติ', carried.length === 4, `สร้าง ${carried.length} รายการ (คาดหวัง 4: 101ธ.,104ธ.,106ธ.,106ฝากสพป.)`);
   carried.forEach(r => console.log(`     mt=${r.money_type_id} storage=${r.storage_type} = ${m(r.amount)}`));
 
+  // ── Feature G: เตือนดอกเบี้ยรายได้แผ่นดิน (30 มิ.ย./30 ธ.ค.) ───────────────
+  console.log('\n── G) เตือนรอบดอกเบี้ยเงินฝาก → นำส่งรายได้แผ่นดิน ──');
+  const ir = await get(`GovRevenue/interestReminder/${SC_ID}/${SY_ID}/2556`);
+  const okG = ir.ok && ir.body.next_interest_date && /(-06-30|-12-30)$/.test(ir.body.next_interest_date);
+  rec('endpoint interestReminder (รอบ 30 มิ.ย./30 ธ.ค.)', okG, `รอบถัดไป=${ir.body.next_interest_date} (อีก ${ir.body.days_to_next} วัน) ค้างนำส่ง=${m(ir.body.total_outstanding)}`);
+  (ir.body.alerts || []).forEach(a => console.log(`     [${a.level}] ${a.message}`));
+
   const pass = out.filter(r => r.ok).length;
   console.log(`\n========== AUTO SUMMARY: ${pass}/${out.length} OK ==========`);
 }

@@ -43,6 +43,17 @@ export class GovRevenueController {
     return this.govRevenueService.monthlySummary(scId, syId, budgetYear);
   }
 
+  /** เตือนรอบดอกเบี้ย (30 มิ.ย./30 ธ.ค.) + ยอดค้างนำส่งรายได้แผ่นดิน */
+  @Get('interestReminder/:sc_id/:sy_id/:budget_year')
+  @HttpCode(HttpStatus.OK)
+  interestReminder(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('sy_id', ParseIntPipe) syId: number,
+    @Param('budget_year') budgetYear: string,
+  ) {
+    return this.govRevenueService.interestReminder(scId, syId, budgetYear);
+  }
+
   /** เพิ่มรายการ */
   @Post('addEntry')
   @HttpCode(HttpStatus.OK)

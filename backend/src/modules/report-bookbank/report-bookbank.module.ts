@@ -6,6 +6,7 @@ import { FinancialTransactions } from '../report-daily-balance/entities/financia
 import { BudgetIncomeTypeSchool } from '../bank/entities/budget-income-type-school.entity';
 import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
+import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
       BudgetIncomeTypeSchool,
       PlnReceive,
       RequestWithdraw,
+      OpeningBalance,
     ]),
   ],
   controllers: [ReportBookbankController],

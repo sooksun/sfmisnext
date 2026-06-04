@@ -5,6 +5,7 @@ import { FinancialTransactions } from '../report-daily-balance/entities/financia
 import { BudgetIncomeTypeSchool } from '../bank/entities/budget-income-type-school.entity';
 import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
+import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 
 export interface BookbankTransaction {
   ft_id: number;
@@ -27,6 +28,8 @@ export class ReportBookbankService {
     private readonly plnReceiveRepository: Repository<PlnReceive>,
     @InjectRepository(RequestWithdraw)
     private readonly requestWithdrawRepository: Repository<RequestWithdraw>,
+    @InjectRepository(OpeningBalance)
+    private readonly openingBalanceRepository: Repository<OpeningBalance>,
   ) {}
 
   async loadReportRegisterBookbank(
@@ -49,11 +52,16 @@ export class ReportBookbankService {
     }
 
     // โหลด financial transactions ของประเภทเงินที่ผูกกับบัญชีนี้
+    //  - กรองตามปีงบ (sy_id) มิฉะนั้นยอดสะสมจะปนข้ามปี (ยอดไม่ตรง)
+    //  - กรองเฉพาะรายการที่ผ่านธนาคาร (money_channel=2) เท่านั้น เพราะสมุดบัญชี
+    //    ธนาคารต้องสะท้อนเฉพาะเงินเข้า-ออกบัญชีจริง (รับโอน/เช็ค บจ) ไม่รวมเงินสด (บค)
     const transactions = await this.financialTransactionsRepository
       .createQueryBuilder('ft')
       .where('ft.sc_id = :scId', { scId })
       .andWhere('ft.del = :del', { del: '0' })
       .andWhere('ft.bg_type_id IN (:...bgTypeIds)', { bgTypeIds })
+      .andWhere(syId ? 'ft.sy_id = :syId' : '1=1', { syId })
+      .andWhere('ft.money_channel = :bankCh', { bankCh: 2 })
       .orderBy('ft.create_date', 'ASC')
       .addOrderBy('ft.ft_id', 'ASC')
       .getMany();
@@ -69,7 +77,7 @@ export class ReportBookbankService {
     const rwIds = [
       ...new Set(
         transactions
-          .filter((t) => t.type === -1 && t.rwId > 0)
+          .filter((t) => t.rwId > 0) // รวมรายการหักภาษีอัตโนมัติ (type=1, rwId>0) ด้วย
           .map((t) => t.rwId),
       ),
     ];
@@ -90,9 +98,18 @@ export class ReportBookbankService {
       withdraws.map((w) => [w.rwId, w] as [number, (typeof withdraws)[0]]),
     );
 
+    // ยอดยกมาต้นปีของบัญชีนี้ = ผลรวมยอดยกมาประเภทเงินที่ผูกบัญชี เฉพาะที่อยู่ใน
+    // ธนาคาร (storage_type=2) — สมุดบัญชีธนาคารต้องเริ่มจากยอดเงินฝากต้นปี
+    const openings = await this.openingBalanceRepository.find({
+      where: { scId, syId, storageType: 2, del: 0 },
+    });
+    const openingBank = openings
+      .filter((o) => bgTypeIds.includes(o.moneyTypeId))
+      .reduce((s, o) => s + (Number(o.amount) || 0), 0);
+
     // คำนวณ balance สะสม + map field ให้ตรงกับ frontend
-    let runningBalance = 0;
-    return transactions.map((trans) => {
+    let runningBalance = openingBank;
+    const rows = transactions.map((trans) => {
       const isIncome = trans.type === 1;
       const isExpense = trans.type === -1;
 
@@ -110,6 +127,11 @@ export class ReportBookbankService {
           transNo = r.prNo ?? transNo;
           detail = `รับเงิน ${r.receiveForm ?? ''}`.trim();
         }
+      } else if (isIncome && trans.prId === 0 && trans.rwId > 0) {
+        // รับเข้าจากการหักภาษี ณ ที่จ่ายอัตโนมัติ (ไม่มีใบเสร็จ)
+        const w = withdrawMap.get(trans.rwId);
+        transNo = w?.noDoc ?? transNo;
+        detail = `หักภาษี ณ ที่จ่าย ${w?.detail ?? ''}`.trim();
       } else if (isExpense && trans.rwId > 0) {
         const w = withdrawMap.get(trans.rwId);
         if (w) {
@@ -134,5 +156,21 @@ export class ReportBookbankService {
         up_date: trans.updateDate ? trans.updateDate.toISOString() : dateStr,
       };
     });
+
+    // แถวยอดยกมาต้นปี (ถ้ามี) ไว้บนสุด เพื่อให้ยอดสะสมตรง
+    if (openingBank !== 0) {
+      rows.unshift({
+        bb_id: 0,
+        trans_date: '',
+        trans_no: '',
+        detail: 'ยอดยกมาต้นปี',
+        trans_in: openingBank,
+        trans_out: 0,
+        balance: openingBank,
+        up_by: '',
+        up_date: '',
+      });
+    }
+    return rows;
   }
 }

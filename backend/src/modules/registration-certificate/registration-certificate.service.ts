@@ -226,24 +226,51 @@ export class RegistrationCertificateService {
     const partnerMap = new Map<number, Partner>();
     partners.forEach((p) => partnerMap.set(p.pId, p));
 
+    // ประเภทงบของแต่ละใบเบิก (master_budget_income_type)
+    const bgTypeIds = [
+      ...new Set(withdraws.map((w) => w.bgTypeId).filter((id) => !!id)),
+    ];
+    const budgetTypeMap = new Map<number, string>();
+    if (bgTypeIds.length > 0) {
+      const bts = (await this.requestWithdrawRepository.manager.query(
+        `SELECT bg_type_id, budget_type FROM master_budget_income_type WHERE bg_type_id IN (${bgTypeIds
+          .map(() => '?')
+          .join(',')})`,
+        bgTypeIds,
+      )) as { bg_type_id: number; budget_type: string }[];
+      bts.forEach((b) => budgetTypeMap.set(Number(b.bg_type_id), b.budget_type));
+    }
+
     return certificates.map((cert) => {
       const withdraw = withdrawMap.get(cert.ofId);
       const partner = withdraw ? partnerMap.get(withdraw.pId) : null;
+      // จำนวนภาษีที่หัก ณ ที่จ่าย (เลขที่ปรากฏบนหนังสือรับรอง)
+      const wht = calcWithholding(
+        withdraw ? Number(withdraw.amount) : 0,
+        partner ? partner.calVat : 2,
+      );
 
       return {
+        cert_id: cert.wcId,
+        cert_no: cert.wcNo ?? '',
+        cert_date: cert.cerDate,
+        cert_amount: wht.withholdAmount,
+        gross_amount: wht.gross,
+        partner_name: partner ? partner.pName : '',
+        project_name: '',
+        budget_type_name: withdraw
+          ? (budgetTypeMap.get(withdraw.bgTypeId) ?? '')
+          : '',
+        detail: withdraw ? withdraw.detail : '',
+        status: cert.status,
+        up_by: cert.upBy != null ? String(cert.upBy) : '',
+        up_date: cert.updateDate,
+        // คงไว้เพื่อ backward-compat
         wc_id: cert.wcId,
         wc_no: cert.wcNo,
         of_id: cert.ofId,
-        sc_id: cert.scId,
-        wc_rank: cert.wcRank,
-        cer_date: cert.cerDate,
         sy_id: cert.syId,
         year: cert.year,
-        status: cert.status,
-        detail: withdraw ? withdraw.detail : '',
-        partner_name: partner ? partner.pName : '',
-        amount: withdraw ? withdraw.amount : 0,
-        certificate_payment: withdraw ? withdraw.certificatePayment : null,
       };
     });
   }

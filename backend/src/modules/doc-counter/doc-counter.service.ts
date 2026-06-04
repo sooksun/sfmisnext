@@ -22,14 +22,25 @@ export const DOC_TYPE_PREFIX: Record<string, string> = {
 
 const ALL_DOC_TYPES = ['BR', 'BC', 'BJ', 'BY', 'BG', 'BF', 'BT', 'BK'];
 
+/**
+ * แปลงปีงบให้เป็น พ.ศ. เสมอ (idempotent) — เลขที่เอกสารราชการต้องแสดงเป็น พ.ศ.
+ * รับได้ทั้ง ค.ศ. (2026) และ พ.ศ. (2569) → คืน "2569"
+ * ป้องกันเลขออกเป็น ค.ศ. (บจ.1/2026) เพราะ request_withdraw.year เก็บเป็น ค.ศ.
+ */
+export function toBudgetYearBE(year: string | number | null | undefined): string {
+  const n = Number(year);
+  if (!Number.isFinite(n) || n <= 0) return String(year ?? '');
+  return String(n >= 2400 ? n : n + 543);
+}
+
 @Injectable()
 export class DocCounterService {
   constructor(private readonly dataSource: DataSource) {}
 
-  /** จัด format เลขที่เอกสารภาษาไทย เช่น บค.12/2569 */
+  /** จัด format เลขที่เอกสารภาษาไทย เช่น บค.12/2569 (บังคับปีเป็น พ.ศ.) */
   static format(docType: string, seq: number, budgetYear: string): string {
     const prefix = DOC_TYPE_PREFIX[docType] ?? docType;
-    return `${prefix}${seq}/${budgetYear}`;
+    return `${prefix}${seq}/${toBudgetYearBE(budgetYear)}`;
   }
 
   /**
@@ -39,9 +50,10 @@ export class DocCounterService {
   async issueWithin(
     manager: EntityManager,
     scId: number,
-    budgetYear: string,
+    budgetYearRaw: string,
     docType: string,
   ): Promise<{ seq: number; formatted: string }> {
+    const budgetYear = toBudgetYearBE(budgetYearRaw); // คีย์ตัวนับเป็น พ.ศ. เสมอ
     let row = await manager.findOne(DocumentCounter, {
       where: { scId, budgetYear, docType },
       lock: { mode: 'pessimistic_write' },
@@ -80,7 +92,8 @@ export class DocCounterService {
 
   /** ดึงเลขที่ถัดไป พร้อม lock row เพื่อป้องกัน race condition */
   async getNextNumber(dto: GetNextNumberDto) {
-    const { sc_id, budget_year, doc_type } = dto;
+    const { sc_id, doc_type } = dto;
+    const budget_year = toBudgetYearBE(dto.budget_year);
     const repo = this.dataSource.getRepository(DocumentCounter);
     const qr = this.dataSource.createQueryRunner();
 
@@ -127,7 +140,8 @@ export class DocCounterService {
   }
 
   /** โหลดสรุปทุก doc_type สำหรับโรงเรียน + ปีงบประมาณ (คืน 4 rows เสมอ) */
-  async loadCounters(scId: number, budgetYear: string) {
+  async loadCounters(scId: number, budgetYearRaw: string) {
+    const budgetYear = toBudgetYearBE(budgetYearRaw);
     const repo = this.dataSource.getRepository(DocumentCounter);
     const rows = await repo.find({ where: { scId, budgetYear } });
 
@@ -151,7 +165,8 @@ export class DocCounterService {
 
   /** รีเซ็ต (หรือตั้งค่า) last_no ของ row */
   async resetCounter(dto: ResetCounterDto) {
-    const { sc_id, budget_year, doc_type, reset_to } = dto;
+    const { sc_id, doc_type, reset_to } = dto;
+    const budget_year = toBudgetYearBE(dto.budget_year);
     const repo = this.dataSource.getRepository(DocumentCounter);
 
     let row = await repo.findOne({

@@ -44,6 +44,17 @@ import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
+import { Receipt } from '../receipt/entities/receipt.entity';
+
+/** จัดรูปเลขที่ใบเสร็จรับเงินเป็น "บร.{เล่มที่}/{เลขที่}" เช่น "บร.253ก/22" */
+function formatReceiptNo(
+  bookNo: string | null | undefined,
+  receiptNo: number | null | undefined,
+): string | null {
+  const book = (bookNo ?? '').toString().trim();
+  if (!book || receiptNo == null) return null;
+  return `บร.${book}/${receiptNo}`;
+}
 
 export interface UnifiedSummaryItem {
   bg_type_id: number;
@@ -81,6 +92,8 @@ export class UnifiedRegisterService {
     private readonly requestWithdrawRepository: Repository<RequestWithdraw>,
     @InjectRepository(OpeningBalance)
     private readonly openingBalanceRepository: Repository<OpeningBalance>,
+    @InjectRepository(Receipt)
+    private readonly receiptRepository: Repository<Receipt>,
   ) {}
 
   /** ยอดยกมาต้นปี รวมต่อ money_type (กรองตาม sy_id ถ้ามี) */
@@ -225,7 +238,14 @@ export class UnifiedRegisterService {
         });
         if (receive) {
           receiveMoneyType = receive.receiveMoneyType;
-          docNo = receive.prNo;
+          // เลขที่ใบเสร็จรับเงินแบบ "บร.{เล่มที่}/{เลขที่}" จากตาราง receipt
+          const receipt = await this.receiptRepository.findOne({
+            where: { prId: String(trans.prId), status: '1' },
+            order: { rId: 'DESC' },
+          });
+          docNo =
+            formatReceiptNo(receipt?.bookNo, receipt?.receiptNo) ??
+            receive.prNo;
           const receiveDetails = await this.plnReceiveDetailRepository.find({
             where: { prId: trans.prId, del: 0 },
           });

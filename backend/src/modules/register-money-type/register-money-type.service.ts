@@ -128,6 +128,7 @@ export class RegisterMoneyTypeService {
     return budgetTypes.map((type) => ({
       bg_type_id: type.bgTypeId,
       budget_type: type.budgetType,
+      bg_type_name: type.budgetType, // alias ที่ dropdown ฝั่ง frontend ใช้แสดงผล
       budget_borrow_type: type.budgetBorrowType, // Frontend needs this for template selection
     }));
   }
@@ -222,6 +223,20 @@ export class RegisterMoneyTypeService {
             ft_id: trans.ftId, // Frontend expects ft_id
           };
         }
+      } else if (trans.type === 1 && trans.prId === 0 && trans.rwId > 0) {
+        // รับเข้าจากการหักภาษี ณ ที่จ่ายอัตโนมัติ (ไม่มีใบเสร็จ/ไม่มี pln_receive)
+        const rw = await this.requestWithdrawRepository.findOne({
+          where: { rwId: trans.rwId },
+        });
+        receiveDetail = {
+          pr_no: rw?.noDoc ?? null,
+          receive_date: trans.createDate,
+          receive_money_type: null,
+          prd_detail: rw
+            ? `หักภาษี ณ ที่จ่าย — ${rw.detail ?? ''}`
+            : 'หักภาษี ณ ที่จ่าย',
+          ft_id: trans.ftId,
+        };
       } else if (trans.type === -1 && trans.rwId > 0) {
         // Expense - load request withdraw
         const requestWithdraw = await this.requestWithdrawRepository.findOne({

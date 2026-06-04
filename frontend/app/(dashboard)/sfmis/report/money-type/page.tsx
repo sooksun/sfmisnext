@@ -32,6 +32,25 @@ interface MoneyTypeEntry {
   up_date: string
 }
 
+interface MoneyTypeTxn {
+  ft_id: number
+  type: number
+  amount: number
+  create_date: string
+  update_date: string
+  receive_general?: { prd_detail?: string; pr_no?: string } | null
+  pay?: { detail?: string; no_doc?: string } | null
+  balance: number
+}
+
+interface MoneyTypeResponse {
+  carry_forward: number
+  revenue: number
+  expenses: number
+  total: number
+  data: { budget_type: string; transaction: MoneyTypeTxn[] }[]
+}
+
 export default function MoneyTypePage() {
   const { scId, syId, budgetYear: budgetYearRaw } = useAppContext()
   const year = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
@@ -47,15 +66,33 @@ export default function MoneyTypePage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['money-type', selectedBgTypeId, scId, syId, apiYear],
-    queryFn: () => apiGet<MoneyTypeEntry[]>(
+    queryFn: () => apiGet<MoneyTypeResponse>(
       `Register_control_money_type/load_register_control_money_type/${selectedBgTypeId}/${scId}/${syId}/${apiYear}`
     ),
     enabled: selectedBgTypeId > 0 && scId > 0 && syId > 0 && apiYear !== '',
   })
 
   const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })
-  const rows = Array.isArray(data) ? data : []
   const typeList = Array.isArray(budgetTypes) ? budgetTypes : []
+
+  // backend คืน object ซ้อน { carry_forward, revenue, expenses, data:[{budget_type, transaction:[]}] }
+  // → แปลงเป็นแถวตารางที่หน้าใช้แสดง
+  const budgetTypeName = data?.data?.[0]?.budget_type ?? ''
+  const rows: MoneyTypeEntry[] = (data?.data?.[0]?.transaction ?? []).map((t, i) => {
+    const docNo = t.type === 1 ? t.receive_general?.pr_no : t.pay?.no_doc
+    const text = t.type === 1 ? t.receive_general?.prd_detail : t.pay?.detail
+    return {
+      mt_id: t.ft_id ?? i,
+      detail: [docNo, text].filter(Boolean).join(' · ') || '-',
+      receive_date: t.create_date,
+      amount_in: t.type === 1 ? Number(t.amount) : 0,
+      amount_out: t.type === -1 ? Number(t.amount) : 0,
+      balance: Number(t.balance),
+      budget_type_name: budgetTypeName,
+      up_by: '',
+      up_date: t.update_date,
+    }
+  })
 
   const columns = [
     { header: 'วันที่', render: (item: MoneyTypeEntry) => <span>{fmtDateTH(item.receive_date)}</span> },

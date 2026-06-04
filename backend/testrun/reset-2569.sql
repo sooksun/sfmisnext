@@ -67,6 +67,22 @@ VALUES
    106, 'เงินอุดหนุน อปท. (อาหารกลางวัน)', '[finance1-2569] ยืมจัดทำอาหารกลางวัน (ยกมาต้นปี)',
    13975, '2025-05-17', 3, '2025-06-16', 1, @UP, 0, NOW(), NOW());
 
+-- 8) ผูกประเภทเงิน finance1 (101–110) เข้าบัญชีธนาคาร เพื่อให้รายการจ่ายเช็ค (บจ)
+--    ไหลเข้า "สมุดบัญชีธนาคาร" (รายงาน 4.5) ; เงินอุดหนุน→บัญชี 1, รายได้สถานศึกษา→บัญชี 2
+DELETE FROM budget_income_type_school WHERE sc_id=@SC AND bg_type_id BETWEEN 101 AND 110;
+INSERT INTO budget_income_type_school (sc_id, ba_id, bg_type_id, up_by, del, create_date, update_date) VALUES
+ (@SC, 1, 101, @UP, 0, NOW(), NOW()),  -- เงินอุดหนุนค่าใช้จ่ายรายหัว
+ (@SC, 1, 102, @UP, 0, NOW(), NOW()),  -- ปัจจัยพื้นฐานนักเรียนยากจน
+ (@SC, 1, 103, @UP, 0, NOW(), NOW()),  -- อาหารนักเรียนพักนอน
+ (@SC, 1, 104, @UP, 0, NOW(), NOW()),  -- เรียนฟรี 15 ปี
+ (@SC, 2, 105, @UP, 0, NOW(), NOW()),  -- เงินรายได้สถานศึกษา → บัญชีรายได้สถานศึกษา
+ (@SC, 1, 106, @UP, 0, NOW(), NOW()),  -- อุดหนุน อปท. (อาหารกลางวัน)
+ (@SC, 1, 107, @UP, 0, NOW(), NOW()),  -- อุดหนุน อปท. (ประชาธิปไตย)
+ (@SC, 1, 108, @UP, 0, NOW(), NOW()),  -- อุดหนุน อปท. (วงดุริยางค์)
+ (@SC, 1, 109, @UP, 0, NOW(), NOW()),  -- เงินประกันสัญญา
+ (@SC, 1, 110, @UP, 0, NOW(), NOW());  -- เงินภาษีหัก ณ ที่จ่าย
+
 SELECT 'reset-2569 done' AS status,
   (SELECT COUNT(*) FROM financial_transactions WHERE sc_id=@SC AND sy_id=@SY) AS ft_left,
-  (SELECT COUNT(*) FROM request_withdraw WHERE sc_id=@SC AND sy_id=@SY) AS rw_left;
+  (SELECT COUNT(*) FROM request_withdraw WHERE sc_id=@SC AND sy_id=@SY) AS rw_left,
+  (SELECT COUNT(*) FROM budget_income_type_school WHERE sc_id=@SC AND bg_type_id BETWEEN 101 AND 110) AS bank_links;

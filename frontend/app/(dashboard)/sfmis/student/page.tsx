@@ -9,6 +9,7 @@ import { Plus, Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -206,6 +207,7 @@ export default function StudentPage() {
           ) : undefined
         }
       />
+      <ProcessFlow flow="plan" />
 
       {/* สรุปจำนวน */}
       {resp && (

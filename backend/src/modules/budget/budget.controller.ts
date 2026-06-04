@@ -94,7 +94,12 @@ export class BudgetController {
     @Param('sy_id', ParseIntPipe) syId: number,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.budgetService.loadBudgetIncome(pbcId, syId, user.sc_id, user.type);
+    return this.budgetService.loadBudgetIncome(
+      pbcId,
+      syId,
+      user.sc_id,
+      user.type,
+    );
   }
 
   @Get('loadBudgetIncomeTypeSummary/:sc_id/:sy_id/:budget_year')
@@ -106,7 +111,27 @@ export class BudgetController {
     @CurrentUser() user: JwtUser,
   ) {
     assertSameSchool(user, scId);
-    return this.budgetService.loadBudgetIncomeTypeSummary(scId, syId, budgetYear);
+    return this.budgetService.loadBudgetIncomeTypeSummary(
+      scId,
+      syId,
+      budgetYear,
+    );
+  }
+
+  /**
+   * โหลด "งบประมาณการรายประเภท" จาก pln_real_budget
+   * - acad_year ส่งเป็น CE (เช่น 2026)
+   * - คืนเฉพาะประเภทที่มียอด > 0 — ใช้ในหน้า budget-category
+   */
+  @Get('loadEstimatedIncomeByType/:sc_id/:acad_year')
+  @HttpCode(HttpStatus.OK)
+  loadEstimatedIncomeByType(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('acad_year', ParseIntPipe) acadYear: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
+    return this.budgetService.loadEstimatedIncomeByType(scId, acadYear);
   }
 
   @Post('addPLNBudgetCategory')
@@ -115,7 +140,11 @@ export class BudgetController {
     @Body() payload: AddPlnBudgetCategoryDto,
     @CurrentUser() user: JwtUser,
   ) {
-    return this.budgetService.addPLNBudgetCategory(payload, user.sc_id, user.type);
+    return this.budgetService.addPLNBudgetCategory(
+      payload,
+      user.sc_id,
+      user.type,
+    );
   }
 
   @Post('addNewBudgetCategory')

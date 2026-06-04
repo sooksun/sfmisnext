@@ -1,11 +1,12 @@
 // Shared lib for finance1 test-run harness
 const mysql = require('mysql2/promise');
 
-const BASE = 'http://localhost:3000/api';
-const SC_ID = 1;
-const SY_ID = 3;            // sandbox school_year (FY 2556) — from setup.sql
-const BUDGET_YEAR_CE = '2013'; // transactional budget_year (CE) = 2556 - 543
-const UP_BY = 1;
+const BASE = 'http://127.0.0.1:3000/api';
+const SC_ID = Number(process.env.SFMIS_TEST_SC_ID || 1);
+const SY_ID = Number(process.env.SFMIS_TEST_SY_ID || 3); // sandbox school_year (FY 2556) by default
+const BUDGET_YEAR_CE = process.env.SFMIS_TEST_BUDGET_YEAR_CE || '2013'; // transactional budget_year (CE)
+const BUDGET_YEAR_BE = process.env.SFMIS_TEST_BUDGET_YEAR_BE || '2556';
+const UP_BY = Number(process.env.SFMIS_TEST_UP_BY || 1);
 
 let TOKEN = null;
 
@@ -50,4 +51,4 @@ async function db(sql, params) {
 // pretty money
 const m = (n) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-module.exports = { BASE, SC_ID, SY_ID, BUDGET_YEAR_CE, UP_BY, login, api, post, get, db, m };
+module.exports = { BASE, SC_ID, SY_ID, BUDGET_YEAR_CE, BUDGET_YEAR_BE, UP_BY, login, api, post, get, db, m };

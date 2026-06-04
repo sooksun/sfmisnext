@@ -96,7 +96,10 @@ export class ProjectApproveController {
     @Param('order_id', ParseIntPipe) orderId: number,
     @CurrentUser('sc_id') scId: number,
   ) {
-    return await this.projectApproveService.loadSuppilesByOrderID(orderId, scId);
+    return await this.projectApproveService.loadSuppilesByOrderID(
+      orderId,
+      scId,
+    );
   }
 
   @Get('loadBudgetBalance/:order_id/:project_id/:sc_id/:year')

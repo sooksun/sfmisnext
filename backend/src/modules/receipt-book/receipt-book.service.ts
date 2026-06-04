@@ -55,6 +55,22 @@ export class ReceiptBookService {
       };
     }
 
+    // ห้ามข้ามปีงบในเล่มเดียว: ถ้ามีเล่มปีงบก่อนหน้ายัง active อยู่ ต้องปิด/ยกเลิกใบที่เหลือก่อน
+    const activeBooks = await this.rbRepo.find({
+      where: { scId: dto.sc_id, status: 1, del: 0 },
+    });
+    const curYear = parseInt(dto.budget_year, 10);
+    const staleBook = activeBooks.find((b) => {
+      const y = parseInt(b.budgetYear ?? '0', 10);
+      return y && curYear && y < curYear;
+    });
+    if (staleBook) {
+      return {
+        flag: false,
+        ms: `มีเล่มใบเสร็จปีงบ ${staleBook.budgetYear} ที่ยังไม่ปิด — ต้องปิดเล่มและยกเลิกใบที่เหลือก่อนเปิดเล่มปีงบใหม่ (ห้ามใช้ข้ามปีงบ)`,
+      };
+    }
+
     const book = this.rbRepo.create({
       scId: dto.sc_id,
       syId: dto.sy_id,

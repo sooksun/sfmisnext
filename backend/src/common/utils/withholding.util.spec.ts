@@ -70,4 +70,34 @@ describe('calcWithholding', () => {
       expect(result.withholdAmount).toBe(9.35);
     });
   });
+
+  describe('เกณฑ์ขั้นต่ำ (minThreshold) + หลายอัตรา (rate)', () => {
+    it('ยอดต่ำกว่าเกณฑ์ 10,000 → ไม่หัก', () => {
+      const r = calcWithholding(9999, 0, { rate: 1, minThreshold: 10000 });
+      expect(r.withholdAmount).toBe(0);
+      expect(r.netPayable).toBe(9999);
+    });
+
+    it('ยอด ≥ เกณฑ์ 10,000 → หักปกติ', () => {
+      const r = calcWithholding(10000, 0, { rate: 1, minThreshold: 10000 });
+      expect(r.withholdAmount).toBe(100);
+    });
+
+    it('อัตราค่าบริการ 3%', () => {
+      const r = calcWithholding(10000, 0, { rate: 3, minThreshold: 10000 });
+      expect(r.withholdRate).toBe(0.03);
+      expect(r.withholdAmount).toBe(300);
+    });
+
+    it('อัตราค่าเช่า 5% พร้อม VAT', () => {
+      const r = calcWithholding(10700, 1, { rate: 5, minThreshold: 10000 });
+      expect(r.base).toBeCloseTo(10000, 1);
+      expect(r.withholdAmount).toBeCloseTo(500, 1);
+    });
+
+    it('minThreshold = 0 (default) → ไม่ gate', () => {
+      const r = calcWithholding(500, 0, { rate: 1 });
+      expect(r.withholdAmount).toBe(5);
+    });
+  });
 });

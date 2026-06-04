@@ -11,7 +11,10 @@ import {
 } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { assertSameSchool, type JwtUser } from '../../common/utils/tenant-guard';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('Dashboard')
 export class DashboardController {

@@ -115,6 +115,13 @@ export default function SignInPage() {
             {isLoading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
           </button>
         </form>
+
+        {process.env.NODE_ENV === 'development' && (
+          <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <strong>ทดสอบในเครื่อง:</strong> หลังรัน <code className="rounded bg-amber-100 px-1">npm run seed</code> ใช้รหัสผ่าน{' '}
+            <code className="rounded bg-amber-100 px-1">Admin@123</code> (มีเครื่องหมาย @ หลัง Admin)
+          </p>
+        )}
       </div>
 
       <p className="mt-4 text-center text-xs text-gray-400">

@@ -3,6 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ContractSecurity } from './entities/contract-security.entity';
 import { ContractPenalty } from './entities/contract-penalty.entity';
+import { SmpDepositEntry } from '../smp-deposit/entities/smp-deposit-entry.entity';
+import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 
 const TYPE_NAMES: Record<number, string> = {
   1: 'หลักประกันซอง',
@@ -40,7 +43,33 @@ export class ContractSecurityService {
     private readonly secRepo: Repository<ContractSecurity>,
     @InjectRepository(ContractPenalty)
     private readonly penRepo: Repository<ContractPenalty>,
+    @InjectRepository(SmpDepositEntry)
+    private readonly smpRepo: Repository<SmpDepositEntry>,
+    @InjectRepository(BudgetIncomeType)
+    private readonly budgetTypeRepo: Repository<BudgetIncomeType>,
+    private readonly regulatoryConfig: RegulatoryConfigService,
   ) {}
+
+  /** หาประเภทเงิน "เงินประกันสัญญา" สำหรับลงทะเบียนคุมเงินฝากส่วนราชการ */
+  private async resolveGuaranteeMoneyType(): Promise<{
+    id: number | null;
+    name: string | null;
+  }> {
+    const bt =
+      (await this.budgetTypeRepo
+        .createQueryBuilder('bt')
+        .where('bt.budget_type LIKE :n', { n: '%ประกันสัญญา%' })
+        .andWhere('bt.del = 0')
+        .orderBy('bt.bg_type_id', 'ASC')
+        .getOne()) ??
+      (await this.budgetTypeRepo
+        .createQueryBuilder('bt')
+        .where('bt.budget_type LIKE :n', { n: '%ประกัน%' })
+        .andWhere('bt.del = 0')
+        .orderBy('bt.bg_type_id', 'ASC')
+        .getOne());
+    return { id: bt ? bt.bgTypeId : null, name: bt ? bt.budgetType : null };
+  }
 
   async loadByContract(ctId: number) {
     const items = await this.secRepo.find({
@@ -69,12 +98,16 @@ export class ContractSecurityService {
   }
 
   async addSecurity(dto: any) {
+    const securityForm = dto.security_form ?? 1;
+    const securityType = dto.security_type;
+    const amount = Number(dto.amount ?? 0);
+
     const s = this.secRepo.create({
       ctId: dto.ct_id,
       scId: dto.sc_id,
-      securityType: dto.security_type,
-      securityForm: dto.security_form ?? 1,
-      amount: dto.amount,
+      securityType,
+      securityForm,
+      amount,
       percentOfContract: dto.percent_of_contract ?? 0,
       bankName: dto.bank_name ?? null,
       documentNo: dto.document_no ?? null,
@@ -86,7 +119,45 @@ export class ContractSecurityService {
       del: 0,
     });
     await this.secRepo.save(s);
-    return { flag: true, ms: 'บันทึกหลักประกันเรียบร้อยแล้ว' };
+
+    let extraMs = '';
+
+    // 1.5 หลักประกันสัญญาที่เป็นเงินสด → นำฝาก สพป. (ทะเบียนคุมเงินฝากส่วนราชการ)
+    if (securityForm === 1) {
+      const mt = await this.resolveGuaranteeMoneyType();
+      const smp = this.smpRepo.create({
+        scId: dto.sc_id ?? 0,
+        syId: dto.sy_id ?? 0,
+        budgetYear: dto.budget_year ?? null,
+        entryType: 1, // ฝาก (นำฝาก สพป.)
+        docNo: dto.document_no ?? null,
+        docDate: dto.received_date ?? null,
+        detail: `${TYPE_NAMES[securityType] ?? 'หลักประกัน'} (สัญญา #${dto.ct_id}) — นำฝาก สพป.`,
+        amount,
+        moneyTypeId: mt.id,
+        moneyTypeName: mt.name,
+        upBy: dto.up_by ?? 0,
+        del: 0,
+      });
+      await this.smpRepo.save(smp);
+      s.smpDepositId = smp.sdeId;
+      await this.secRepo.save(s);
+      extraMs = ' + นำฝาก สพป. เรียบร้อย';
+    }
+
+    // 1.5 ตรวจ % หลักประกันสัญญา (เตือน ไม่บล็อก)
+    if (securityType === 2 && dto.contract_amount) {
+      const pctCfg = await this.regulatoryConfig.getThreshold(
+        dto.sc_id ?? 0,
+        'procurement.contract_security_pct',
+      );
+      const expected = (Number(dto.contract_amount) * pctCfg) / 100;
+      if (expected > 0 && Math.abs(expected - amount) > 1) {
+        extraMs += ` (เตือน: หลักประกันสัญญาควรเป็น ${pctCfg}% = ${expected.toLocaleString('th-TH')} บาท)`;
+      }
+    }
+
+    return { flag: true, ms: `บันทึกหลักประกันเรียบร้อยแล้ว${extraMs}` };
   }
 
   async returnSecurity(dto: {
@@ -109,7 +180,39 @@ export class ContractSecurityService {
     s.status = 2;
     s.upBy = dto.up_by;
     await this.secRepo.save(s);
+
+    // คืนหลักประกันเงินสด → ถอนจากเงินฝากส่วนราชการ (mirror entry)
+    await this.reverseSmpDeposit(s, dto.return_date, dto.up_by);
+
     return { flag: true, ms: 'คืนหลักประกันเรียบร้อยแล้ว' };
+  }
+
+  /** สร้างรายการถอนเงินฝากส่วนราชการ คู่กับรายการนำฝากของหลักประกันเงินสด */
+  private async reverseSmpDeposit(
+    s: ContractSecurity,
+    docDate: string | null | undefined,
+    upBy: number,
+  ): Promise<void> {
+    if (!s.smpDepositId) return;
+    const orig = await this.smpRepo.findOne({
+      where: { sdeId: s.smpDepositId, del: 0 },
+    });
+    if (!orig) return;
+    const withdraw = this.smpRepo.create({
+      scId: orig.scId,
+      syId: orig.syId,
+      budgetYear: orig.budgetYear,
+      entryType: 2, // ถอน (คืนหลักประกัน)
+      docNo: s.returnEvidenceNo ?? orig.docNo,
+      docDate: docDate ?? null,
+      detail: `คืน${TYPE_NAMES[s.securityType] ?? 'หลักประกัน'} (สัญญา #${s.ctId})`,
+      amount: Number(orig.amount),
+      moneyTypeId: orig.moneyTypeId,
+      moneyTypeName: orig.moneyTypeName,
+      upBy: upBy ?? 0,
+      del: 0,
+    });
+    await this.smpRepo.save(withdraw);
   }
 
   async confiscateSecurity(dto: {

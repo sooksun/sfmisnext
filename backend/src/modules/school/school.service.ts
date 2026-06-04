@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { School } from './entities/school.entity';
-import { BudgetIncomeTypeSchool } from './entities/budget-income-type-school.entity';
+import { BudgetIncomeTypeSchool } from '../bank/entities/budget-income-type-school.entity';
 import { DeleteLogService } from '../delete-log/delete-log.service';
 
 @Injectable()

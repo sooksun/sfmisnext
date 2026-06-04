@@ -52,4 +52,24 @@ export class UnifiedRegisterController {
       toDate,
     );
   }
+
+  /**
+   * GET UnifiedRegister/schoolRevenueReport/:sc_id/:sy_id/:year/:bg_type_id
+   * รายงานการรับ-จ่ายเงินรายได้สถานศึกษา (form-030) จัดหมวดอัตโนมัติ
+   */
+  @Get('schoolRevenueReport/:sc_id/:sy_id/:year/:bg_type_id')
+  @HttpCode(HttpStatus.OK)
+  getSchoolRevenueReport(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('sy_id', ParseIntPipe) syId: number,
+    @Param('year') year: string,
+    @Param('bg_type_id', ParseIntPipe) bgTypeId: number,
+  ) {
+    return this.unifiedRegisterService.getSchoolRevenueReport(
+      scId,
+      syId,
+      year,
+      bgTypeId,
+    );
+  }
 }

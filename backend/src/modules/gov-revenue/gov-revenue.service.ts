@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GovRevenueEntry } from './entities/gov-revenue-entry.entity';
 import { AddGovRevenueDto } from './dto/add-gov-revenue.dto';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
+import { DocCounterService } from '../doc-counter/doc-counter.service';
 
 const REVENUE_TYPE_NAMES: Record<number, string> = {
   1: 'ดอกเบี้ยเงินฝาก (เงินอุดหนุน)',
@@ -16,7 +18,21 @@ export class GovRevenueService {
   constructor(
     @InjectRepository(GovRevenueEntry)
     private readonly entryRepo: Repository<GovRevenueEntry>,
+    private readonly regulatoryConfig: RegulatoryConfigService,
+    private readonly docCounter: DocCounterService,
   ) {}
+
+  /** บวกวันทำการ (ข้ามเสาร์-อาทิตย์) */
+  private addBusinessDays(from: Date, days: number): Date {
+    const d = new Date(from);
+    let added = 0;
+    while (added < days) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay(); // 0=อา, 6=ส
+      if (dow !== 0 && dow !== 6) added++;
+    }
+    return d;
+  }
 
   /**
    * โหลดรายการทั้งหมดของประเภทเงินที่เลือก พร้อม running balance
@@ -65,7 +81,10 @@ export class GovRevenueService {
    * สรุปยอดรายเดือน สำหรับแจ้งเตือนการนำส่ง
    */
   async monthlySummary(scId: number, syId: number, budgetYear: string) {
-    const ALERT_THRESHOLD = 10000;
+    const ALERT_THRESHOLD = await this.regulatoryConfig.getThreshold(
+      scId,
+      'finance.gov_revenue_urgent',
+    );
     const summaries: {
       revenue_type: number;
       revenue_type_name: string;
@@ -111,7 +130,13 @@ export class GovRevenueService {
    */
   async interestReminder(scId: number, syId: number, budgetYear: string) {
     const INTEREST_TYPES = [1, 2]; // ดอกเบี้ยอุดหนุน, ดอกเบี้ยอาหารกลางวัน
-    const URGENT_THRESHOLD = 10000;
+    const [URGENT_THRESHOLD, URGENT_DAYS] = await Promise.all([
+      this.regulatoryConfig.getThreshold(scId, 'finance.gov_revenue_urgent'),
+      this.regulatoryConfig.getThreshold(
+        scId,
+        'finance.gov_revenue_urgent_days',
+      ),
+    ]);
     const MS = 24 * 60 * 60 * 1000;
 
     const today = new Date();
@@ -130,7 +155,9 @@ export class GovRevenueService {
     const lastDate = past[past.length - 1];
     const nextDate = future[0];
     const daysToNext = Math.round((nextDate.getTime() - today.getTime()) / MS);
-    const daysSinceLast = Math.round((today.getTime() - lastDate.getTime()) / MS);
+    const daysSinceLast = Math.round(
+      (today.getTime() - lastDate.getTime()) / MS,
+    );
 
     // ยอดดอกเบี้ยที่รับ/นำส่ง ในปีงบนี้ แยกประเภท
     // กรองด้วย sy_id เป็นหลัก (unique ต่อปีงบ) เลี่ยงปัญหา budget_year BE/CE
@@ -172,9 +199,8 @@ export class GovRevenueService {
         INTEREST_TYPES.includes(e.revenueType) &&
         e.entryType === 1 &&
         e.docDate != null &&
-        Math.abs(
-          (new Date(e.docDate).getTime() - lastDate.getTime()) / MS,
-        ) <= 31,
+        Math.abs((new Date(e.docDate).getTime() - lastDate.getTime()) / MS) <=
+          31,
     );
     if (daysSinceLast <= 31 && !receivedNearLast) {
       alerts.push({
@@ -182,16 +208,41 @@ export class GovRevenueService {
         message: `ผ่านรอบดอกเบี้ย (${this.fmtThai(lastDate)}) มาแล้ว ${daysSinceLast} วัน แต่ยังไม่บันทึกดอกเบี้ยเงินฝาก — โปรดตรวจ Bank Statement แล้วบันทึก (ดอกเบี้ยไม่ต้องออกใบเสร็จ ใช้บันทึกข้อความ)`,
       });
     }
-    // 3) มีดอกเบี้ยรับแล้วยังไม่นำส่ง
+    // หาวันที่รับดอกเบี้ยล่าสุด (ที่ยังไม่นำส่ง) เพื่อคำนวณวันครบกำหนดนำส่งจริง
+    let latestReceived: Date | null = null;
+    for (const e of entries) {
+      if (
+        INTEREST_TYPES.includes(e.revenueType) &&
+        e.entryType === 1 &&
+        e.docDate
+      ) {
+        const d = new Date(e.docDate);
+        if (!latestReceived || d > latestReceived) latestReceived = d;
+      }
+    }
+
+    // 3) มีดอกเบี้ยรับแล้วยังไม่นำส่ง — คำนวณวันครบกำหนดจริง (วันทำการ)
+    let remitDeadline: Date | null = null;
+    let isOverdue = false;
     if (totalOutstanding > 0.005) {
       const urgent = totalOutstanding > URGENT_THRESHOLD;
+      if (urgent && latestReceived) {
+        remitDeadline = this.addBusinessDays(latestReceived, URGENT_DAYS);
+        remitDeadline.setHours(0, 0, 0, 0);
+        isOverdue = today.getTime() > remitDeadline.getTime();
+      }
+      const deadlineMsg = remitDeadline
+        ? isOverdue
+          ? ` — เลยกำหนดนำส่งแล้ว (ครบกำหนด ${this.fmtThai(remitDeadline)})`
+          : ` — ต้องนำส่งภายใน ${URGENT_DAYS} วันทำการ (ภายใน ${this.fmtThai(remitDeadline)})`
+        : ' — รวบรวมนำส่งอย่างน้อยเดือนละ 1 ครั้ง';
       alerts.push({
-        level: urgent ? 'urgent' : 'info',
+        level: isOverdue ? 'urgent' : urgent ? 'urgent' : 'info',
         message:
           `มีดอกเบี้ยรับแล้วยังไม่นำส่งรายได้แผ่นดิน ${totalOutstanding.toLocaleString('th-TH')} บาท` +
           (urgent
-            ? ' — เกิน 10,000 บาท ต้องนำส่งภายใน 3 วันทำการ'
-            : ' — รวบรวมนำส่งอย่างน้อยเดือนละ 1 ครั้ง'),
+            ? ` — เกิน ${URGENT_THRESHOLD.toLocaleString('th-TH')} บาท${deadlineMsg}`
+            : deadlineMsg),
       });
     }
 
@@ -202,6 +253,8 @@ export class GovRevenueService {
       last_interest_date: this.isoLocal(lastDate),
       by_type: byType,
       total_outstanding: Math.round(totalOutstanding * 100) / 100,
+      remit_deadline: remitDeadline ? this.isoLocal(remitDeadline) : null,
+      is_overdue: isOverdue,
       alerts,
       need_action: alerts.some((a) => a.level !== 'info'),
     };
@@ -216,20 +269,40 @@ export class GovRevenueService {
 
   private fmtThai(d: Date): string {
     const months = [
-      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
+      'ม.ค.',
+      'ก.พ.',
+      'มี.ค.',
+      'เม.ย.',
+      'พ.ค.',
+      'มิ.ย.',
+      'ก.ค.',
+      'ส.ค.',
+      'ก.ย.',
+      'ต.ค.',
+      'พ.ย.',
+      'ธ.ค.',
     ];
     return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
   }
 
   async addEntry(dto: AddGovRevenueDto) {
+    // ออกเลขที่เอกสารอัตโนมัติ บง. (ถ้าไม่ได้ระบุ)
+    let docNo = dto.doc_no ?? null;
+    if (!docNo) {
+      const issued = await this.docCounter.issue(
+        dto.sc_id,
+        dto.budget_year,
+        'BG',
+      );
+      docNo = issued.formatted;
+    }
     const entry = this.entryRepo.create({
       scId: dto.sc_id,
       syId: dto.sy_id,
       budgetYear: dto.budget_year,
       revenueType: dto.revenue_type,
       entryType: dto.entry_type,
-      docNo: dto.doc_no ?? null,
+      docNo,
       docDate: dto.doc_date ?? null,
       detail: dto.detail ?? null,
       amount: dto.amount,

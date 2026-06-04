@@ -36,6 +36,7 @@ interface MasterCategory {
 interface IncomeType {
   bg_type_id: number
   budget_type: string
+  estimated_amount: number   // ยอดประมาณการจาก pln_real_budget
 }
 
 interface BudgetDetail {
@@ -50,8 +51,9 @@ interface BitGroupItem {
   pbcd_id: number
   bg_type_id: number
   budget_type: string
-  budget: number
-  other_allocated: number
+  budget: number             // ที่กรอกในหมวดนี้
+  other_allocated: number    // หมวดอื่นกรอกแล้ว
+  estimated_amount: number   // ยอดประมาณการของประเภทนี้
 }
 
 interface TypeSummary {
@@ -118,11 +120,12 @@ export default function BudgetCategoryPage() {
     enabled: addOpen,
   })
 
-  // ── load income types (for edit dialog) ───────────────────────────────────
+  // ── load income types (เฉพาะที่มียอดประมาณการ > 0 จาก pln_real_budget) ──
   const { data: incomeTypes } = useQuery({
-    queryKey: ['budget-income-types'],
-    queryFn: () => apiGet<IncomeType[]>('Budget/loadBudgetIncomeType'),
-    enabled: editOpen,
+    queryKey: ['estimated-income-by-type', scId, apiYear],
+    queryFn: () =>
+      apiGet<IncomeType[]>(`Budget/loadEstimatedIncomeByType/${scId}/${apiYear}`),
+    enabled: editOpen && scId > 0 && !!apiYear,
   })
 
   // ── open edit dialog → load existing details ──────────────────────────────
@@ -163,6 +166,7 @@ export default function BudgetCategoryPage() {
           budget_type: it.budget_type,
           budget: thisAmount,
           other_allocated: totalAllocated - thisAmount,
+          estimated_amount: it.estimated_amount,
         }
       })
     )
@@ -374,7 +378,7 @@ export default function BudgetCategoryPage() {
 
       {/* ── Dialog: กรอกยอดเงินต่อประเภทรายรับ ──────────────────────────────── */}
       <Dialog open={editOpen} onOpenChange={(v) => { if (!v) { setEditOpen(false); setEditTarget(null) } }}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogContent className="!max-w-[1024px] w-[95vw] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               กำหนดงบประมาณ
@@ -382,8 +386,14 @@ export default function BudgetCategoryPage() {
             </DialogTitle>
           </DialogHeader>
 
-          {(loadingDetails || (editOpen && (!incomeTypes || incomeTypes.length === 0))) ? (
+          {loadingDetails ? (
             <div className="text-center text-gray-400 py-8">กำลังโหลดข้อมูล...</div>
+          ) : !incomeTypes || incomeTypes.length === 0 ? (
+            <div className="text-center text-gray-400 py-8">
+              ยังไม่มีประเภทรายรับที่มียอดประมาณการ
+              <br />
+              <span className="text-xs">กรุณากำหนดยอดประมาณการในหน้า "งบประมาณที่ได้รับจริง" ก่อน</span>
+            </div>
           ) : (() => {
             // ── คำนวณค่าหลัก ─────────────────────────────────────────
             const overallRemaining = Math.max(0, totalBudget - totalReceive)
@@ -393,7 +403,8 @@ export default function BudgetCategoryPage() {
             const currentTotal = bitGroup.reduce((s, b) => s + b.budget, 0)
             const dynamicRemaining = categoryAvailable - currentTotal
             const overBudget = dynamicRemaining < 0
-            const visibleRows = bitGroup.filter((b) => b.other_allocated > 0 || b.budget > 0)
+            // แสดงเฉพาะประเภทที่มียอดประมาณการ > 0 — ตรงกับ pln_real_budget
+            const visibleRows = bitGroup.filter((b) => b.estimated_amount > 0)
             const hiddenCount = bitGroup.length - visibleRows.length
 
             return (
@@ -428,24 +439,37 @@ export default function BudgetCategoryPage() {
                     <thead className="bg-gray-50 border-b">
                       <tr>
                         <th className="text-left px-3 py-2 text-gray-600">ประเภทรายรับ</th>
+                        <th className="text-right px-3 py-2 text-gray-600 w-32">ยอดประมาณการ</th>
+                        <th className="text-right px-3 py-2 text-gray-600 w-32">คงเหลือกรอกได้</th>
                         <th className="text-right px-3 py-2 text-gray-600 w-40">จำนวนเงิน (บาท)</th>
                         <th className="text-right px-3 py-2 text-gray-600 w-20">สัดส่วน</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {visibleRows.map((b) => {
+                        // คงเหลือต่อประเภท = ยอดประมาณการ - หมวดอื่นจองแล้ว
+                        const rowAvailable = Math.max(0, b.estimated_amount - b.other_allocated)
+                        const rowOver = b.budget > rowAvailable
                         const pct = categoryAvailable > 0 ? (b.budget * 100 / categoryAvailable) : 0
                         return (
                           <tr key={b.bg_type_id} className="hover:bg-gray-50">
                             <td className="px-3 py-2">{b.budget_type}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                              {fmt(b.estimated_amount)}
+                            </td>
+                            <td className={`px-3 py-2 text-right tabular-nums ${rowOver ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+                              {fmt(rowAvailable)}
+                            </td>
                             <td className="px-3 py-2">
                               <Input
                                 type="number"
                                 min={0}
+                                max={rowAvailable}
                                 value={b.budget || ''}
                                 onChange={(e) => setBitAmount(b.bg_type_id, e.target.value)}
-                                className={`h-7 text-right tabular-nums text-sm ${overBudget ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
+                                className={`h-7 text-right tabular-nums text-sm ${rowOver || overBudget ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
                                 placeholder="0"
+                                title={rowOver ? `เกินยอดประมาณการที่กรอกได้ (${fmt(rowAvailable)} บาท)` : ''}
                               />
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums text-gray-500">
@@ -456,19 +480,19 @@ export default function BudgetCategoryPage() {
                       })}
                       {visibleRows.length === 0 && (
                         <tr>
-                          <td colSpan={3} className="px-3 py-6 text-center text-gray-400">
-                            ยังไม่มีประเภทรายรับ — กรอกยอดด้านล่างเพื่อเริ่มกระจายงบ
+                          <td colSpan={5} className="px-3 py-6 text-center text-gray-400">
+                            ยังไม่มีประเภทรายรับที่มีงบประมาณการในปีนี้
                           </td>
                         </tr>
                       )}
                     </tbody>
                     <tfoot className="bg-gray-50 border-t font-semibold text-sm">
                       <tr>
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2" colSpan={3}>
                           รวม
                           {hiddenCount > 0 && (
                             <span className="ml-2 text-xs font-normal text-gray-400">
-                              (ซ่อน {hiddenCount} ประเภทที่ยังไม่มียอด)
+                              (ซ่อน {hiddenCount} ประเภทที่ยอดประมาณการ = 0)
                             </span>
                           )}
                         </td>
@@ -495,12 +519,18 @@ export default function BudgetCategoryPage() {
                 (totalBudget - totalReceive) + Number(editTarget?.budget_income ?? editTarget?.total ?? 0)
               )
               const total = bitGroup.reduce((s, b) => s + b.budget, 0)
-              const over = total > avail
+              const overCategory = total > avail
+              // ตรวจว่ามีแถวใดกรอกเกินยอดประมาณการของประเภทนั้นหรือไม่
+              const overRow = bitGroup.some((b) => b.budget > Math.max(0, b.estimated_amount - b.other_allocated))
+              const disabled = saveMutation.isPending || loadingDetails || overCategory || overRow
               return (
                 <Button
                   onClick={() => saveMutation.mutate()}
-                  disabled={saveMutation.isPending || loadingDetails || over}
-                  title={over ? 'ยอดรวมเกินวงเงินหมวดนี้' : ''}
+                  disabled={disabled}
+                  title={
+                    overRow ? 'มีแถวที่กรอกเกินยอดประมาณการของประเภทรายรับ' :
+                    overCategory ? 'ยอดรวมเกินวงเงินหมวดนี้' : ''
+                  }
                 >
                   {saveMutation.isPending ? 'กำลังบันทึก...' : 'บันทึก'}
                 </Button>

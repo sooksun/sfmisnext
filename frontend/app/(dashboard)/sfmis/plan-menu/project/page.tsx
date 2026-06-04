@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -210,6 +211,7 @@ export default function ProjectPage() {
           </Button>
         }
       />
+      <ProcessFlow flow="plan" />
       <div className="p-4">
         <DataTable
           columns={columns}

@@ -20,12 +20,36 @@ describe('GeneralDbService', () => {
   let deleteLog: jest.Mocked<Pick<DeleteLogService, 'log'>>;
 
   beforeEach(async () => {
-    unitRepo = { findAndCount: jest.fn(), findOne: jest.fn(), save: jest.fn(), find: jest.fn() };
-    tsRepo = { findAndCount: jest.fn(), findOne: jest.fn(), save: jest.fn(), find: jest.fn() };
-    partnerRepo = { findAndCount: jest.fn(), findOne: jest.fn(), find: jest.fn(), save: jest.fn() };
+    unitRepo = {
+      findAndCount: jest.fn(),
+      findOne: jest.fn(),
+      save: jest.fn(),
+      find: jest.fn(),
+    };
+    tsRepo = {
+      findAndCount: jest.fn(),
+      findOne: jest.fn(),
+      save: jest.fn(),
+      find: jest.fn(),
+    };
+    partnerRepo = {
+      findAndCount: jest.fn(),
+      findOne: jest.fn(),
+      find: jest.fn(),
+      save: jest.fn(),
+    };
     mainRegRepo = { find: jest.fn() };
-    suppliesRepo = { findAndCount: jest.fn(), findOne: jest.fn(), save: jest.fn(), find: jest.fn() };
-    transRepo = { findAndCount: jest.fn(), findOne: jest.fn(), save: jest.fn() };
+    suppliesRepo = {
+      findAndCount: jest.fn(),
+      findOne: jest.fn(),
+      save: jest.fn(),
+      find: jest.fn(),
+    };
+    transRepo = {
+      findAndCount: jest.fn(),
+      findOne: jest.fn(),
+      save: jest.fn(),
+    };
     deleteLog = { log: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -36,7 +60,10 @@ describe('GeneralDbService', () => {
         { provide: getRepositoryToken(Partner), useValue: partnerRepo },
         { provide: getRepositoryToken(MainRegister), useValue: mainRegRepo },
         { provide: getRepositoryToken(Supplies), useValue: suppliesRepo },
-        { provide: getRepositoryToken(TransactionSupplies), useValue: transRepo },
+        {
+          provide: getRepositoryToken(TransactionSupplies),
+          useValue: transRepo,
+        },
         { provide: DeleteLogService, useValue: deleteLog },
       ],
     }).compile();
@@ -63,7 +90,20 @@ describe('GeneralDbService', () => {
     });
 
     it('คืน { data, count, page, pageSize }', async () => {
-      unitRepo.findAndCount.mockResolvedValue([[{ unId: 1, unName: 'ชิ้น', scId: 5, uStatus: 1, upBy: 0, createDate: null, updateDate: null }], 1]);
+      unitRepo.findAndCount.mockResolvedValue([
+        [
+          {
+            unId: 1,
+            unName: 'ชิ้น',
+            scId: 5,
+            uStatus: 1,
+            upBy: 0,
+            createDate: null,
+            updateDate: null,
+          },
+        ],
+        1,
+      ]);
       const result = await service.loadUnits(5, 0, 25);
       expect(result.count).toBe(1);
       expect(result.data[0].un_name).toBe('ชิ้น');
@@ -74,7 +114,11 @@ describe('GeneralDbService', () => {
   describe('addUnit', () => {
     it('บันทึก unit และคืน flag: true', async () => {
       unitRepo.save.mockResolvedValue({});
-      const result = await service.addUnit({ un_name: 'ชิ้น', sc_id: 1, up_by: 5 });
+      const result = await service.addUnit({
+        un_name: 'ชิ้น',
+        sc_id: 1,
+        up_by: 5,
+      });
       expect(unitRepo.save).toHaveBeenCalled();
       expect(result).toEqual({ flag: true, ms: 'บันทึกข้อมูลสำเร็จ' });
     });
@@ -154,7 +198,11 @@ describe('GeneralDbService', () => {
       partnerRepo.findAndCount.mockResolvedValue([[], 0]);
       await service.loadPartners(2, 1, 10);
       expect(partnerRepo.findAndCount).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { scId: 2, del: 0 }, skip: 10, take: 10 }),
+        expect.objectContaining({
+          where: { scId: 2, del: 0 },
+          skip: 10,
+          take: 10,
+        }),
       );
     });
   });
@@ -176,7 +224,11 @@ describe('GeneralDbService', () => {
       await service.removePartner(1, 'ลบทดสอบ', 5);
       expect(partner.del).toBe(1);
       expect(deleteLog.log).toHaveBeenCalledWith(
-        expect.objectContaining({ table: 'tb_partner', rowId: 1, reason: 'ลบทดสอบ' }),
+        expect.objectContaining({
+          table: 'tb_partner',
+          rowId: 1,
+          reason: 'ลบทดสอบ',
+        }),
       );
     });
   });

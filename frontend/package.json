@@ -9,7 +9,13 @@
     "start": "set PORT=3001 && node .next/standalone/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "test:e2e": "playwright test e2e/smoke.spec.ts",
+    "test:e2e:crawl": "playwright test e2e/all-pages.spec.ts",
+    "test:e2e:all": "playwright test",
+    "test:all": "npm run test && npm run test:e2e",
+    "test:e2e:install": "playwright install chromium",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.63",
@@ -30,11 +36,12 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^1.7.0",
-    "next": "16.2.2",
+    "next": "^16.2.6",
     "next-auth": "^5.0.0-beta.30",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hook-form": "^7.72.1",
+    "recharts": "^3.8.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
     "xlsx": "^0.18.5",
@@ -42,6 +49,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -54,5 +62,9 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.4"
+  },
+  "overrides": {
+    "postcss": "^8.5.10",
+    "fast-uri": "^3.1.2"
   }
 }

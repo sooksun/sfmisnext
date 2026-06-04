@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { toast } from 'sonner'
 import { XCircle, ClipboardEdit, Users, AlertTriangle } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -309,6 +310,7 @@ export default function GenerateCheckPage() {
 
   return (
     <div className="flex flex-col flex-auto min-w-0">
+      <ProcessFlow flow="pay" />
       <PageHeader title="สร้างเช็ค" />
       <div className="p-4">
         <DataTable

@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
 import { SupContract } from './entities/sup-contract.entity';
 import { SupInspection } from './entities/sup-inspection.entity';
 import { SupAnnualCheck } from './entities/sup-annual-check.entity';
@@ -13,11 +12,10 @@ import { SupDisposal } from './entities/sup-disposal.entity';
 import { TransactionSupplies } from './entities/transaction-supplies.entity';
 import { ParcelDetail } from '../project-approve/entities/parcel-detail.entity';
 import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 
 @Injectable()
 export class SupplieExtService {
-  private readonly committeeThreshold: number;
-
   constructor(
     @InjectRepository(SupContract)
     private readonly ctRepo: Repository<SupContract>,
@@ -34,11 +32,8 @@ export class SupplieExtService {
     @InjectRepository(ParcelOrder)
     private readonly poRepo: Repository<ParcelOrder>,
     private readonly dataSource: DataSource,
-    private readonly configService: ConfigService,
-  ) {
-    this.committeeThreshold =
-      this.configService.get<number>('COMMITTEE_THRESHOLD') ?? 5000;
-  }
+    private readonly regulatoryConfig: RegulatoryConfigService,
+  ) {}
 
   // ========== Contract ==========
   async loadContract(scId: number, orderId?: number) {
@@ -137,16 +132,23 @@ export class SupplieExtService {
       upBy: body.up_by ?? 0,
     };
 
-    // M9: ตรวจ committee ถ้า amount ≥ COMMITTEE_THRESHOLD
+    // M9: ตรวจ committee — ระเบียบฯ 2560 ข้อ 25–26
+    // วงเงินเกินเกณฑ์ผู้ตรวจรับคนเดียว (default 100,000) ต้องมีคณะกรรมการตรวจรับ 3 คน
     if (body.order_id && body.insp_result === 1) {
       const po = await this.poRepo.findOne({
         where: { orderId: body.order_id, del: 0 },
       });
-      if (po && Number(po.budgets || 0) >= this.committeeThreshold) {
-        if (!body.committee1 || !body.committee2 || !body.committee3) {
-          throw new BadRequestException(
-            `ยอดจัดซื้อ ≥ ${this.committeeThreshold.toLocaleString('th-TH')} บาท ต้องระบุคณะกรรมการตรวจรับ 3 คน`,
-          );
+      if (po) {
+        const inspectorSingleMax = await this.regulatoryConfig.getThreshold(
+          po.scId ?? body.sc_id ?? 0,
+          'procurement.inspector_single_max',
+        );
+        if (Number(po.budgets || 0) > inspectorSingleMax) {
+          if (!body.committee1 || !body.committee2 || !body.committee3) {
+            throw new BadRequestException(
+              `ยอดจัดซื้อ ${Number(po.budgets || 0).toLocaleString('th-TH')} บาท เกิน ${inspectorSingleMax.toLocaleString('th-TH')} บาท ต้องระบุคณะกรรมการตรวจรับ 3 คน`,
+            );
+          }
         }
       }
     }

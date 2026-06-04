@@ -55,7 +55,8 @@ export class RegisterMoneyTypeService {
       .andWhere('bt.del = 0')
       .orderBy('bt.bg_type_id', 'ASC')
       .getOne();
-    if (!bt) return { data: [], count: 0, ms: 'ไม่พบประเภทเงินภาษีหัก ณ ที่จ่าย' };
+    if (!bt)
+      return { data: [], count: 0, ms: 'ไม่พบประเภทเงินภาษีหัก ณ ที่จ่าย' };
 
     const txns = await this.financialTransactionsRepository
       .createQueryBuilder('ft')
@@ -142,6 +143,7 @@ export class RegisterMoneyTypeService {
       .createQueryBuilder('ft')
       .where('ft.sc_id = :scId', { scId })
       .andWhere('ft.del = :del', { del: '0' })
+      .andWhere(syId ? 'ft.sy_id = :syId' : '1=1', { syId })
       .andWhere('ft.bg_type_id = :bgTypeId', { bgTypeId })
       .orderBy('ft.create_date', 'ASC')
       .addOrderBy('ft.ft_id', 'ASC')

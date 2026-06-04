@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,6 +16,9 @@ import { fmtDateTH } from '@/lib/utils'
 import { ExportButton } from '@/components/ui/export-button'
 import { exportToXlsx } from '@/lib/export-xlsx'
 import { useAppContext } from '@/hooks/use-app-context'
+import { Printer } from 'lucide-react'
+import { openPrintWindow } from '@/lib/print-utils'
+import { officialDailyBalanceForm } from '@/lib/official-forms'
 
 interface DailyBalanceRow {
   id: number
@@ -25,6 +29,10 @@ interface DailyBalanceRow {
   income: number
   expense: number
   balance: number
+  cash_balance?: number
+  bank_balance?: number
+  smp_balance?: number
+  total_balance?: number
   date: string
 }
 
@@ -72,7 +80,7 @@ const ROLE_INFO: Record<number, { label: string; color: string }> = {
 }
 
 export default function DailyBalancePage() {
-  const { scId, adminId, syId } = useAppContext()
+  const { scId, adminId, syId, scName } = useAppContext()
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
@@ -154,49 +162,85 @@ export default function DailyBalancePage() {
     const filename = `daily-balance-${selectedDate}`
     exportToXlsx(exportRows, 'รายงานเงินคงเหลือ', filename)
   }
+  const cashOf = (r: DailyBalanceRow) => Number(r.cash_balance ?? 0)
+  const bankOf = (r: DailyBalanceRow) => Number(r.bank_balance ?? 0)
+  const smpOf = (r: DailyBalanceRow) => Number(r.smp_balance ?? 0)
+  const totalOf = (r: DailyBalanceRow) =>
+    Number(r.total_balance ?? cashOf(r) + bankOf(r) + smpOf(r))
+
+  const totalCash = rows.reduce((s, r) => s + cashOf(r), 0)
+  const totalBank = rows.reduce((s, r) => s + bankOf(r), 0)
+  const totalSmp = rows.reduce((s, r) => s + smpOf(r), 0)
+  const grandTotal = rows.reduce((s, r) => s + totalOf(r), 0)
+  // คงไว้สำหรับ dialog ลงนาม (working columns)
   const totalCarryForward = rows.reduce((s, r) => s + Number(r.carry_forward ?? 0), 0)
   const totalIncome = rows.reduce((s, r) => s + Number(r.income), 0)
   const totalExpense = rows.reduce((s, r) => s + Number(r.expense), 0)
   const totalBalance = rows.reduce((s, r) => s + Number(r.balance), 0)
 
+  // คอลัมน์ตรงตามแบบฟอร์ม "รายงานเงินคงเหลือประจำวัน" (สพฐ. 2567)
   const columns = useMemo(() => [
     {
-      header: 'ประเภทงบประมาณ',
+      header: 'ประเภท',
       render: (item: DailyBalanceRow) => (
         <span>{item.budget_type_name ?? item.budget_type ?? '-'}</span>
       ),
     },
     {
-      header: 'ยอดยกมา (บาท)',
-      render: (item: DailyBalanceRow) => (
-        <span className="text-gray-700">{fmt(Number(item.carry_forward ?? 0))}</span>
-      ),
+      header: 'เงินสด',
+      className: 'text-right',
+      render: (item: DailyBalanceRow) => <span>{fmt(cashOf(item))}</span>,
     },
     {
-      header: 'รับเข้า (บาท)',
-      render: (item: DailyBalanceRow) => (
-        <span className="text-green-700">{fmt(item.income)}</span>
-      ),
+      header: 'เงินฝากธนาคาร',
+      className: 'text-right',
+      render: (item: DailyBalanceRow) => <span className="text-blue-700">{fmt(bankOf(item))}</span>,
     },
     {
-      header: 'จ่ายออก (บาท)',
-      render: (item: DailyBalanceRow) => (
-        <span className="text-red-600">{fmt(item.expense)}</span>
-      ),
+      header: 'เงินฝากส่วนราชการผู้เบิก',
+      className: 'text-right',
+      render: (item: DailyBalanceRow) => <span>{fmt(smpOf(item))}</span>,
     },
     {
-      header: 'คงเหลือ (บาท)',
+      header: 'รวม',
+      className: 'text-right',
       render: (item: DailyBalanceRow) => (
-        <span className={item.balance < 0 ? 'text-red-600 font-semibold' : 'font-semibold'}>
-          {fmt(item.balance)}
+        <span className={totalOf(item) < 0 ? 'text-red-600 font-semibold' : 'font-semibold'}>
+          {fmt(totalOf(item))}
         </span>
       ),
     },
   ], [])
 
+  function handlePrint() {
+    if (rows.length === 0) return
+    const s = auditStatus?.signers
+    const body = officialDailyBalanceForm({
+      scName,
+      date: selectedDate,
+      rows: rows.map((r) => ({
+        name: r.budget_type_name ?? r.budget_type ?? '-',
+        cash: cashOf(r),
+        bank: bankOf(r),
+        smp: smpOf(r),
+        total: totalOf(r),
+      })),
+      totalCash,
+      totalBank,
+      totalSmp,
+      grandTotal,
+      preparerName: s?.finance?.signed_name ?? undefined,
+      preparerPosition: s?.finance?.signed_position ?? undefined,
+      directorName: s?.director?.signed_name ?? undefined,
+      committeeNames: s?.committee?.signed_name ? [s.committee.signed_name] : undefined,
+    })
+    openPrintWindow({ title: `รายงานเงินคงเหลือประจำวัน_${selectedDate}`, body })
+  }
+
   return (
     <div className="flex flex-col flex-auto min-w-0">
       <PageHeader title="ยอดเงินคงเหลือประจำวัน" />
+      <ProcessFlow flow="receive" />
 
       {/* ── Banner วงเงินสำรองจ่าย ─────────────────────────────────────────── */}
       {cashLimit?.exceeded && (
@@ -253,6 +297,9 @@ export default function DailyBalancePage() {
             loading={rows.length === 0}
             label="ดาวน์โหลด Excel"
           />
+          <Button variant="outline" size="sm" onClick={handlePrint} disabled={rows.length === 0} className="gap-1">
+            <Printer className="h-4 w-4" /> พิมพ์แบบฟอร์ม
+          </Button>
 
           {/* ── สถานะลายเซ็นรายวัน (3 roles) + ปุ่มลงนาม ─────────────────── */}
           {!auditLoading && auditStatus && (
@@ -313,10 +360,10 @@ export default function DailyBalancePage() {
 
         {rows.length > 0 && (
           <div className="flex justify-end gap-8 text-sm font-semibold border-t pt-3 flex-wrap">
-            <span>รวมยกมา: <span className="text-gray-700">{fmt(totalCarryForward)}</span> บาท</span>
-            <span>รวมรับเข้า: <span className="text-green-700">{fmt(totalIncome)}</span> บาท</span>
-            <span>รวมจ่ายออก: <span className="text-red-600">{fmt(totalExpense)}</span> บาท</span>
-            <span>รวมคงเหลือ: <span className={totalBalance < 0 ? 'text-red-600' : ''}>{fmt(totalBalance)}</span> บาท</span>
+            <span>รวมเงินสด: <span className="text-gray-700">{fmt(totalCash)}</span> บาท</span>
+            <span>รวมเงินฝากธนาคาร: <span className="text-blue-700">{fmt(totalBank)}</span> บาท</span>
+            <span>รวมเงินฝากส่วนราชการ: <span className="text-gray-700">{fmt(totalSmp)}</span> บาท</span>
+            <span>รวมทั้งสิ้น: <span className={grandTotal < 0 ? 'text-red-600' : 'text-green-700'}>{fmt(grandTotal)}</span> บาท</span>
           </div>
         )}
       </div>

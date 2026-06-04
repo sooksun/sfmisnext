@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/page-header'
 import { FormDialog } from '@/components/shared/form-dialog'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -243,9 +244,21 @@ export default function ReceiptBookPage() {
   return (
     <div className="p-4 space-y-4">
       <PageHeader
-        title="ทะเบียนเล่มใบเสร็จรับเงิน"
+        title="รับ-ขึ้นทะเบียนใบเสร็จรับเงิน (ต้นปี)"
         subtitle={budgetYear ? `ปีงบประมาณ ${budgetYear}` : undefined}
       />
+      <ProcessFlow flow="receive" />
+
+      {/* คำอธิบายขั้นตอนต้นปี */}
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 flex gap-2">
+        <BookOpen className="h-4 w-4 shrink-0 mt-0.5 text-blue-600" />
+        <p className="leading-relaxed">
+          ขั้นแรกของงานการเงินต้นปีงบประมาณ — ต้องใช้ใบเสร็จรับเงินของทางราชการ (สพฐ.) เท่านั้น
+          ก่อนเริ่มออกใบเสร็จ ให้บันทึกรับเล่มใบเสร็จที่ได้รับมาโดยระบุ <strong>เล่มที่</strong> และช่วง
+          <strong> เลขที่เริ่มต้น–เลขที่สิ้นสุด</strong> ของเล่มนั้น ระบบจะเดินเลขใบเสร็จอัตโนมัติตามช่วงนี้
+          และเตือนเมื่อใกล้หมดเล่มเพื่อขอเบิกเพิ่มจากสำนักงานเขตพื้นที่
+        </p>
+      </div>
 
       {/* ─── Active Book Card ──────────────────────────────────────────────── */}
       {isLoading ? (
@@ -453,10 +466,10 @@ export default function ReceiptBookPage() {
         <div className="space-y-4">
           {/* รหัสเล่ม */}
           <div className="space-y-1">
-            <Label>รหัสเล่ม / เล่มที่</Label>
+            <Label>เล่มที่ <span className="text-gray-400 text-xs">(ตามที่ระบุบนเล่มใบเสร็จราชการ)</span></Label>
             <Input
               {...addForm.register('book_code')}
-              placeholder="เช่น เล่ม 1, REC-2569-001"
+              placeholder="เช่น 1, 2569/1"
             />
           </div>
 

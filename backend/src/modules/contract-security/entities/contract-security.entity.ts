@@ -88,6 +88,14 @@ export class ContractSecurity {
   @Column({ name: 'note', type: 'text', nullable: true })
   note: string | null;
 
+  @Column({
+    name: 'smp_deposit_id',
+    type: 'int',
+    nullable: true,
+    comment: 'อ้างอิงรายการนำฝาก สพป. (เงินประกันสัญญาที่เป็นเงินสด)',
+  })
+  smpDepositId: number | null;
+
   @Column({ name: 'up_by', type: 'int', nullable: true })
   upBy: number | null;
 

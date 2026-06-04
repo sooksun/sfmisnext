@@ -8,6 +8,7 @@ import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity'
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
+import { SmpDepositEntry } from '../smp-deposit/entities/smp-deposit-entry.entity';
 
 // วงเงินสำรองจ่ายเริ่มต้น ถ้าโรงเรียนยังไม่ได้ตั้งค่า (บาท)
 const DEFAULT_CASH_LIMIT = 15000;
@@ -29,6 +30,8 @@ export class ReportDailyBalanceService {
     private readonly budgetIncomeTypeRepository: Repository<BudgetIncomeType>,
     @InjectRepository(OpeningBalance)
     private readonly openingBalanceRepository: Repository<OpeningBalance>,
+    @InjectRepository(SmpDepositEntry)
+    private readonly smpDepositRepository: Repository<SmpDepositEntry>,
   ) {}
 
   async loadDailyBalance(scId: number, date: string, syId: number) {
@@ -230,11 +233,57 @@ export class ReportDailyBalanceService {
     const budgetTypeMap = new Map<number, string>();
     budgetTypes.forEach((bt) => budgetTypeMap.set(bt.bgTypeId, bt.budgetType));
 
+    // ── แยกยอดคงเหลือ ณ วันที่เลือก เป็น เงินสด / เงินฝากธนาคาร / เงินฝากส่วนราชการ ──
+    // ตามแบบฟอร์ม "รายงานเงินคงเหลือประจำวัน" (สพฐ. 2567)
+    //   เงินสด  = opening(storage 1) + FT(channel 0/1) [type 1 บวก / -1 ลบ]
+    //   ธนาคาร = opening(storage 2) + FT(channel 2)
+    //   สพป.   = opening(storage 3) + smp_deposit_entry (ฝาก บวก / ถอน ลบ)
+    const cashByType: Record<number, number> = {};
+    const bankByType: Record<number, number> = {};
+    const smpByType: Record<number, number> = {};
+    const bump = (m: Record<number, number>, id: number, v: number) => {
+      m[id] = (m[id] ?? 0) + v;
+    };
+
+    // opening แยกตาม storage_type
+    openingRows.forEach((ob) => {
+      const v = Number(ob.amount) || 0;
+      if (ob.storageType === 1) bump(cashByType, ob.moneyTypeId, v);
+      else if (ob.storageType === 2) bump(bankByType, ob.moneyTypeId, v);
+      else if (ob.storageType === 3) bump(smpByType, ob.moneyTypeId, v);
+      else bump(cashByType, ob.moneyTypeId, v); // legacy ไม่ระบุ → เงินสด
+    });
+
+    // FT ทั้งหมด ≤ สิ้นวันที่เลือก (ยกมา + วันนี้) แยกตาม money_channel
+    [...previousTransactions, ...transactions].forEach((t) => {
+      const sign = t.type === 1 ? 1 : t.type === -1 ? -1 : 0;
+      if (!sign) return;
+      const v = Number(t.amount) * sign;
+      if (t.moneyChannel === 2) bump(bankByType, t.bgTypeId, v);
+      else bump(cashByType, t.bgTypeId, v); // 0/1 = เงินสด
+    });
+
+    // เงินฝากส่วนราชการ (สพป.) จาก smp_deposit_entry ≤ วันที่เลือก
+    const smpEntries = await this.smpDepositRepository
+      .createQueryBuilder('s')
+      .where('s.sc_id = :scId', { scId })
+      .andWhere('s.del = 0')
+      .andWhere(syId ? 's.sy_id = :syId' : '1=1', { syId })
+      .andWhere('(s.doc_date IS NULL OR s.doc_date <= :d)', { d: date })
+      .getMany();
+    smpEntries.forEach((s) => {
+      const v = Number(s.amount) * (s.entryType === 1 ? 1 : -1);
+      bump(smpByType, s.moneyTypeId ?? 0, v);
+    });
+
     // Format summary for frontend — คืนเป็น array ตรงตามที่ frontend คาด
     const summary = Object.keys(balanceByType).map((bgTypeId) => {
       const typeId = parseInt(bgTypeId);
       const b = balanceByType[typeId];
       const name = budgetTypeMap.get(typeId) || `ประเภท ${typeId}`;
+      const cash = Math.round((cashByType[typeId] ?? 0) * 100) / 100;
+      const bank = Math.round((bankByType[typeId] ?? 0) * 100) / 100;
+      const smp = Math.round((smpByType[typeId] ?? 0) * 100) / 100;
       return {
         bg_type_id: typeId,
         budget_type: name,
@@ -243,6 +292,11 @@ export class ReportDailyBalanceService {
         income: b.income, // รับเข้าวันนี้
         expense: b.expense, // จ่ายออกวันนี้
         balance: b.balance, // คงเหลือ = ยกมา + รับ - จ่าย
+        // ── ตามแบบฟอร์มทางการ ──
+        cash_balance: cash,
+        bank_balance: bank,
+        smp_balance: smp,
+        total_balance: Math.round((cash + bank + smp) * 100) / 100,
         date,
         _transactions: dailyTransactions.filter((t) => t.bg_type_id === typeId),
       };

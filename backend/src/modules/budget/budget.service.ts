@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, FindOptionsWhere } from 'typeorm';
 import { PlnBudgetCategory } from './entities/pln-budget-category.entity';
@@ -6,6 +11,7 @@ import { PlnBudgetCategoryDetail } from './entities/pln-budget-category-detail.e
 import { TbEstimateAcadyear } from './entities/tb-estimate-acadyear.entity';
 import { MasterBudgetCategory } from './entities/master-budget-category.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { PlnRealBudget } from '../policy/entities/pln-real-budget.entity';
 import { TbExpenses } from './entities/tb-expenses.entity';
 import { CheckBudgetCategoryOnYearDto } from './dto/check-budget-category-on-year.dto';
 import { CheckBudgetCategoryOnYearsDto } from './dto/check-budget-category-on-years.dto';
@@ -30,9 +36,53 @@ export class BudgetService {
     private readonly masterBudgetCategoryRepository: Repository<MasterBudgetCategory>,
     @InjectRepository(BudgetIncomeType)
     private readonly budgetIncomeTypeRepository: Repository<BudgetIncomeType>,
+    @InjectRepository(PlnRealBudget)
+    private readonly plnRealBudgetRepository: Repository<PlnRealBudget>,
     @InjectRepository(TbExpenses)
     private readonly tbExpensesRepository: Repository<TbExpenses>,
   ) {}
+
+  /**
+   * โหลด "งบประมาณการที่ประมวลผล" — ยอดประมาณการรายรับรายประเภท
+   * จาก pln_real_budget (SUM amount GROUP BY bg_type_id)
+   *
+   * `acadYear` ที่นี่คือ **CE budget year** (เช่น 2026) ตาม pln_real_budget.acad_year
+   * ส่งกลับเฉพาะประเภทที่มียอด > 0 — ใช้ใน budget-category dialog
+   */
+  async loadEstimatedIncomeByType(scId: number, acadYear: number) {
+    try {
+      const incomeTypes = await this.budgetIncomeTypeRepository.find({
+        where: { del: 0 },
+        order: { bgTypeId: 'ASC' },
+      });
+
+      const rows = await this.plnRealBudgetRepository
+        .createQueryBuilder('rb')
+        .select('rb.bg_type_id', 'bg_type_id')
+        .addSelect('SUM(rb.amount)', 'estimated_amount')
+        .where('rb.sc_id = :scId', { scId })
+        .andWhere('rb.acad_year = :acadYear', { acadYear })
+        .andWhere('rb.del = 0')
+        .groupBy('rb.bg_type_id')
+        .getRawMany<{ bg_type_id: number; estimated_amount: string }>();
+
+      const sumMap = new Map<number, number>();
+      for (const r of rows) {
+        sumMap.set(Number(r.bg_type_id), Number(r.estimated_amount) || 0);
+      }
+
+      return incomeTypes
+        .map((it) => ({
+          bg_type_id: it.bgTypeId,
+          budget_type: it.budgetType,
+          estimated_amount: sumMap.get(it.bgTypeId) ?? 0,
+        }))
+        .filter((it) => it.estimated_amount > 0);
+    } catch (error) {
+      this.logger.error('loadEstimatedIncomeByType error:', error);
+      return [];
+    }
+  }
 
   async loadEstimateAcadyearGroup(scId: number, year: number, syId: number) {
     const empty = { data: [], totalrealbudget: 0, totalsumbudget: 0 };
@@ -402,7 +452,12 @@ export class BudgetService {
     }
   }
 
-  async loadBudgetIncome(pbcId: number, _syId: number, userScId?: number, userType?: number) {
+  async loadBudgetIncome(
+    pbcId: number,
+    _syId: number,
+    userScId?: number,
+    userType?: number,
+  ) {
     try {
       if (!pbcId || pbcId <= 0) {
         return [];
@@ -413,7 +468,9 @@ export class BudgetService {
           where: { pbcId, del: 0 },
         });
         if (!category || category.scId !== userScId) {
-          throw new ForbiddenException('ไม่มีสิทธิ์เข้าถึงข้อมูลงบประมาณของโรงเรียนนี้');
+          throw new ForbiddenException(
+            'ไม่มีสิทธิ์เข้าถึงข้อมูลงบประมาณของโรงเรียนนี้',
+          );
         }
       }
 
@@ -448,20 +505,33 @@ export class BudgetService {
     }
   }
 
-  async loadBudgetIncomeTypeSummary(scId: number, syId: number, budgetYear: string) {
+  async loadBudgetIncomeTypeSummary(
+    scId: number,
+    syId: number,
+    budgetYear: string,
+  ) {
     try {
-      const incomeTypes = await this.budgetIncomeTypeRepository.find({ where: { del: 0 } });
+      const incomeTypes = await this.budgetIncomeTypeRepository.find({
+        where: { del: 0 },
+      });
       const categories = await this.plnBudgetCategoryRepository.find({
         where: { scId, acadYear: syId, budgetYear, del: 0 },
       });
       if (!categories.length) {
-        return incomeTypes.map((it) => ({ bg_type_id: it.bgTypeId, budget_type: it.budgetType, total_allocated: 0 }));
+        return incomeTypes.map((it) => ({
+          bg_type_id: it.bgTypeId,
+          budget_type: it.budgetType,
+          total_allocated: 0,
+        }));
       }
       const pbcIds = categories.map((c) => c.pbcId);
-      const details = await this.plnBudgetCategoryDetailRepository.find({ where: { pbcId: In(pbcIds), del: 0 } });
+      const details = await this.plnBudgetCategoryDetailRepository.find({
+        where: { pbcId: In(pbcIds), del: 0 },
+      });
       const map = new Map<number, number>();
       for (const d of details) {
-        if (d.bgTypeId != null) map.set(d.bgTypeId, (map.get(d.bgTypeId) ?? 0) + d.budget);
+        if (d.bgTypeId != null)
+          map.set(d.bgTypeId, (map.get(d.bgTypeId) ?? 0) + d.budget);
       }
       return incomeTypes.map((it) => ({
         bg_type_id: it.bgTypeId,
@@ -474,7 +544,11 @@ export class BudgetService {
     }
   }
 
-  async addPLNBudgetCategory(payload: AddPlnBudgetCategoryDto, userScId?: number, userType?: number) {
+  async addPLNBudgetCategory(
+    payload: AddPlnBudgetCategoryDto,
+    userScId?: number,
+    userType?: number,
+  ) {
     try {
       if (!payload.pbc_id || payload.pbc_id <= 0) {
         return { flag: false, ms: 'ไม่พบข้อมูล pbc_id' };
@@ -490,7 +564,9 @@ export class BudgetService {
 
       if (userType !== undefined && userType !== 1 && userScId !== undefined) {
         if (plnBudget.scId !== userScId) {
-          throw new ForbiddenException('ไม่มีสิทธิ์แก้ไขงบประมาณของโรงเรียนนี้');
+          throw new ForbiddenException(
+            'ไม่มีสิทธิ์แก้ไขงบประมาณของโรงเรียนนี้',
+          );
         }
       }
       // Delete old details if specified
@@ -691,7 +767,9 @@ export class BudgetService {
       // ตรวจ tenant โดยใช้ sc_id จาก DB record (ไม่ใช่จาก body)
       if (userType !== undefined && userType !== 1 && userScId !== undefined) {
         if (estimate.scId !== userScId) {
-          throw new ForbiddenException('ไม่มีสิทธิ์แก้ไขงบประมาณของโรงเรียนนี้');
+          throw new ForbiddenException(
+            'ไม่มีสิทธิ์แก้ไขงบประมาณของโรงเรียนนี้',
+          );
         }
       }
       if (payload.ea_status !== undefined) {

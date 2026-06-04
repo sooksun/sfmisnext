@@ -14,6 +14,10 @@ import { RemoveParcelOrderDto } from './dto/remove-parcel-order.dto';
 import { Partner } from '../general-db/entities/partner.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
+import { PlnProcurementPlanItem } from '../procurement-plan/entities/pln-procurement-plan-item.entity';
+import { PlnProcurementPlan } from '../procurement-plan/entities/pln-procurement-plan.entity';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
+import { checkMethodCompliance } from './procurement-rules.util';
 
 // สถานะที่ถือว่า "ยกเลิก/ไม่อนุมัติ" — ไม่นับในยอดที่ใช้ไป
 const CANCELLED_STATUSES = [101, 201] as const;
@@ -33,7 +37,62 @@ export class ProjectApproveService {
     private readonly adminRepository: Repository<Admin>,
     @InjectRepository(RequestWithdraw)
     private readonly requestWithdrawRepository: Repository<RequestWithdraw>,
+    @InjectRepository(PlnProcurementPlanItem)
+    private readonly planItemRepository: Repository<PlnProcurementPlanItem>,
+    @InjectRepository(PlnProcurementPlan)
+    private readonly planRepository: Repository<PlnProcurementPlan>,
+    private readonly regulatoryConfig: RegulatoryConfigService,
   ) {}
+
+  /**
+   * ตรวจความถูกต้องตามระเบียบจัดซื้อจัดจ้าง ก่อนอนุมัติขั้นพัสดุ
+   *  1.1 วิธีเฉพาะเจาะจงใช้ได้เมื่อวงเงิน ≤ เกณฑ์ (default 500,000)
+   *  1.4 วงเงิน ≥ เกณฑ์ประกาศแผน (default 500,000) ต้องอ้างอิงแผนจัดซื้อที่ประกาศแล้ว
+   * โยน BadRequestException ถ้าไม่ผ่าน (hard-block)
+   */
+  private async assertProcurementCompliant(order: ParcelOrder): Promise<void> {
+    const scId = order.scId ?? 0;
+    const amount = Number(order.budgets ?? 0);
+
+    const [specificMax, planPublishMin] = await Promise.all([
+      this.regulatoryConfig.getThreshold(scId, 'procurement.specific_max'),
+      this.regulatoryConfig.getThreshold(scId, 'procurement.plan_publish_min'),
+    ]);
+
+    // 1.1 วิธีจัดซื้อตามวงเงิน
+    const methodCheck = checkMethodCompliance({
+      methodType: order.methodType,
+      amount,
+      specificMax,
+      isUrgent: order.isUrgent === 1,
+      hasUrgentClause: !!order.urgentClause,
+    });
+    if (!methodCheck.ok) {
+      throw new BadRequestException(methodCheck.reason);
+    }
+
+    // 1.4 วงเงินถึงเกณฑ์ต้องประกาศแผน → ต้องอ้างอิงแผนที่ประกาศแล้ว
+    if (amount >= planPublishMin) {
+      if (!order.ppiId) {
+        throw new BadRequestException(
+          `วงเงิน ${amount.toLocaleString('th-TH')} บาท ต้องอ้างอิงแผนการจัดซื้อจัดจ้างที่ประกาศเผยแพร่แล้ว (พ.ร.บ.ฯ ม.11)`,
+        );
+      }
+      const item = await this.planItemRepository.findOne({
+        where: { ppiId: order.ppiId, del: 0 },
+      });
+      const plan = item
+        ? await this.planRepository.findOne({
+            where: { ppId: item.ppId, del: 0 },
+          })
+        : null;
+      if (!plan || plan.ppStatus !== 1) {
+        throw new BadRequestException(
+          `แผนการจัดซื้อจัดจ้างที่อ้างอิงยังไม่ได้ประกาศเผยแพร่ — วงเงิน ${amount.toLocaleString('th-TH')} บาท ต้องประกาศแผนก่อน (พ.ร.บ.ฯ ม.11)`,
+        );
+      }
+    }
+  }
 
   async loadProjectApprove(
     scId: number,
@@ -216,9 +275,7 @@ export class ProjectApproveService {
     if (dto.remark) order.remarkCfPlan = dto.remark;
     if (dto.order_status === 0) {
       // M6: เก็บ remark เดิมไว้; เพิ่ม remark_cf เป็น prefix แทนการทับ
-      order.remark = dto.remark_cf
-        ? `[ปฏิเสธ] ${dto.remark_cf}`
-        : order.remark;
+      order.remark = dto.remark_cf ? `[ปฏิเสธ] ${dto.remark_cf}` : order.remark;
     }
     order.orderStatus = dto.order_status;
 
@@ -233,13 +290,16 @@ export class ProjectApproveService {
     if (!order) return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
 
     // H3: State Machine — ต้องอยู่ที่สถานะ 2 (แผน) ก่อน
-    this.assertValidTransition(order.orderStatus, dto.order_status, 2, 'การเงิน');
+    this.assertValidTransition(
+      order.orderStatus,
+      dto.order_status,
+      2,
+      'การเงิน',
+    );
 
     if (dto.remark) order.remarkCfBusiness = dto.remark;
     if (dto.order_status === 0) {
-      order.remark = dto.remark_cf
-        ? `[ปฏิเสธ] ${dto.remark_cf}`
-        : order.remark;
+      order.remark = dto.remark_cf ? `[ปฏิเสธ] ${dto.remark_cf}` : order.remark;
     }
     order.orderStatus = dto.order_status;
 
@@ -264,11 +324,14 @@ export class ProjectApproveService {
     // H3: State Machine — ต้องอยู่ที่สถานะ 3 (การเงิน) ก่อน
     this.assertValidTransition(order.orderStatus, dto.order_status, 3, 'พัสดุ');
 
+    // ตรวจความถูกต้องตามระเบียบจัดซื้อ (เฉพาะตอนอนุมัติ ไม่ใช่ตอนปฏิเสธ)
+    if (dto.order_status !== 0) {
+      await this.assertProcurementCompliant(order);
+    }
+
     if (dto.remark) order.remarkCfSuppile = dto.remark;
     if (dto.order_status === 0) {
-      order.remark = dto.remark_cf
-        ? `[ปฏิเสธ] ${dto.remark_cf}`
-        : order.remark;
+      order.remark = dto.remark_cf ? `[ปฏิเสธ] ${dto.remark_cf}` : order.remark;
     }
     order.orderStatus = dto.order_status;
 
@@ -287,9 +350,7 @@ export class ProjectApproveService {
 
     if (dto.remark) order.remarkCfCeo = dto.remark;
     if (dto.order_status === 0) {
-      order.remark = dto.remark_cf
-        ? `[ปฏิเสธ] ${dto.remark_cf}`
-        : order.remark;
+      order.remark = dto.remark_cf ? `[ปฏิเสธ] ${dto.remark_cf}` : order.remark;
     }
     order.orderStatus = dto.order_status;
 

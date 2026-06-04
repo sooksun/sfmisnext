@@ -29,10 +29,11 @@ export class SupplieRequestService {
   ) {}
 
   async load(scId: number, page: number, pageSize: number) {
+    const safePage = page > 0 ? page : 1;
     const [items, count] = await this.reqRepo.findAndCount({
       where: { scId, del: 0 },
       order: { reqId: 'DESC' },
-      skip: (page - 1) * pageSize,
+      skip: (safePage - 1) * pageSize,
       take: pageSize,
     });
     return {

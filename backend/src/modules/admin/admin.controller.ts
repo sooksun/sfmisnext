@@ -19,6 +19,7 @@ import { LoginDto } from './dto/login.dto';
 import { AddAdminDto } from './dto/add-admin.dto';
 import { UpdateAdminDto } from './dto/update-admin.dto';
 import { UpdateAdminStatusDto } from './dto/update-admin-status.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { PageSizePipe } from '../../common/pipes/page-size.pipe';
 import {
   assertSameSchool,
@@ -35,6 +36,15 @@ export class AdminController {
   @UseGuards(ThrottlerGuard)
   login(@Body() payload: LoginDto) {
     return this.adminService.login(payload);
+  }
+
+  @Post('changePassword')
+  @HttpCode(HttpStatus.OK)
+  changePassword(
+    @Body() payload: ChangePasswordDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.adminService.changeMyPassword(user.admin_id, payload);
   }
 
   // ── Super Admin only: จัดการ admin ข้ามโรงเรียน ─────────────────

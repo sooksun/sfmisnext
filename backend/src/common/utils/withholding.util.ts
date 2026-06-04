@@ -1,13 +1,24 @@
 /**
  * withholding.util.ts
  *
- * ฟังก์ชันคำนวณภาษีหัก ณ ที่จ่าย (Withholding Tax) ตามระเบียบกระทรวงการคลัง
+ * ฟังก์ชันคำนวณภาษีหัก ณ ที่จ่าย (Withholding Tax) ตามระเบียบกระทรวงการคลัง / ท.ป.4/2528
  *
- * อัตรา: 1% ของฐานภาษี (ทั้งบุคคลธรรมดาและนิติบุคคล)
+ * อัตรา (ตั้งค่าได้ผ่าน opts.rate): default 1% — ซื้อสินค้า/จ้างทำของ
+ *   - ค่าบริการ/วิชาชีพ 3% , ค่าเช่า 5% (ส่ง opts.rate เข้ามา)
+ * เกณฑ์ขั้นต่ำ (opts.minThreshold): ถ้ายอดจ่าย (gross) ต่ำกว่าเกณฑ์ → ไม่หัก (default 0 = ไม่ gate)
  * ฐานภาษี:
  *   - calVat = 1 (มี VAT 7%): ฐาน = amount × 100/107  (ตัด VAT ออกก่อน)
  *   - calVat ≠ 1 (ไม่มี VAT):  ฐาน = amount
+ *
+ * ⚠️ ไฟล์นี้ mirror กับ frontend/lib/utils/withholding.ts — แก้ต้องแก้ทั้งคู่
  */
+
+export interface WithholdingOptions {
+  /** อัตราหัก ณ ที่จ่าย เป็น % (เช่น 1, 3, 5) — default 1 */
+  rate?: number;
+  /** วงเงินขั้นต่ำที่ต้องหัก (gross) — ต่ำกว่านี้ไม่หัก ; default 0 = ไม่ gate */
+  minThreshold?: number;
+}
 
 export interface WithholdingResult {
   /** ยอดรวม (ก่อนหัก) */
@@ -29,14 +40,18 @@ export interface WithholdingResult {
  *
  * @param amount    - จำนวนเงินรวม (รวม VAT ถ้ามี)
  * @param calVat    - 1 = มี VAT 7%, ค่าอื่น = ไม่มี VAT
+ * @param opts      - { rate%, minThreshold } — default { rate: 1, minThreshold: 0 }
  * @returns WithholdingResult
  */
 export function calcWithholding(
   amount: number,
   calVat: number,
+  opts: WithholdingOptions = {},
 ): WithholdingResult {
   const gross = amount;
-  const withholdRate = 0.01;
+  const ratePct = opts.rate ?? 1;
+  const minThreshold = opts.minThreshold ?? 0;
+  const withholdRate = ratePct / 100;
 
   let base: number;
   let vatAmount: number;
@@ -51,7 +66,8 @@ export function calcWithholding(
     vatAmount = 0;
   }
 
-  const withholdAmount = base * withholdRate;
+  // เกณฑ์ขั้นต่ำ: ยอดจ่ายต่ำกว่าเกณฑ์ ไม่ต้องหักภาษี ณ ที่จ่าย
+  const withholdAmount = gross < minThreshold ? 0 : base * withholdRate;
   const netPayable = gross - withholdAmount;
 
   return {

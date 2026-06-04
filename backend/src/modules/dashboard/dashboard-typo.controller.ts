@@ -9,7 +9,10 @@ import {
 } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { assertSameSchool, type JwtUser } from '../../common/utils/tenant-guard';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('B_dashborad') // รองรับ typo "dashborad" แทน "dashboard"
 export class DashboardTypoController {

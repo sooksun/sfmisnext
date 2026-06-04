@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useEffect } from 'react'
+import { KRUT_EMBLEM } from '@/lib/krut-emblem'
 
 export interface ReceiptDetail {
   prd_id: number
@@ -104,7 +105,7 @@ function fmtMoney(n: number): string {
 // ── Receipt HTML builder ──────────────────────────────────────────────────────
 
 export function buildReceiptHtml(receipt: ReceiptData): string {
-  const MIN_ROWS = 5
+  const MIN_ROWS = 4
   const dateStr = thaiFullDate(receipt.receive_date)
   const totalText = numberToThaiText(receipt.total)
 
@@ -138,11 +139,12 @@ export function buildReceiptHtml(receipt: ReceiptData): string {
   <meta charset="UTF-8"/>
   <title>ใบเสร็จรับเงิน เลขที่ ${receipt.pr_no ?? ''}</title>
   <style>
-    @page { size: A5; margin: 12mm 10mm; }
+    @page { size: A5; margin: 9mm 10mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: auto; }
     body {
       font-family: 'TH SarabunNew', 'Sarabun', 'TH Sarabun New', serif;
-      font-size: 16pt;
+      font-size: 15pt;
       color: #000;
     }
     .receipt { width: 100%; }
@@ -155,19 +157,20 @@ export function buildReceiptHtml(receipt: ReceiptData): string {
       font-size: 14pt;
       margin-bottom: 1mm;
     }
-    .top-left { text-align: left; }
-    .top-right { text-align: right; }
-    .emblem { text-align: center; font-size: 28pt; line-height: 1; }
+    .top-left { text-align: left; padding-top: 3mm; }
+    .top-right { text-align: right; padding-top: 3mm; }
+    .emblem { text-align: center; line-height: 1; }
+    .emblem img { height: 15mm; width: auto; }
 
     .title {
       text-align: center;
-      font-size: 22pt;
+      font-size: 21pt;
       font-weight: bold;
-      margin: 2mm 0 1mm;
+      margin: 1mm 0 1mm;
     }
-    .subtitle { text-align: center; font-size: 15pt; margin-bottom: 1mm; }
-    .school { text-align: center; font-size: 15pt; margin-bottom: 2mm; }
-    .date { text-align: center; font-size: 15pt; margin-bottom: 3mm; }
+    .subtitle { text-align: center; font-size: 14pt; margin-bottom: 0.5mm; }
+    .school { text-align: center; font-size: 14pt; margin-bottom: 1mm; }
+    .date { text-align: center; font-size: 14pt; margin-bottom: 2mm; }
 
     .payer {
       font-size: 15pt;
@@ -208,9 +211,9 @@ export function buildReceiptHtml(receipt: ReceiptData): string {
     }
 
     /* ตัวอักษร + ลายเซ็น */
-    .baht-text { font-size: 14pt; margin-bottom: 3mm; }
-    .confirm { font-size: 14pt; margin-bottom: 4mm; }
-    .sign-area { margin-top: 3mm; text-align: center; }
+    .baht-text { font-size: 14pt; margin-bottom: 2mm; }
+    .confirm { font-size: 14pt; margin-bottom: 3mm; }
+    .sign-area { margin-top: 5mm; text-align: center; }
     .sign-line {
       display: inline-block;
       width: 55mm;
@@ -226,9 +229,9 @@ export function buildReceiptHtml(receipt: ReceiptData): string {
 <div class="receipt">
 
   <div class="top-row">
-    <div class="top-left">${receipt.book_no ? `เล่มที่ <strong>${receipt.book_no}</strong>` : ''}</div>
-    <div class="emblem">⚜</div>
-    <div class="top-right">เลขที่ <strong>${receipt.pr_no ?? '-'}</strong></div>
+    <div class="top-left">เล่มที่ <strong>${receipt.book_no ?? '............'}</strong></div>
+    <div class="emblem"><img src="${KRUT_EMBLEM}" alt="ครุฑ"/></div>
+    <div class="top-right">เลขที่ <strong>${receipt.pr_no ?? '............'}</strong></div>
   </div>
 
   <div class="title">ใบเสร็จรับเงิน</div>

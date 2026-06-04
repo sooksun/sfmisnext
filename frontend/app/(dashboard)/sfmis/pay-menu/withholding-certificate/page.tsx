@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Printer } from 'lucide-react'
 import { openPrintWindow, makeHeader, makeSignatures, fmtBaht, numberToThaiBaht, esc, thaiFullDate } from '@/lib/print-utils'
 import { PageHeader } from '@/components/shared/page-header'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -322,6 +323,7 @@ export default function WithholdingCertificatePage() {
 
   return (
     <div className="flex flex-col flex-auto min-w-0">
+      <ProcessFlow flow="pay" />
       <PageHeader
         title="หนังสือรับรองการหักภาษี ณ ที่จ่าย"
         actions={

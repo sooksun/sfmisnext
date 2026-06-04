@@ -4,8 +4,16 @@
  * Mirror ของ backend/src/common/utils/withholding.util.ts
  * ใช้สำหรับ preview ยอดใน UI โดยไม่ต้องเรียก API
  *
- * อัตรา 1% — ทั้งบุคคลธรรมดา (pType=1) และนิติบุคคล (pType=2)
+ * อัตรา (opts.rate) default 1% — ซื้อสินค้า/จ้างทำของ ; บริการ 3% ; เช่า 5%
+ * เกณฑ์ขั้นต่ำ (opts.minThreshold): ยอดต่ำกว่าไม่หัก (default 0 = ไม่ gate)
  */
+
+export interface WithholdingOptions {
+  /** อัตราหัก ณ ที่จ่าย เป็น % (เช่น 1, 3, 5) — default 1 */
+  rate?: number
+  /** วงเงินขั้นต่ำที่ต้องหัก (gross) — ต่ำกว่านี้ไม่หัก ; default 0 */
+  minThreshold?: number
+}
 
 export interface WithholdingResult {
   /** ยอดรวม (ก่อนหัก) */
@@ -28,9 +36,15 @@ export interface WithholdingResult {
  * @param amount  - จำนวนเงินรวม (รวม VAT ถ้ามี)
  * @param calVat  - 1 = มี VAT 7%, ค่าอื่น = ไม่มี VAT
  */
-export function calcWithholding(amount: number, calVat: number): WithholdingResult {
+export function calcWithholding(
+  amount: number,
+  calVat: number,
+  opts: WithholdingOptions = {},
+): WithholdingResult {
   const gross = amount;
-  const withholdRate = 0.01;
+  const ratePct = opts.rate ?? 1
+  const minThreshold = opts.minThreshold ?? 0
+  const withholdRate = ratePct / 100;
 
   let base: number;
   let vatAmount: number;
@@ -43,7 +57,7 @@ export function calcWithholding(amount: number, calVat: number): WithholdingResu
     vatAmount = 0;
   }
 
-  const withholdAmount = base * withholdRate;
+  const withholdAmount = gross < minThreshold ? 0 : base * withholdRate;
   const netPayable = gross - withholdAmount;
 
   return {

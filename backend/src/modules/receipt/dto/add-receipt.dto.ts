@@ -11,9 +11,9 @@ export class AddReceiptDto {
   @IsNumber()
   r_id?: number;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  r_no: string;
+  r_no?: string;
 
   @IsNotEmpty()
   @IsString()

@@ -12,10 +12,15 @@ interface AiChatDialogProps {
 }
 
 const QUICK_ACTIONS = [
-  { label: 'สรุปงบประมาณ', message: 'สรุปงบประมาณปีนี้ให้หน่อย' },
-  { label: 'ยอดคงเหลือ', message: 'ยอดคงเหลือปัจจุบันเท่าไร' },
-  { label: 'สัญญายืมเงิน', message: 'สถานะสัญญายืมเงินตอนนี้เป็นอย่างไร' },
-  { label: 'รายจ่ายเดือนนี้', message: 'สรุปรายจ่ายเดือนนี้' },
+  // ── ถามข้อมูลในระบบ ──
+  { label: 'ยอดคงเหลือ', message: 'ยอดเงินคงเหลือแยกตามประเภทเงินตอนนี้เท่าไร' },
+  { label: 'เงินยืมค้าง', message: 'มีสัญญายืมเงินค้างคืน/เกินกำหนดกี่รายการ' },
+  { label: 'รายได้แผ่นดินค้างนำส่ง', message: 'เงินรายได้แผ่นดินค้างนำส่งเท่าไร ต้องนำส่งเมื่อไร' },
+  { label: 'จัดซื้อค้างดำเนินการ', message: 'งานจัดซื้อจัดจ้างค้างอยู่ที่สถานะไหนบ้าง' },
+  // ── ขอคำปรึกษาตามระเบียบ ──
+  { label: 'วิธีจัดซื้อตามวงเงิน', message: 'จัดซื้อวงเงิน 600,000 บาท ใช้วิธีอะไรได้บ้างตามระเบียบ' },
+  { label: 'หักภาษี ณ ที่จ่าย', message: 'จ่ายค่าจ้างทำของ 15,000 บาท ต้องหักภาษี ณ ที่จ่ายเท่าไร' },
+  { label: 'ขั้นตอนเบิกจ่าย', message: 'ขั้นตอนการเบิกจ่ายเงินที่ถูกต้องตามระเบียบเป็นอย่างไร' },
 ]
 
 export function AiChatDialog({ scId, budgetYear, scName }: AiChatDialogProps) {
@@ -89,9 +94,9 @@ export function AiChatDialog({ scId, budgetYear, scName }: AiChatDialogProps) {
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <Sparkles className="h-10 w-10 text-emerald-300" />
             <p className="text-sm text-gray-500">
-              สวัสดีครับ! ผมเป็น AI ผู้ช่วยระบบ SFMIS
+              สวัสดีครับ! ผมเป็น <b className="text-emerald-700">ผู้ช่วยการเงินอัจฉริยะ</b>
               <br />
-              ถามเกี่ยวกับการเงินได้เลยครับ
+              ให้คำปรึกษาการเงิน-บัญชี-พัสดุตามระเบียบ และตอบเรื่องข้อมูลในระบบได้
             </p>
             {/* Quick actions */}
             <div className="flex flex-wrap justify-center gap-1.5">
@@ -121,7 +126,7 @@ export function AiChatDialog({ scId, budgetYear, scName }: AiChatDialogProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="ถามเกี่ยวกับการเงิน..."
+            placeholder="ถามข้อมูลในระบบ หรือขอคำปรึกษาตามระเบียบ..."
             className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
             disabled={isLoading}
           />

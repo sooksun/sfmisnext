@@ -16,6 +16,19 @@ export function showNumber(number: number | null | undefined): string {
 // Thai month names abbreviated
 const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
 
+/**
+ * todayISO — วันที่ "วันนี้" ตามเวลาท้องถิ่น คืนรูปแบบ YYYY-MM-DD (ค.ศ.)
+ * ใช้เป็นค่า default ของฟอร์ม (auto-input) — ไม่ใช้ toISOString() เพราะเป็น UTC
+ * อาจคลาดเคลื่อน 1 วันในเขตเวลาไทย (+7)
+ */
+export function todayISO(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 // Convert a year value (CE or already-BE) to Buddhist Era.
 // If the year is already >= 2400 we treat it as BE and return as-is (idempotent).
 // Non-numeric input returns empty string.

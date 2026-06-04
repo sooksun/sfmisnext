@@ -25,6 +25,61 @@ export class InvoiceService {
     private readonly financialAuditService: FinancialAuditService,
   ) {}
 
+  /**
+   * มูลหนี้จากพัสดุที่ "ตรวจรับแล้ว" และยังไม่ได้ตั้งเบิก — สำหรับ auto-fill หน้าขอเบิก
+   *   เงื่อนไข: sup_inspection ผ่าน (insp_result=1 + stock_posted=1) และ
+   *   ยังไม่มี request_withdraw อ้าง order_id นั้น (ยังไม่ตั้งเบิก)
+   *   คืน ร้านค้า(p_id/ชื่อ) + ยอดตามสัญญา + ประเภทงบ + โครงการ + order_id
+   */
+  async loadPayableParcels(scId: number) {
+    const sql = `
+      SELECT
+        po.order_id                            AS order_id,
+        ct.ct_id                               AS ct_id,
+        ct.supplier_id                         AS p_id,
+        p.p_name                               AS partner_name,
+        COALESCE(ct.ct_total, ct.ct_amount, 0) AS amount,
+        po.bg_type_id                          AS bg_type_id,
+        bit.budget_type                        AS budget_type_name,
+        po.project_id                          AS project_id,
+        proj.proj_name                         AS project_name,
+        MAX(insp.insp_date)                    AS insp_date
+      FROM sup_inspection insp
+      JOIN parcel_order po              ON po.order_id = insp.order_id
+      LEFT JOIN sup_contract ct         ON ct.order_id = po.order_id AND ct.del = 0
+      LEFT JOIN tb_partner p            ON p.p_id = ct.supplier_id
+      LEFT JOIN pln_project proj        ON proj.proj_id = po.project_id
+      LEFT JOIN master_budget_income_type bit ON bit.bg_type_id = po.bg_type_id
+      WHERE po.sc_id = ?
+        AND insp.insp_result = 1
+        AND insp.stock_posted = 1
+        AND insp.del = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM request_withdraw rw
+          WHERE rw.order_id = po.order_id AND rw.del = 0
+        )
+      GROUP BY po.order_id, ct.ct_id, ct.supplier_id, p.p_name,
+               ct.ct_total, ct.ct_amount, po.bg_type_id, bit.budget_type,
+               po.project_id, proj.proj_name
+      ORDER BY insp_date DESC, po.order_id DESC
+    `;
+    const rows = (await this.requestWithdrawRepository.manager.query(sql, [
+      scId,
+    ])) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      order_id: Number(r.order_id),
+      ct_id: r.ct_id == null ? null : Number(r.ct_id),
+      p_id: r.p_id == null ? 0 : Number(r.p_id),
+      partner_name: (r.partner_name as string) ?? '',
+      amount: r.amount == null ? 0 : Number(r.amount),
+      bg_type_id: r.bg_type_id == null ? 0 : Number(r.bg_type_id),
+      budget_type_name: (r.budget_type_name as string) ?? '',
+      project_id: r.project_id == null ? 0 : Number(r.project_id),
+      project_name: (r.project_name as string) ?? '',
+      insp_date: r.insp_date ?? null,
+    }));
+  }
+
   async loadInvoiceOrder(scId: number, yId: number) {
     const rows = await this.requestWithdrawRepository
       .createQueryBuilder('rw')
@@ -192,7 +247,9 @@ export class InvoiceService {
           .select('COALESCE(SUM(rw.amount),0)', 'totalWithdrawn')
           .where('rw.order_id = :orderId', { orderId: dto.order_id })
           .andWhere('rw.del = 0')
-          .andWhere('rw.status NOT IN (:...cancelled)', { cancelled: [51, 201] })
+          .andWhere('rw.status NOT IN (:...cancelled)', {
+            cancelled: [51, 201],
+          })
           .getRawOne<{ totalWithdrawn: string }>();
         const remaining =
           Number(order.budgets) - Number(row?.totalWithdrawn ?? 0);

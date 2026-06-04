@@ -36,6 +36,17 @@ export class InvoiceController {
     return this.invoiceService.loadInvoiceOrder(scId, yId);
   }
 
+  // มูลหนี้จากพัสดุที่ตรวจรับแล้ว (พร้อมขอเบิก) — สะพานพัสดุ→การเงิน
+  @Get('loadPayableParcels/:sc_id')
+  @HttpCode(HttpStatus.OK)
+  loadPayableParcels(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
+    return this.invoiceService.loadPayableParcels(scId);
+  }
+
   @Get('loadProjects/:sc_id/:sy_id')
   @HttpCode(HttpStatus.OK)
   loadProjects(

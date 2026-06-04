@@ -63,6 +63,12 @@ export class PolicyController {
     return this.policyService.getBudgetIncomeType();
   }
 
+  @Get('loadBudgetIncomeType/:scId')
+  async loadBudgetIncomeType(@Param('scId', ParseIntPipe) _scId: number) {
+    const data = await this.policyService.getBudgetIncomeType();
+    return { data };
+  }
+
   @Post('get_school_year')
   @HttpCode(HttpStatus.OK)
   getSchoolYear() {

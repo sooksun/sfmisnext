@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SmpDepositEntry } from './entities/smp-deposit-entry.entity';
+import { DocCounterService } from '../doc-counter/doc-counter.service';
 
 @Injectable()
 export class SmpDepositService {
   constructor(
     @InjectRepository(SmpDepositEntry)
     private readonly repo: Repository<SmpDepositEntry>,
+    private readonly docCounter: DocCounterService,
   ) {}
 
   /** โหลดรายการทั้งหมด พร้อม running balance */
@@ -80,12 +82,22 @@ export class SmpDepositService {
     note?: string;
     up_by?: number;
   }) {
+    // ออกเลขที่เอกสารอัตโนมัติ บฝ. (นำฝาก) / บถ. (เบิกถอน) ถ้าไม่ได้ระบุ
+    let docNo = dto.doc_no ?? null;
+    if (!docNo) {
+      const issued = await this.docCounter.issue(
+        dto.sc_id,
+        dto.budget_year,
+        dto.entry_type === 1 ? 'BF' : 'BT',
+      );
+      docNo = issued.formatted;
+    }
     const entry = this.repo.create({
       scId: dto.sc_id,
       syId: dto.sy_id,
       budgetYear: dto.budget_year,
       entryType: dto.entry_type,
-      docNo: dto.doc_no ?? null,
+      docNo,
       docDate: dto.doc_date ?? null,
       detail: dto.detail ?? null,
       amount: dto.amount,

@@ -8,6 +8,8 @@ import { ParcelDetail } from './entities/parcel-detail.entity';
 import { Partner } from '../general-db/entities/partner.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
+import { PlnProcurementPlanItem } from '../procurement-plan/entities/pln-procurement-plan-item.entity';
+import { PlnProcurementPlan } from '../procurement-plan/entities/pln-procurement-plan.entity';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
       Partner,
       Admin,
       RequestWithdraw,
+      PlnProcurementPlanItem,
+      PlnProcurementPlan,
     ]),
   ],
   controllers: [ProjectApproveController],

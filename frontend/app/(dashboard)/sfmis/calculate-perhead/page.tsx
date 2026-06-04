@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { apiGet } from '@/lib/api'
 import { useAppContext } from '@/hooks/use-app-context'
 
@@ -68,6 +69,7 @@ export default function CalculatePerheadPage() {
   return (
     <div className="flex flex-col flex-auto min-w-0">
       <PageHeader title="คำนวณเงินต่อหัวนักเรียน" />
+      <ProcessFlow flow="plan" />
       <div className="p-4 space-y-4">
         <DataTable
           columns={columns}

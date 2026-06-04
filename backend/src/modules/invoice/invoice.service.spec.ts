@@ -51,7 +51,9 @@ describe('InvoiceService', () => {
   let partnerRepo: jest.Mocked<any>;
   let adminRepo: jest.Mocked<any>;
   let budgetTypeRepo: jest.Mocked<any>;
-  let financialAuditService: jest.Mocked<Pick<FinancialAuditService, 'isDateLocked'>>;
+  let financialAuditService: jest.Mocked<
+    Pick<FinancialAuditService, 'isDateLocked'>
+  >;
 
   beforeEach(async () => {
     const mockQb = makeQb([]);
@@ -76,7 +78,10 @@ describe('InvoiceService', () => {
         { provide: getRepositoryToken(ParcelOrder), useValue: poRepo },
         { provide: getRepositoryToken(Partner), useValue: partnerRepo },
         { provide: getRepositoryToken(Admin), useValue: adminRepo },
-        { provide: getRepositoryToken(BudgetIncomeType), useValue: budgetTypeRepo },
+        {
+          provide: getRepositoryToken(BudgetIncomeType),
+          useValue: budgetTypeRepo,
+        },
         { provide: FinancialAuditService, useValue: financialAuditService },
       ],
     }).compile();
@@ -87,7 +92,17 @@ describe('InvoiceService', () => {
   // ─── loadInvoiceOrder ───────────────────────────────────────────────────────
   describe('loadInvoiceOrder', () => {
     it('ส่ง scId และ syId เข้า query ถูกต้อง และ filter del=0', async () => {
-      const qb = makeQb([{ rw_id: 1, sc_id: 1, amount: '1500', partner_name: null, budget_type_name: null, project_name: null, user_request_name: null }]);
+      const qb = makeQb([
+        {
+          rw_id: 1,
+          sc_id: 1,
+          amount: '1500',
+          partner_name: null,
+          budget_type_name: null,
+          project_name: null,
+          user_request_name: null,
+        },
+      ]);
       rwRepo.createQueryBuilder.mockReturnValue(qb);
 
       const result = await service.loadInvoiceOrder(1, 3);
@@ -98,11 +113,17 @@ describe('InvoiceService', () => {
     });
 
     it('แปลง amount null เป็น 0 และ null fields เป็น empty string', async () => {
-      const qb = makeQb([{
-        rw_id: 1, sc_id: 1, amount: null,
-        partner_name: null, budget_type_name: null,
-        project_name: null, user_request_name: null,
-      }]);
+      const qb = makeQb([
+        {
+          rw_id: 1,
+          sc_id: 1,
+          amount: null,
+          partner_name: null,
+          budget_type_name: null,
+          project_name: null,
+          user_request_name: null,
+        },
+      ]);
       rwRepo.createQueryBuilder.mockReturnValue(qb);
 
       const result = await service.loadInvoiceOrder(1, 3);
@@ -115,7 +136,17 @@ describe('InvoiceService', () => {
     });
 
     it('แปลง amount string เป็น number', async () => {
-      const qb = makeQb([{ rw_id: 1, sc_id: 1, amount: '9999.50', partner_name: 'P', budget_type_name: 'B', project_name: 'Proj', user_request_name: 'User' }]);
+      const qb = makeQb([
+        {
+          rw_id: 1,
+          sc_id: 1,
+          amount: '9999.50',
+          partner_name: 'P',
+          budget_type_name: 'B',
+          project_name: 'Proj',
+          user_request_name: 'User',
+        },
+      ]);
       rwRepo.createQueryBuilder.mockReturnValue(qb);
 
       const [row] = await service.loadInvoiceOrder(1, 3);
@@ -136,21 +167,49 @@ describe('InvoiceService', () => {
       await service.loadProjects(1, 3);
       expect(poRepo.find).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ scId: 1, acadYear: 3, del: 0, orderStatus: 2 }),
+          where: expect.objectContaining({
+            scId: 1,
+            acadYear: 3,
+            del: 0,
+            orderStatus: 2,
+          }),
         }),
       );
     });
 
     it('map column names ถูกต้อง', async () => {
-      const fakeOrder = { orderId: 7, projectId: 5, details: 'รายละเอียด', budgets: 10000, suppliers: 3, bgTypeId: 2 };
+      const fakeOrder = {
+        orderId: 7,
+        projectId: 5,
+        details: 'รายละเอียด',
+        budgets: 10000,
+        suppliers: 3,
+        bgTypeId: 2,
+      };
       poRepo.find.mockResolvedValue([fakeOrder]);
 
       const [row] = await service.loadProjects(1, 3);
-      expect(row).toEqual({ order_id: 7, project_id: 5, details: 'รายละเอียด', budgets: 10000, p_id: 3, bg_type_id: 2 });
+      expect(row).toEqual({
+        order_id: 7,
+        project_id: 5,
+        details: 'รายละเอียด',
+        budgets: 10000,
+        p_id: 3,
+        bg_type_id: 2,
+      });
     });
 
     it('p_id เป็น 0 ถ้า suppliers เป็น null/undefined', async () => {
-      poRepo.find.mockResolvedValue([{ orderId: 1, projectId: 1, details: '', budgets: 0, suppliers: null, bgTypeId: 1 }]);
+      poRepo.find.mockResolvedValue([
+        {
+          orderId: 1,
+          projectId: 1,
+          details: '',
+          budgets: 0,
+          suppliers: null,
+          bgTypeId: 1,
+        },
+      ]);
       const [row] = await service.loadProjects(1, 3);
       expect(row.p_id).toBe(0);
     });
@@ -175,16 +234,26 @@ describe('InvoiceService', () => {
     });
 
     it('map column names ถูกต้อง', async () => {
-      partnerRepo.find.mockResolvedValue([{ pId: 3, pName: 'ผู้ค้า', payType: 1, calVat: 0, del: 0 }]);
+      partnerRepo.find.mockResolvedValue([
+        { pId: 3, pName: 'ผู้ค้า', payType: 1, calVat: 0, del: 0 },
+      ]);
       const [row] = await service.loadPartner(1);
-      expect(row).toEqual({ p_id: 3, p_name: 'ผู้ค้า', pay_type: 1, cal_vat: 0, del: 0 });
+      expect(row).toEqual({
+        p_id: 3,
+        p_name: 'ผู้ค้า',
+        pay_type: 1,
+        cal_vat: 0,
+        del: 0,
+      });
     });
   });
 
   // ─── loadBudgetType ─────────────────────────────────────────────────────────
   describe('loadBudgetType', () => {
     it('คำนวณ minWithdrawn จาก withdrawn map ถูกต้อง', async () => {
-      budgetTypeRepo.find.mockResolvedValue([{ bgTypeId: 1, budgetType: 'เงินอุดหนุน', del: 0 }]);
+      budgetTypeRepo.find.mockResolvedValue([
+        { bgTypeId: 1, budgetType: 'เงินอุดหนุน', del: 0 },
+      ]);
       const withdrawnQb = makeQb([{ bgTypeId: '1', total: '3500.555' }]);
       rwRepo.createQueryBuilder.mockReturnValue(withdrawnQb);
 
@@ -194,7 +263,9 @@ describe('InvoiceService', () => {
     });
 
     it('minWithdrawn = 0 ถ้า budget type ไม่มีรายการเบิก', async () => {
-      budgetTypeRepo.find.mockResolvedValue([{ bgTypeId: 9, budgetType: 'เงินอื่น', del: 0 }]);
+      budgetTypeRepo.find.mockResolvedValue([
+        { bgTypeId: 9, budgetType: 'เงินอื่น', del: 0 },
+      ]);
       const withdrawnQb = makeQb([]); // ไม่มีข้อมูล
       rwRepo.createQueryBuilder.mockReturnValue(withdrawnQb);
 
@@ -227,10 +298,18 @@ describe('InvoiceService', () => {
     });
 
     it('ไม่ return password_default ใน response', async () => {
-      adminRepo.find.mockResolvedValue([{
-        adminId: 1, name: 'ครู ก', username: 'teacher1', email: 'a@b.com', type: 2,
-        scId: 1, passwordDefault: 'secret123', del: 0,
-      }]);
+      adminRepo.find.mockResolvedValue([
+        {
+          adminId: 1,
+          name: 'ครู ก',
+          username: 'teacher1',
+          email: 'a@b.com',
+          type: 2,
+          scId: 1,
+          passwordDefault: 'secret123',
+          del: 0,
+        },
+      ]);
       const [row] = await service.loadUserRequest(1);
       expect((row as any).passwordDefault).toBeUndefined();
       expect((row as any).password_default).toBeUndefined();
@@ -261,7 +340,9 @@ describe('InvoiceService', () => {
       } as unknown as RequestWithdraw;
       rwRepo.findOne.mockResolvedValue(overdue);
 
-      const result = await service.addInvoice(baseDto({ rw_type: 1, user_request: 5 }));
+      const result = await service.addInvoice(
+        baseDto({ rw_type: 1, user_request: 5 }),
+      );
 
       expect(result.flag).toBe(false);
       expect(result.ms).toContain('LOAN-99');
@@ -270,7 +351,9 @@ describe('InvoiceService', () => {
 
     it('rw_type=1 ไม่มีเงินยืมค้าง → ผ่านได้ปกติ', async () => {
       rwRepo.findOne.mockResolvedValue(null);
-      const result = await service.addInvoice(baseDto({ rw_type: 1, user_request: 5 }));
+      const result = await service.addInvoice(
+        baseDto({ rw_type: 1, user_request: 5 }),
+      );
       expect(result).toEqual({ flag: true });
     });
 
@@ -287,7 +370,12 @@ describe('InvoiceService', () => {
     it('rw_type=1 + loan_return_due_date กำหนดเอง → ไม่ override', async () => {
       rwRepo.findOne.mockResolvedValue(null);
       await service.addInvoice(
-        baseDto({ rw_type: 1, user_request: 5, loan_start_date: '2026-05-01', loan_return_due_date: '2026-06-15' }),
+        baseDto({
+          rw_type: 1,
+          user_request: 5,
+          loan_start_date: '2026-05-01',
+          loan_return_due_date: '2026-06-15',
+        }),
       );
 
       const created = rwRepo.create.mock.calls[0][0];
@@ -311,7 +399,9 @@ describe('InvoiceService', () => {
 
     it('ไม่พบ invoice (cross-tenant หรือไม่มีข้อมูล) → flag: false', async () => {
       rwRepo.findOne.mockResolvedValue(null);
-      const result = await service.updateInvoice(baseDto({ rw_id: 999, sc_id: 2 }));
+      const result = await service.updateInvoice(
+        baseDto({ rw_id: 999, sc_id: 2 }),
+      );
       expect(result).toEqual({ flag: false, ms: 'ไม่พบข้อมูลขอเบิก' });
     });
 
@@ -319,22 +409,36 @@ describe('InvoiceService', () => {
       rwRepo.findOne.mockResolvedValue(null);
       await service.updateInvoice(baseDto({ rw_id: 1, sc_id: 99 }));
       expect(rwRepo.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ scId: 99, del: 0 }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ scId: 99, del: 0 }),
+        }),
       );
     });
 
     it('happy path → บันทึกและคืน flag: true', async () => {
-      const existing = { rwId: 1, scId: 1, del: 0, detail: 'เดิม' } as RequestWithdraw;
+      const existing = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        detail: 'เดิม',
+      } as RequestWithdraw;
       rwRepo.findOne.mockResolvedValue(existing);
       rwRepo.save.mockResolvedValue(existing);
 
-      const result = await service.updateInvoice(baseDto({ rw_id: 1, detail: 'ใหม่' }));
+      const result = await service.updateInvoice(
+        baseDto({ rw_id: 1, detail: 'ใหม่' }),
+      );
       expect(result).toEqual({ flag: true });
       expect(rwRepo.save).toHaveBeenCalled();
     });
 
     it('update amount เป็น field ที่กำหนด', async () => {
-      const existing = { rwId: 1, scId: 1, del: 0, amount: 1000 } as RequestWithdraw;
+      const existing = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        amount: 1000,
+      } as RequestWithdraw;
       rwRepo.findOne.mockResolvedValue(existing);
       rwRepo.save.mockResolvedValue(existing);
 
@@ -347,12 +451,19 @@ describe('InvoiceService', () => {
   describe('loadLoanStatus', () => {
     function makeLoanRow(overrides: Record<string, unknown>) {
       return {
-        rw_id: 1, no_doc: 'L-001', detail: '', amount: '5000',
-        loan_type: 1, loan_start_date: '2026-04-01',
+        rw_id: 1,
+        no_doc: 'L-001',
+        detail: '',
+        amount: '5000',
+        loan_type: 1,
+        loan_start_date: '2026-04-01',
         loan_return_due_date: '2026-05-01',
         loan_returned_date: null,
-        loan_return_cash: '0', loan_return_voucher_amount: '0',
-        status: 200, user_request: 5, requester_name: 'ครู ก',
+        loan_return_cash: '0',
+        loan_return_voucher_amount: '0',
+        status: 200,
+        user_request: 5,
+        requester_name: 'ครู ก',
         ...overrides,
       };
     }
@@ -371,7 +482,12 @@ describe('InvoiceService', () => {
     });
 
     it('due date < today และไม่มี loan_returned_date → loan_status = "overdue"', async () => {
-      const qb = makeQb([makeLoanRow({ loan_return_due_date: '2020-01-01', loan_returned_date: null })]);
+      const qb = makeQb([
+        makeLoanRow({
+          loan_return_due_date: '2020-01-01',
+          loan_returned_date: null,
+        }),
+      ]);
       rwRepo.createQueryBuilder.mockReturnValue(qb);
 
       const [row] = await service.loadLoanStatus(1, 3);
@@ -381,7 +497,12 @@ describe('InvoiceService', () => {
     it('ยังไม่ถึงกำหนดและไม่มี loan_returned_date → loan_status = "active"', async () => {
       const futureDue = new Date();
       futureDue.setFullYear(futureDue.getFullYear() + 1);
-      const qb = makeQb([makeLoanRow({ loan_return_due_date: futureDue.toISOString().slice(0, 10), loan_returned_date: null })]);
+      const qb = makeQb([
+        makeLoanRow({
+          loan_return_due_date: futureDue.toISOString().slice(0, 10),
+          loan_returned_date: null,
+        }),
+      ]);
       rwRepo.createQueryBuilder.mockReturnValue(qb);
 
       const [row] = await service.loadLoanStatus(1, 3);
@@ -389,7 +510,13 @@ describe('InvoiceService', () => {
     });
 
     it('คำนวณ return_total ถูกต้อง (cash + voucher)', async () => {
-      const qb = makeQb([makeLoanRow({ loan_return_cash: '2000', loan_return_voucher_amount: '3000', loan_returned_date: '2026-04-30' })]);
+      const qb = makeQb([
+        makeLoanRow({
+          loan_return_cash: '2000',
+          loan_return_voucher_amount: '3000',
+          loan_returned_date: '2026-04-30',
+        }),
+      ]);
       rwRepo.createQueryBuilder.mockReturnValue(qb);
 
       const [row] = await service.loadLoanStatus(1, 3);
@@ -426,19 +553,33 @@ describe('InvoiceService', () => {
       rwRepo.findOne.mockResolvedValue(null);
       await service.returnLoan(99, returnDto);
       expect(rwRepo.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ scId: 99 }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ scId: 99 }),
+        }),
       );
     });
 
     it('คืนแล้ว (loanReturnedDate มีค่า) → flag: false', async () => {
-      rwRepo.findOne.mockResolvedValue({ rwId: 1, loanReturnedDate: '2026-04-01', amount: 5000 });
+      rwRepo.findOne.mockResolvedValue({
+        rwId: 1,
+        loanReturnedDate: '2026-04-01',
+        amount: 5000,
+      });
       const result = await service.returnLoan(1, returnDto);
       expect(result).toEqual({ flag: false, ms: 'บันทึกการคืนเงินแล้ว' });
     });
 
     it('ยอดคืน < ยอดยืม → flag: false พร้อมข้อความแจ้ง', async () => {
-      rwRepo.findOne.mockResolvedValue({ rwId: 1, loanReturnedDate: null, amount: 10000 });
-      const result = await service.returnLoan(1, { ...returnDto, loan_return_cash: 1000, loan_return_voucher_amount: 1000 });
+      rwRepo.findOne.mockResolvedValue({
+        rwId: 1,
+        loanReturnedDate: null,
+        amount: 10000,
+      });
+      const result = await service.returnLoan(1, {
+        ...returnDto,
+        loan_return_cash: 1000,
+        loan_return_voucher_amount: 1000,
+      });
       expect(result.flag).toBe(false);
       expect(result.ms).toContain('น้อยกว่า');
     });
@@ -449,7 +590,10 @@ describe('InvoiceService', () => {
       rwRepo.save.mockResolvedValue(loan);
 
       const result = await service.returnLoan(1, returnDto); // 3000+2000=5000
-      expect(result).toEqual({ flag: true, ms: 'บันทึกการคืนเงินเรียบร้อยแล้ว' });
+      expect(result).toEqual({
+        flag: true,
+        ms: 'บันทึกการคืนเงินเรียบร้อยแล้ว',
+      });
       expect(rwRepo.save).toHaveBeenCalled();
     });
 
@@ -477,23 +621,38 @@ describe('InvoiceService', () => {
       rwRepo.findOne.mockResolvedValue(null);
       await service.confirmInvoice(confirmDto, 55);
       expect(rwRepo.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ scId: 55, del: 0 }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ scId: 55, del: 0 }),
+        }),
       );
     });
 
     it('transition 50 → 100: บันทึก precheckBy, precheckDate, precheckNote', async () => {
-      const invoice = { rwId: 1, scId: 1, status: 50, del: 0 } as RequestWithdraw;
+      const invoice = {
+        rwId: 1,
+        scId: 1,
+        status: 50,
+        del: 0,
+      } as RequestWithdraw;
       rwRepo.findOne.mockResolvedValue(invoice);
       rwRepo.save.mockResolvedValue(invoice);
 
-      await service.confirmInvoice({ rw_id: 1, status: 100, up_by: 7, precheck_note: 'ตรวจแล้ว' }, 1);
+      await service.confirmInvoice(
+        { rw_id: 1, status: 100, up_by: 7, precheck_note: 'ตรวจแล้ว' },
+        1,
+      );
       expect(invoice.precheckBy).toBe(7);
       expect(invoice.precheckDate).toBeInstanceOf(Date);
       expect(invoice.precheckNote).toBe('ตรวจแล้ว');
     });
 
     it('transition 50 → 51: ก็บันทึก precheck fields ด้วย', async () => {
-      const invoice = { rwId: 1, scId: 1, status: 50, del: 0 } as RequestWithdraw;
+      const invoice = {
+        rwId: 1,
+        scId: 1,
+        status: 50,
+        del: 0,
+      } as RequestWithdraw;
       rwRepo.findOne.mockResolvedValue(invoice);
       rwRepo.save.mockResolvedValue(invoice);
 
@@ -502,7 +661,13 @@ describe('InvoiceService', () => {
     });
 
     it('transition ที่ไม่ใช่จาก 50 → ไม่ set precheck fields', async () => {
-      const invoice = { rwId: 1, scId: 1, status: 100, del: 0, precheckBy: null } as unknown as RequestWithdraw;
+      const invoice = {
+        rwId: 1,
+        scId: 1,
+        status: 100,
+        del: 0,
+        precheckBy: null,
+      } as unknown as RequestWithdraw;
       rwRepo.findOne.mockResolvedValue(invoice);
       rwRepo.save.mockResolvedValue(invoice);
 
@@ -511,7 +676,12 @@ describe('InvoiceService', () => {
     });
 
     it('happy path → flag: true', async () => {
-      const invoice = { rwId: 1, scId: 1, status: 100, del: 0 } as RequestWithdraw;
+      const invoice = {
+        rwId: 1,
+        scId: 1,
+        status: 100,
+        del: 0,
+      } as RequestWithdraw;
       rwRepo.findOne.mockResolvedValue(invoice);
       rwRepo.save.mockResolvedValue(invoice);
 
@@ -532,12 +702,19 @@ describe('InvoiceService', () => {
       rwRepo.findOne.mockResolvedValue(null);
       await service.deleteInvoice(1, 77);
       expect(rwRepo.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ scId: 77, del: 0 }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ scId: 77, del: 0 }),
+        }),
       );
     });
 
     it('วันที่ถูกล็อก (financial audit) → flag: false', async () => {
-      const invoice = { rwId: 1, scId: 1, del: 0, dateRequest: new Date('2026-04-01') } as RequestWithdraw;
+      const invoice = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        dateRequest: new Date('2026-04-01'),
+      } as RequestWithdraw;
       rwRepo.findOne.mockResolvedValue(invoice);
       financialAuditService.isDateLocked.mockResolvedValue(true);
 
@@ -547,7 +724,12 @@ describe('InvoiceService', () => {
     });
 
     it('วันที่ไม่ถูกล็อก → soft delete (del=1) และ flag: true', async () => {
-      const invoice = { rwId: 1, scId: 1, del: 0, dateRequest: new Date('2026-05-01') } as RequestWithdraw;
+      const invoice = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        dateRequest: new Date('2026-05-01'),
+      } as RequestWithdraw;
       rwRepo.findOne.mockResolvedValue(invoice);
       financialAuditService.isDateLocked.mockResolvedValue(false);
       rwRepo.save.mockResolvedValue(invoice);
@@ -560,7 +742,13 @@ describe('InvoiceService', () => {
     });
 
     it('ไม่แก้ upBy ถ้าไม่ส่ง parameter', async () => {
-      const invoice = { rwId: 1, scId: 1, del: 0, upBy: 0, dateRequest: new Date('2026-05-01') } as RequestWithdraw;
+      const invoice = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        upBy: 0,
+        dateRequest: new Date('2026-05-01'),
+      } as RequestWithdraw;
       rwRepo.findOne.mockResolvedValue(invoice);
       financialAuditService.isDateLocked.mockResolvedValue(false);
       rwRepo.save.mockResolvedValue(invoice);
@@ -611,13 +799,26 @@ describe('InvoiceService', () => {
     });
 
     it('แปลง budgets null → 0 และ null fields → empty string', async () => {
-      const qb = setupQbForPermission([{
-        rw_id: 1, sc_id: 1, invoice_no: null, invoice_name: null,
-        invoice_date: null, budgets: null, project_name: null,
-        partner_name: null, bank_name: null, account_no: null,
-        budget_type_name: null, status: 100, remark: null,
-        precheck_note: null, up_by: null, up_date: null,
-      }]);
+      const qb = setupQbForPermission([
+        {
+          rw_id: 1,
+          sc_id: 1,
+          invoice_no: null,
+          invoice_name: null,
+          invoice_date: null,
+          budgets: null,
+          project_name: null,
+          partner_name: null,
+          bank_name: null,
+          account_no: null,
+          budget_type_name: null,
+          status: 100,
+          remark: null,
+          precheck_note: null,
+          up_by: null,
+          up_date: null,
+        },
+      ]);
 
       const [row] = await service.loadConfirmInvoice(1, 100, 3);
       expect(row.budgets).toBe(0);

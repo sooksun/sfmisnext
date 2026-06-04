@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { DeleteWithReasonDialog } from '@/components/shared/delete-with-reason-dialog'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,10 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import Link from 'next/link'
+import { BookOpen, AlertTriangle } from 'lucide-react'
 import { apiGet, apiPost } from '@/lib/api'
-import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
+import { getThaiDateTime, fmtDateTH, todayISO } from '@/lib/utils'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 import { useAppContext } from '@/hooks/use-app-context'
+import { useActiveReceiptBook } from '@/hooks/use-receipt-book'
 import { buildReceiptHtml, ReceiptData } from '@/components/receive/receipt-print'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -114,6 +118,9 @@ export default function ReceivePage() {
     enabled: scId > 0 && syId > 0 && dialogOpen,
   })
 
+  // Auto-input: เล่มใบเสร็จที่เปิดใช้อยู่ (เล่มที่ + เลขที่ถัดไป)
+  const { data: activeBook } = useActiveReceiptBook(scId, apiYear)
+
   // ── Form ──────────────────────────────────────────────────────────────────────
 
   const { register, handleSubmit, reset, setValue, watch, control, formState: { errors } } =
@@ -122,7 +129,7 @@ export default function ReceivePage() {
       defaultValues: {
         pr_no: '',
         receive_form: '',
-        receive_date: '',
+        receive_date: todayISO(),
         receive_money_type: 2,
         receiveList: [{ bg_type_id: 0, prd_detail: '', prd_budget: 0 }],
       },
@@ -135,14 +142,15 @@ export default function ReceivePage() {
   const totalAmount = receiveList.reduce((s, r) => s + (r.prd_budget || 0), 0)
 
   function openDialog() {
+    // Auto-input: ถ้ามีเล่มใบเสร็จเปิดใช้อยู่ → เติมเล่มที่ + เลขที่ถัดไปทันที
     reset({
-      pr_no: '',
+      pr_no: activeBook ? String(activeBook.current_no) : '',
       receive_form: '',
-      receive_date: '',
+      receive_date: todayISO(),
       receive_money_type: 2,
       receiveList: [{ bg_type_id: 0, prd_detail: '', prd_budget: 0 }],
     })
-    setFormBookNo('')
+    setFormBookNo(activeBook?.book_code ?? '')
     setDialogOpen(true)
   }
 
@@ -161,10 +169,17 @@ export default function ReceivePage() {
         budget_year: apiYear,
         up_by: adminId,
       }),
-    onSuccess: (res: any) => {
+    onSuccess: (res: any, form: ReceiveForm) => {
       if (res.flag) {
-        toast.success('บันทึกเรียบร้อยแล้ว')
+        // backend ออกใบเสร็จ บร. + เดินเลขเล่มให้แล้ว (atomic) — แสดงเลขที่ออก
+        toast.success(res.ms || 'บันทึกเรียบร้อยแล้ว')
+        // รับเป็นเงินสด → ระบบสร้าง "บันทึกการรับเงินเพื่อเก็บรักษา" ให้อัตโนมัติ
+        if (form.receive_money_type === 2) {
+          toast.info('สร้างบันทึกการรับเงินเพื่อเก็บรักษา (เงินสด) แล้ว — พิมพ์ได้ที่เมนู 2.5 รับเงินเพื่อเก็บรักษา')
+        }
         qc.invalidateQueries({ queryKey: ['receive'] })
+        qc.invalidateQueries({ queryKey: ['active-receipt-book'] }) // เลขที่ถัดไปอัปเดต
+        qc.invalidateQueries({ queryKey: ['cash-keeping'] })
         setDialogOpen(false)
         reset()
       } else {
@@ -214,7 +229,6 @@ export default function ReceivePage() {
       win.document.open()
       win.document.write(buildReceiptHtml({
         ...receipt,
-        book_no: null,
         sc_name: scName,
         signer_name: signer?.name ?? userName,
         signer_position: 'ผู้รับเงิน',
@@ -313,6 +327,7 @@ export default function ReceivePage() {
           </Button>
         }
       />
+      <ProcessFlow flow="receive" />
 
       <div className="p-4">
         <DataTable
@@ -337,6 +352,35 @@ export default function ReceivePage() {
         size="2xl"
       >
         <div className="space-y-4">
+
+          {/* Auto-input: สถานะเล่มใบเสร็จที่เปิดใช้ */}
+          {activeBook ? (
+            <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+              <BookOpen className="h-4 w-4 shrink-0 text-green-600" />
+              <span>
+                เติมอัตโนมัติจากเล่มที่ <strong>{activeBook.book_code ?? '-'}</strong>{' '}
+                · เลขที่ถัดไป <strong>{activeBook.current_no}</strong>{' '}
+                · เหลือ <strong>{activeBook.remaining}</strong> ฉบับ
+              </span>
+              {activeBook.remaining <= 3 && (
+                <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  <AlertTriangle className="h-3 w-3" />
+                  ใกล้หมดเล่ม
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+              <span>ยังไม่มีเล่มใบเสร็จที่เปิดใช้งาน — กรุณาเปิดเล่มก่อนออกใบเสร็จ</span>
+              <Link
+                href="/sfmis/financial-report/receipt-book"
+                className="ml-auto rounded-md bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                เปิดเล่มใบเสร็จ
+              </Link>
+            </div>
+          )}
 
           {/* เล่มที่ + เลขที่ + รหัสอ้างอิง — header แบบเดียวกับใบเสร็จจริง */}
           <div className="flex items-stretch gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">

@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Plus, RotateCcw, Eye, AlertTriangle, Printer } from 'lucide-react'
 import { openPrintWindow, makeHeader, makeSignatures, fmtBaht, numberToThaiBaht, esc, thaiFullDate } from '@/lib/print-utils'
+import { officialLoanDebtorRegister } from '@/lib/official-forms'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/page-header'
@@ -154,7 +155,7 @@ function StatusBadge({ status, isOverdue }: { status: number; isOverdue: boolean
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function LoanAgreementPage() {
-  const { scId, syId, adminId, budgetYear: budgetYearRaw } = useAppContext()
+  const { scId, syId, adminId, budgetYear: budgetYearRaw, scName } = useAppContext()
   const budgetYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
   const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const queryClient = useQueryClient()
@@ -199,6 +200,28 @@ export default function LoanAgreementPage() {
   const totalLoans = loansData?.count ?? 0
   const admins = adminsData?.data ?? []
   const budgetTypes = budgetTypesData?.data ?? []
+
+  // พิมพ์แบบฟอร์ม "ทะเบียนคุมลูกหนี้เงินยืม" (สพฐ. 2544)
+  function handlePrintRegister() {
+    if (loans.length === 0) return
+    const body = officialLoanDebtorRegister({
+      scName,
+      budgetYear,
+      rows: loans.map((l) => ({
+        no: l.la_seq,
+        borrower: l.borrower_name,
+        contractNo: `${l.la_no ?? ''}`,
+        borrowDate: l.borrow_date,
+        amount: l.amount,
+        purpose: l.purpose,
+        dueDate: l.due_date,
+        returnDate: l.returned_date,
+        outstanding: l.status === 1 ? l.amount : 0,
+        note: l.is_overdue ? 'เกินกำหนด' : l.status === 2 ? 'คืนแล้ว' : '',
+      })),
+    })
+    openPrintWindow({ title: `ทะเบียนคุมลูกหนี้เงินยืม_${budgetYear}`, body })
+  }
 
   const pagedLoans = useMemo(
     () => loans.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
@@ -366,7 +389,7 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
   }
 
   function handleCancel(loan: LoanItem) {
-    if (window.confirm(`ยืนยันยกเลิกสัญญา บย.${loan.la_no} หรือไม่?`)) {
+    if (window.confirm(`ยืนยันยกเลิกสัญญา ${loan.la_no} หรือไม่?`)) {
       cancelMutation.mutate(loan)
     }
   }
@@ -504,6 +527,10 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
         subtitle={budgetYear ? `ปีงบประมาณ ${budgetYear}` : undefined}
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handlePrintRegister} disabled={loans.length === 0}>
+              <Printer className="h-4 w-4 mr-1" />
+              พิมพ์ทะเบียนคุม
+            </Button>
             <ExportButton
               onExport={handleExport}
               loading={loans.length === 0}
@@ -657,7 +684,7 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
       <FormDialog
         open={returnOpen}
         onClose={() => { setReturnOpen(false); setSelectedLoan(null) }}
-        title={`บันทึกการคืนเงิน บย.${selectedLoan?.la_no ?? ''}`}
+        title={`บันทึกการคืนเงิน ${selectedLoan?.la_no ?? ''}`}
         size="md"
         submitLabel="บันทึกการคืนเงิน"
         loading={returnMutation.isPending}
@@ -765,7 +792,7 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
       <FormDialog
         open={evidenceOpen}
         onClose={() => { setEvidenceOpen(false); setSelectedLoanForEvidence(null) }}
-        title={`ใบรับใบสำคัญ — บย.${selectedLoanForEvidence?.la_no ?? ''}`}
+        title={`ใบรับใบสำคัญ — ${selectedLoanForEvidence?.la_no ?? ''}`}
         size="md"
       >
         {evidenceLoading ? (

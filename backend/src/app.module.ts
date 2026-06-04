@@ -62,6 +62,9 @@ import { PlanTraceModule } from './modules/plan-trace/plan-trace.module';
 import { SarReportModule } from './modules/sar-report/sar-report.module';
 import { IntraBankTransferModule } from './modules/intra-bank-transfer/intra-bank-transfer.module';
 import { SupplieRequestModule } from './modules/supplie-request/supplie-request.module';
+import { RegulatoryConfigModule } from './modules/regulatory-config/regulatory-config.module';
+import { FundBorrowingModule } from './modules/fund-borrowing/fund-borrowing.module';
+import { FundBalanceModule } from './modules/fund-balance/fund-balance.module';
 
 @Module({
   imports: [
@@ -151,6 +154,9 @@ import { SupplieRequestModule } from './modules/supplie-request/supplie-request.
     SarReportModule,
     IntraBankTransferModule,
     SupplieRequestModule,
+    RegulatoryConfigModule,
+    FundBorrowingModule,
+    FundBalanceModule,
   ],
   controllers: [AppController],
   providers: [

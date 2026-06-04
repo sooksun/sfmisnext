@@ -121,6 +121,24 @@ export class LoanAgreement {
   })
   rwId: number | null;
 
+  // ── ผูกกับทะเบียนคุมเงิน (financial_transactions) ─────────────────────────
+  // ตอนยืม → ตัดยอดประเภทเงิน (type=-1) ; ตอนคืนเงินสด → คืนยอด (type=+1)
+  @Column({
+    name: 'ft_borrow_id',
+    type: 'int',
+    nullable: true,
+    comment: 'FK financial_transactions.ft_id (รายการตัดยอดตอนยืม)',
+  })
+  ftBorrowId: number | null;
+
+  @Column({
+    name: 'ft_return_id',
+    type: 'int',
+    nullable: true,
+    comment: 'FK financial_transactions.ft_id (รายการคืนเงินสดตอนส่งใช้)',
+  })
+  ftReturnId: number | null;
+
   /**
    * สถานะ: 1=ยังค้างชำระ 2=คืนแล้ว 3=ยกเลิก
    */

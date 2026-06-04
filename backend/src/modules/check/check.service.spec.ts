@@ -10,6 +10,9 @@ import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { CheckReceiveCommittee } from './entities/check-receive-committee.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 import { FinancialAuditService } from '../financial-audit/financial-audit.service';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
+import { DocCounterService } from '../doc-counter/doc-counter.service';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
 
 // ─── QueryBuilder mock factory ─────────────────────────────────────────────────
 function makeQb(result?: unknown) {
@@ -64,21 +67,51 @@ describe('CheckService', () => {
   let bgTypeRepo: jest.Mocked<any>;
   let committeeRepo: jest.Mocked<any>;
   let configService: jest.Mocked<Pick<ConfigService, 'get'>>;
-  let dataSource: jest.Mocked<Pick<DataSource, 'transaction' | 'getRepository'>>;
-  let financialAuditService: jest.Mocked<Pick<FinancialAuditService, 'isDateLocked'>>;
+  let dataSource: jest.Mocked<
+    Pick<DataSource, 'transaction' | 'getRepository'>
+  >;
+  let financialAuditService: jest.Mocked<
+    Pick<FinancialAuditService, 'isDateLocked'>
+  >;
+  let regulatoryConfig: { getThreshold: jest.Mock };
+  let fundBalance: { available: jest.Mock; availableInTx: jest.Mock };
+  let fundAvailable: number;
 
   beforeEach(async () => {
-    rwRepo = { createQueryBuilder: jest.fn(), find: jest.fn(), findOne: jest.fn(), save: jest.fn() };
+    fundAvailable = Number.MAX_SAFE_INTEGER;
+    rwRepo = {
+      createQueryBuilder: jest.fn(),
+      find: jest.fn(),
+      findOne: jest.fn(),
+      save: jest.fn(),
+    };
     partnerRepo = { find: jest.fn(), findOne: jest.fn() };
     adminRepo = { find: jest.fn() };
     bgTypeRepo = { find: jest.fn() };
-    committeeRepo = { find: jest.fn(), findOne: jest.fn(), create: jest.fn(), save: jest.fn() };
+    committeeRepo = {
+      find: jest.fn(),
+      findOne: jest.fn(),
+      create: jest.fn(),
+      save: jest.fn(),
+    };
     configService = { get: jest.fn().mockReturnValue(5000) };
     dataSource = {
       transaction: jest.fn(),
-      getRepository: jest.fn().mockReturnValue({ update: jest.fn().mockResolvedValue({}) }),
+      getRepository: jest
+        .fn()
+        .mockReturnValue({ update: jest.fn().mockResolvedValue({}) }),
     };
-    financialAuditService = { isDateLocked: jest.fn().mockResolvedValue(false) };
+    financialAuditService = {
+      isDateLocked: jest.fn().mockResolvedValue(false),
+    };
+    // เกณฑ์คณะกรรมการตรวจรับ — mock คืน 5000 (เดิม) เพื่อให้ test เดิมยังสื่อความหมาย
+    regulatoryConfig = { getThreshold: jest.fn().mockResolvedValue(5000) };
+    fundBalance = {
+      available: jest.fn().mockImplementation(() => Promise.resolve(fundAvailable)),
+      availableInTx: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(fundAvailable)),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -87,10 +120,23 @@ describe('CheckService', () => {
         { provide: getRepositoryToken(Partner), useValue: partnerRepo },
         { provide: getRepositoryToken(Admin), useValue: adminRepo },
         { provide: getRepositoryToken(BudgetIncomeType), useValue: bgTypeRepo },
-        { provide: getRepositoryToken(CheckReceiveCommittee), useValue: committeeRepo },
+        {
+          provide: getRepositoryToken(CheckReceiveCommittee),
+          useValue: committeeRepo,
+        },
         { provide: ConfigService, useValue: configService },
         { provide: DataSource, useValue: dataSource },
         { provide: FinancialAuditService, useValue: financialAuditService },
+        { provide: RegulatoryConfigService, useValue: regulatoryConfig },
+        {
+          provide: DocCounterService,
+          useValue: {
+            issueWithin: jest
+              .fn()
+              .mockResolvedValue({ seq: 1, formatted: 'บจ.1/2569' }),
+          },
+        },
+        { provide: FundBalanceService, useValue: fundBalance },
       ],
     }).compile();
 
@@ -108,11 +154,15 @@ describe('CheckService', () => {
       expect(qb.where).toHaveBeenCalledWith('rw.sc_id = :scId', { scId: 1 });
       expect(qb.andWhere).toHaveBeenCalledWith('rw.sy_id = :syId', { syId: 3 });
       expect(qb.andWhere).toHaveBeenCalledWith('rw.del = 0');
-      expect(qb.andWhere).toHaveBeenCalledWith('rw.status IN (:...statuses)', { statuses: [200, 201, 202] });
+      expect(qb.andWhere).toHaveBeenCalledWith('rw.status IN (:...statuses)', {
+        statuses: [200, 201, 202],
+      });
     });
 
     it('แปลง amount null → 0 และ null fields → empty string', async () => {
-      const qb = makeQb([{ rw_id: 1, amount: null, partner_name: null, budget_type_name: null }]);
+      const qb = makeQb([
+        { rw_id: 1, amount: null, partner_name: null, budget_type_name: null },
+      ]);
       rwRepo.createQueryBuilder.mockReturnValue(qb);
 
       const [row] = await service.loadCheck(1, 3);
@@ -133,7 +183,17 @@ describe('CheckService', () => {
     });
 
     it('ไม่ return password ใน response', async () => {
-      adminRepo.find.mockResolvedValue([{ adminId: 1, name: 'test', username: 'u', email: 'e', type: 2, scId: 1, passwordDefault: 'secret' }]);
+      adminRepo.find.mockResolvedValue([
+        {
+          adminId: 1,
+          name: 'test',
+          username: 'u',
+          email: 'e',
+          type: 2,
+          scId: 1,
+          passwordDefault: 'secret',
+        },
+      ]);
       const [row] = await service.loadUser(1);
       expect((row as any).password).toBeUndefined();
       expect((row as any).passwordDefault).toBeUndefined();
@@ -152,12 +212,43 @@ describe('CheckService', () => {
       rwRepo.findOne.mockResolvedValue(null);
       await service.loadCheckById(55, 7, 1);
       expect(rwRepo.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ scId: 55, syId: 7, del: 0 }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ scId: 55, syId: 7, del: 0 }),
+        }),
       );
     });
 
     it('happy path — คำนวณ WHT และคืน 1 record', async () => {
-      const check = { rwId: 1, scId: 1, syId: 3, pId: 10, amount: 10000, del: 0, paymentType: 1, bgTypeId: 2, rwType: 3, orderId: 0, noDoc: 'D-001', certificatePayment: 1, dateRequest: null, userRequestHead: 0, userRequest: 1, userOfferCheck: 0, receiptNumber: null, receiptPicture: null, offerCheckDate: null, checkNoDoc: null, typeOfferCheck: 0, status: 200, remark: null, syId2: 3, year: '2569', upBy: 0, createDate: null, updateDate: null };
+      const check = {
+        rwId: 1,
+        scId: 1,
+        syId: 3,
+        pId: 10,
+        amount: 10000,
+        del: 0,
+        paymentType: 1,
+        bgTypeId: 2,
+        rwType: 3,
+        orderId: 0,
+        noDoc: 'D-001',
+        certificatePayment: 1,
+        dateRequest: null,
+        userRequestHead: 0,
+        userRequest: 1,
+        userOfferCheck: 0,
+        receiptNumber: null,
+        receiptPicture: null,
+        offerCheckDate: null,
+        checkNoDoc: null,
+        typeOfferCheck: 0,
+        status: 200,
+        remark: null,
+        syId2: 3,
+        year: '2569',
+        upBy: 0,
+        createDate: null,
+        updateDate: null,
+      };
       rwRepo.findOne.mockResolvedValue(check);
       partnerRepo.findOne.mockResolvedValue({ pId: 10, calVat: 2, del: 0 });
 
@@ -180,12 +271,20 @@ describe('CheckService', () => {
       rwRepo.findOne.mockResolvedValue(null);
       await service.cancelCheck(1, 77);
       expect(rwRepo.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ scId: 77, del: 0 }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ scId: 77, del: 0 }),
+        }),
       );
     });
 
     it('วันที่ถูกล็อก → flag: false', async () => {
-      const check = { rwId: 1, scId: 1, del: 0, offerCheckDate: new Date('2026-04-01'), dateRequest: null };
+      const check = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        offerCheckDate: new Date('2026-04-01'),
+        dateRequest: null,
+      };
       rwRepo.findOne.mockResolvedValue(check);
       financialAuditService.isDateLocked.mockResolvedValue(true);
 
@@ -195,10 +294,19 @@ describe('CheckService', () => {
     });
 
     it('happy path → status=201, del=1, flag: true', async () => {
-      const check = { rwId: 1, scId: 1, del: 0, status: 202, offerCheckDate: null, dateRequest: new Date('2026-05-01') };
+      const check = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        status: 202,
+        offerCheckDate: null,
+        dateRequest: new Date('2026-05-01'),
+      };
       rwRepo.findOne.mockResolvedValue(check);
       rwRepo.save.mockResolvedValue(check);
-      dataSource.getRepository = jest.fn().mockReturnValue({ update: jest.fn().mockResolvedValue({}) });
+      dataSource.getRepository = jest
+        .fn()
+        .mockReturnValue({ update: jest.fn().mockResolvedValue({}) });
       financialAuditService.isDateLocked.mockResolvedValue(false);
 
       const result = await service.cancelCheck(1, 1);
@@ -225,32 +333,75 @@ describe('CheckService', () => {
       const { em } = makeTransactionEm({ check, committee: null });
       dataSource.transaction.mockImplementation((cb: any) => cb(em));
 
-      const result = await service.updateCheck({ rw_id: 1, status: 202 } as any, 1);
+      const result = await service.updateCheck(
+        { rw_id: 1, status: 202 } as any,
+        1,
+      );
       expect(result.flag).toBe(false);
       expect(result.ms).toContain('คณะกรรมการตรวจรับ');
     });
 
     it('status=202 + amount >= threshold + มี committee (member1Name) → ผ่าน', async () => {
-      const check = { rwId: 1, scId: 1, del: 0, amount: 10000, status: 200, bgTypeId: 1, syId: 1, typeOfferCheck: 1, offerCheckDate: null };
+      const check = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        amount: 10000,
+        status: 200,
+        bgTypeId: 1,
+        syId: 1,
+        typeOfferCheck: 1,
+        offerCheckDate: null,
+      };
       const committee = { member1Name: 'นาย ก', del: 0 };
-      const { em, checkRepo, ftRepo } = makeTransactionEm({ check, committee, ftExists: 0 });
+      const { em, checkRepo, ftRepo } = makeTransactionEm({
+        check,
+        committee,
+        ftExists: 0,
+      });
       dataSource.transaction.mockImplementation((cb: any) => cb(em));
 
-      const result = await service.updateCheck({ rw_id: 1, status: 202, offer_check_date: '2026-05-01' } as any, 1);
+      const result = await service.updateCheck(
+        { rw_id: 1, status: 202, offer_check_date: '2026-05-01' } as any,
+        1,
+      );
       expect(result).toEqual({ flag: true });
     });
 
     it('status=202 + amount < threshold → ผ่านโดยไม่ต้องเช็ค committee', async () => {
-      const check = { rwId: 1, scId: 1, del: 0, amount: 1000, status: 200, bgTypeId: 1, syId: 1, typeOfferCheck: 1, offerCheckDate: null };
+      const check = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        amount: 1000,
+        status: 200,
+        bgTypeId: 1,
+        syId: 1,
+        typeOfferCheck: 1,
+        offerCheckDate: null,
+      };
       const { em, ftRepo } = makeTransactionEm({ check, ftExists: 0 });
       dataSource.transaction.mockImplementation((cb: any) => cb(em));
 
-      const result = await service.updateCheck({ rw_id: 1, status: 202 } as any, 1);
+      const result = await service.updateCheck(
+        { rw_id: 1, status: 202 } as any,
+        1,
+      );
       expect(result).toEqual({ flag: true });
     });
 
     it('สร้าง financial_transaction เมื่อ status เปลี่ยนเป็น 202', async () => {
-      const check = { rwId: 1, scId: 1, del: 0, amount: 1000, status: 200, bgTypeId: 1, syId: 1, typeOfferCheck: 1, offerCheckDate: null };
+      const check = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        amount: 1000,
+        status: 200,
+        bgTypeId: 1,
+        syId: 1,
+        typeOfferCheck: 1,
+        offerCheckDate: null,
+      };
       const { em, ftRepo } = makeTransactionEm({ check, ftExists: 0 });
       dataSource.transaction.mockImplementation((cb: any) => cb(em));
 
@@ -259,7 +410,17 @@ describe('CheckService', () => {
     });
 
     it('ไม่ duplicate FT ถ้ามีอยู่แล้ว (ftExists > 0)', async () => {
-      const check = { rwId: 1, scId: 1, del: 0, amount: 1000, status: 200, bgTypeId: 1, syId: 1, typeOfferCheck: 1, offerCheckDate: null };
+      const check = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        amount: 1000,
+        status: 200,
+        bgTypeId: 1,
+        syId: 1,
+        typeOfferCheck: 1,
+        offerCheckDate: null,
+      };
       const { em, ftRepo } = makeTransactionEm({ check, ftExists: 1 });
       dataSource.transaction.mockImplementation((cb: any) => cb(em));
 
@@ -268,7 +429,17 @@ describe('CheckService', () => {
     });
 
     it('ยกเลิกออกเช็ค (prevStatus=202 → status≠202) → soft-delete FT', async () => {
-      const check = { rwId: 1, scId: 1, del: 0, amount: 1000, status: 202, bgTypeId: 1, syId: 1, typeOfferCheck: 1, offerCheckDate: null };
+      const check = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        amount: 1000,
+        status: 202,
+        bgTypeId: 1,
+        syId: 1,
+        typeOfferCheck: 1,
+        offerCheckDate: null,
+      };
       const { em, ftRepo } = makeTransactionEm({ check });
       dataSource.transaction.mockImplementation((cb: any) => cb(em));
 
@@ -282,7 +453,12 @@ describe('CheckService', () => {
 
   // ─── saveCommittee ────────────────────────────────────────────────────────────
   describe('saveCommittee', () => {
-    const dto = { rw_id: 1, sc_id: 1, member1_name: 'นาย ก', member1_position: 'ครู' };
+    const dto = {
+      rw_id: 1,
+      sc_id: 1,
+      member1_name: 'นาย ก',
+      member1_position: 'ครู',
+    };
 
     it('ไม่พบ rw ของ sc_id นี้ → flag: false', async () => {
       rwRepo.findOne.mockResolvedValue(null);
@@ -294,7 +470,9 @@ describe('CheckService', () => {
       rwRepo.findOne.mockResolvedValue(null);
       await service.saveCommittee({ ...dto, sc_id: 99 } as any);
       expect(rwRepo.findOne).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ scId: 99, del: 0 }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ scId: 99, del: 0 }),
+        }),
       );
     });
 
@@ -306,7 +484,10 @@ describe('CheckService', () => {
       committeeRepo.save.mockResolvedValue(newC);
 
       const result = await service.saveCommittee(dto as any);
-      expect(result).toEqual({ flag: true, ms: 'บันทึกคณะกรรมการเรียบร้อยแล้ว' });
+      expect(result).toEqual({
+        flag: true,
+        ms: 'บันทึกคณะกรรมการเรียบร้อยแล้ว',
+      });
       expect(committeeRepo.save).toHaveBeenCalled();
     });
 

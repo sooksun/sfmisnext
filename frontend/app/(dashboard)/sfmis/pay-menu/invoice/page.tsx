@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Send, AlertTriangle, RotateCcw, Printer } from 'lucide-react'
 import { openPrintWindow, makeHeader, makeSignatures, fmtBaht, numberToThaiBaht, esc, thaiFullDate } from '@/lib/print-utils'
 import { PageHeader } from '@/components/shared/page-header'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -92,10 +93,25 @@ const invoiceSchema = z.object({
   amount: z.number().min(0.01, 'กรุณากรอกจำนวนเงิน'),
   date_request: z.string().min(1, 'กรุณาเลือกวันที่'),
   user_request: z.number().min(1, 'กรุณาเลือกผู้ขอเบิก'),
+  order_id: z.number().optional(), // ลิงก์มูลหนี้จากพัสดุที่ตรวจรับแล้ว
   loan_type: z.number().optional(),
   loan_start_date: z.string().optional(),
 })
 type InvoiceForm = z.infer<typeof invoiceSchema>
+
+// มูลหนี้จากพัสดุที่ตรวจรับแล้ว (พร้อมขอเบิก)
+interface PayableParcel {
+  order_id: number
+  ct_id: number | null
+  p_id: number
+  partner_name: string
+  amount: number
+  bg_type_id: number
+  budget_type_name: string
+  project_id: number
+  project_name: string
+  insp_date: string | null
+}
 
 const returnSchema = z.object({
   loan_returned_date: z.string().min(1, 'กรุณาเลือกวันที่คืน'),
@@ -181,6 +197,13 @@ export default function InvoicePage() {
     queryKey: ['user-request', scId],
     queryFn: () => apiGet<UserRequest[]>(`Invoice/loadUserRequest/${scId}`),
     enabled: scId > 0,
+  })
+
+  // มูลหนี้จากพัสดุที่ตรวจรับแล้ว (สะพานพัสดุ→การเงิน) — โหลดเมื่อเปิดฟอร์มสร้างใหม่
+  const { data: payableParcels } = useQuery({
+    queryKey: ['payable-parcels', scId, dialogOpen],
+    queryFn: () => apiGet<PayableParcel[]>(`Invoice/loadPayableParcels/${scId}`),
+    enabled: scId > 0 && dialogOpen && !editing,
   })
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } =
@@ -292,9 +315,26 @@ export default function InvoicePage() {
     reset({
       no_doc: '', bg_type_id: 0, rw_type: 0, p_id: 0, detail: '', amount: 0,
       date_request: new Date().toISOString().substring(0, 10), user_request: 0,
-      loan_type: undefined, loan_start_date: '',
+      order_id: undefined, loan_type: undefined, loan_start_date: '',
     })
     setDialogOpen(true)
+  }
+
+  // เลือกมูลหนี้จากพัสดุที่ตรวจรับแล้ว → เติม ร้านค้า/จำนวน/ประเภทงบ/รายละเอียด/order_id อัตโนมัติ
+  function applyParcel(orderId: string) {
+    const pp = payableList.find((p) => String(p.order_id) === orderId)
+    if (!pp) return
+    setValue('order_id', pp.order_id)
+    if (pp.p_id) setValue('p_id', pp.p_id, { shouldValidate: true })
+    if (pp.bg_type_id) setValue('bg_type_id', pp.bg_type_id, { shouldValidate: true })
+    if (pp.amount) setValue('amount', pp.amount, { shouldValidate: true })
+    setValue('rw_type', 3, { shouldValidate: true }) // ค่าพัสดุ/บริการ
+    setValue(
+      'detail',
+      `จ่ายค่าจัดซื้อ/จัดจ้าง${pp.project_name ? ' โครงการ' + pp.project_name : ''}${pp.partner_name ? ' ร้าน ' + pp.partner_name : ''} (ตรวจรับแล้ว)`,
+      { shouldValidate: true },
+    )
+    toast.success('เติมข้อมูลมูลหนี้จากพัสดุอัตโนมัติแล้ว')
   }
 
   function openEdit(item: InvoiceRow) {
@@ -359,6 +399,7 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
   const partnerList = Array.isArray(partners) ? partners : []
   const budgetTypeList = Array.isArray(budgetTypes) ? budgetTypes : []
   const userRequestList = Array.isArray(userRequests) ? userRequests : []
+  const payableList = Array.isArray(payableParcels) ? payableParcels : []
 
   const columns = useMemo(() => [
     {
@@ -487,6 +528,7 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
 
   return (
     <div className="flex flex-col flex-auto min-w-0">
+      <ProcessFlow flow="pay" />
       <PageHeader
         title="ใบสำคัญจ่าย (ขอเบิก)"
         actions={
@@ -543,6 +585,39 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
         loading={saveMutation.isPending}
       >
         <div className="space-y-3">
+          {/* สะพานพัสดุ→การเงิน: เลือกมูลหนี้จากพัสดุที่ตรวจรับแล้ว → เติมอัตโนมัติ */}
+          {!editing && (
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+              <Label className="text-indigo-800 font-semibold">
+                เลือกมูลหนี้จากพัสดุที่ตรวจรับแล้ว
+              </Label>
+              {payableList.length > 0 ? (
+                <>
+                  <Select onValueChange={applyParcel}>
+                    <SelectTrigger className="mt-1 bg-white">
+                      <SelectValue placeholder={`มี ${payableList.length} รายการพร้อมเบิก — เลือกเพื่อเติมอัตโนมัติ`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {payableList.map((pp) => (
+                        <SelectItem key={pp.order_id} value={String(pp.order_id)}>
+                          {pp.partner_name || 'ร้านค้า'} · {fmt(pp.amount)} บาท
+                          {pp.project_name ? ` · ${pp.project_name}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-indigo-600 mt-1">
+                    ระบบจะเติม ร้านค้า / จำนวนเงิน / ประเภทงบ / รายละเอียด ให้อัตโนมัติ (แก้ไขได้)
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-indigo-600 mt-1">
+                  ยังไม่มีพัสดุที่ตรวจรับแล้วรอตั้งเบิก — รายการจะปรากฏเองเมื่อพัสดุ &quot;ตรวจรับผ่าน + ลงบัญชีวัสดุ&quot; แล้ว
+                </p>
+              )}
+            </div>
+          )}
+
           <div>
             <Label>เลขที่ใบสำคัญ *</Label>
             <Input {...register('no_doc')} placeholder="เลขที่ใบสำคัญ" />

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Save } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { apiGet, apiPost } from '@/lib/api'
@@ -92,6 +93,7 @@ export default function PerheadRateSettingPage() {
           </Button>
         }
       />
+      <ProcessFlow flow="plan" />
       <div className="p-4">
         {isLoading ? (
           <p className="text-gray-500 text-sm">กำลังโหลด...</p>

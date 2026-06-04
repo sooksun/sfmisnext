@@ -6,6 +6,7 @@ import { LoanAgreement } from './entities/loan-agreement.entity';
 import { LoanReturnEvidence } from './entities/loan-return-evidence.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
       LoanReturnEvidence,
       Admin,
       BudgetIncomeType,
+      FinancialTransactions,
     ]),
   ],
   controllers: [LoanAgreementController],

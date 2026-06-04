@@ -11,8 +11,12 @@ import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { CheckReceiveCommittee } from './entities/check-receive-committee.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 import { WithholdingCertificate } from '../registration-certificate/entities/withholding-certificate.entity';
+import { SupInspection } from '../supplie/entities/sup-inspection.entity';
 import { calcWithholding } from '../../common/utils/withholding.util';
 import { FinancialAuditService } from '../financial-audit/financial-audit.service';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
+import { DocCounterService } from '../doc-counter/doc-counter.service';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
 import { EntityManager } from 'typeorm';
 
 /**
@@ -28,7 +32,6 @@ function mapCheckChannel(typeOfferCheck: number | null | undefined): number {
 
 @Injectable()
 export class CheckService {
-  private readonly committeeThreshold: number;
   // ประเภทเงิน "ภาษีหัก ณ ที่จ่าย" สำหรับลงทะเบียนคุมภาษีอัตโนมัติ
   // ตั้งค่าได้ใน .env: WHT_MONEY_TYPE_ID ; ถ้าไม่ตั้ง จะค้นจากชื่อประเภทเงิน
   private readonly whtMoneyTypeId: number;
@@ -47,10 +50,10 @@ export class CheckService {
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
     private readonly financialAuditService: FinancialAuditService,
+    private readonly regulatoryConfig: RegulatoryConfigService,
+    private readonly docCounter: DocCounterService,
+    private readonly fundBalance: FundBalanceService,
   ) {
-    // วงเงินที่ต้องมีคณะกรรมการตรวจรับ (ตามระเบียบ พัสดุ) — กำหนดได้ใน .env: COMMITTEE_THRESHOLD=5000
-    this.committeeThreshold =
-      this.configService.get<number>('COMMITTEE_THRESHOLD') ?? 5000;
     this.whtMoneyTypeId =
       Number(this.configService.get('WHT_MONEY_TYPE_ID')) || 0;
   }
@@ -89,8 +92,18 @@ export class CheckService {
     const calVat = partner?.calVat ?? 2;
     if (calVat !== 0 && calVat !== 1) return; // บุคคลภายใน ไม่หักภาษี
 
-    const wht = calcWithholding(Number(check.amount ?? 0), calVat);
-    if (wht.withholdAmount <= 0) return;
+    // เกณฑ์ + อัตรา จาก config (default: หักเมื่อ ≥ 10,000 อัตรา 1% ซื้อสินค้า/จ้างทำของ)
+    const scId = check.scId ?? 0;
+    const [minThreshold, rate] = await Promise.all([
+      this.regulatoryConfig.getThreshold(scId, 'finance.wht_min'),
+      this.regulatoryConfig.getThreshold(scId, 'finance.wht_rate_goods'),
+    ]);
+
+    const wht = calcWithholding(Number(check.amount ?? 0), calVat, {
+      rate,
+      minThreshold,
+    });
+    if (wht.withholdAmount <= 0) return; // ต่ำกว่าเกณฑ์/ไม่ต้องหัก → ไม่ลงทะเบียน/ไม่ออกหนังสือ
 
     const ftRepo = em.getRepository(FinancialTransactions);
     const wcRepo = em.getRepository(WithholdingCertificate);
@@ -296,7 +309,15 @@ export class CheckService {
 
     const amount = Number(check.amount ?? 0);
     const calVat = partner?.calVat ?? 2;
-    const wht = calcWithholding(amount, calVat);
+    const scIdForWht = check.scId ?? 0;
+    const [whtMin, whtRate] = await Promise.all([
+      this.regulatoryConfig.getThreshold(scIdForWht, 'finance.wht_min'),
+      this.regulatoryConfig.getThreshold(scIdForWht, 'finance.wht_rate_goods'),
+    ]);
+    const wht = calcWithholding(amount, calVat, {
+      rate: whtRate,
+      minThreshold: whtMin,
+    });
 
     return [
       {
@@ -372,10 +393,7 @@ export class CheckService {
     // soft-delete financial_transactions ที่ผูกกับเช็คนี้ (ถ้ามี)
     await this.dataSource
       .getRepository(FinancialTransactions)
-      .update(
-        { rwId, type: -1, del: 0 },
-        { del: 1, updateDate: new Date() },
-      );
+      .update({ rwId, type: -1, del: 0 }, { del: 1, updateDate: new Date() });
 
     return { flag: true, ms: 'ยกเลิกเช็คเรียบร้อยแล้ว' };
   }
@@ -398,18 +416,69 @@ export class CheckService {
       }
 
       // ── ตรวจสอบคณะกรรมการตรวจรับ เมื่อจะออกเช็ค (status=202) ─────────────
-      if (
-        dto.status === 202 &&
-        Number(check.amount) >= this.committeeThreshold
-      ) {
-        const committee = await committeeRepo.findOne({
-          where: { rwId: dto.rw_id, del: 0 },
+      // ระเบียบฯ 2560 ข้อ 25–26: วงเงินเกินเกณฑ์ผู้ตรวจรับคนเดียว (default 100,000)
+      // ต้องแต่งตั้งคณะกรรมการตรวจรับ
+      if (dto.status === 202) {
+        const inspectorSingleMax = await this.regulatoryConfig.getThreshold(
+          scId,
+          'procurement.inspector_single_max',
+        );
+        if (Number(check.amount) > inspectorSingleMax) {
+          const committee = await committeeRepo.findOne({
+            where: { rwId: dto.rw_id, del: 0 },
+          });
+          if (!committee || !committee.member1Name) {
+            return {
+              flag: false,
+              ms: `จำนวนเงิน ${Number(check.amount).toLocaleString('th-TH')} บาท เกิน ${inspectorSingleMax.toLocaleString('th-TH')} บาท ต้องระบุคณะกรรมการตรวจรับก่อนออกเช็ค`,
+            };
+          }
+        }
+      }
+
+      // ── 1.6 ห้ามจ่ายเงินก่อนตรวจรับพัสดุผ่าน ──────────────────────────
+      // กรณีขอเบิกอ้างอิง parcel_order (ซื้อวัสดุ/ครุภัณฑ์) ต้องตรวจรับผ่าน
+      // และลงสต็อกแล้วเท่านั้น จึงจะออกเช็ค/จ่ายได้ (ตรวจรับ → ตั้งเบิก → จ่าย)
+      if (dto.status === 202 && check.orderId && check.orderId > 0) {
+        const passedInsp = await em.getRepository(SupInspection).findOne({
+          where: {
+            orderId: check.orderId,
+            inspResult: 1,
+            stockPosted: 1,
+            del: 0,
+          },
         });
-        if (!committee || !committee.member1Name) {
+        if (!passedInsp) {
           return {
             flag: false,
-            ms: `จำนวนเงิน ${Number(check.amount).toLocaleString('th-TH')} บาท ต้องระบุคณะกรรมการตรวจรับก่อนออกเช็ค`,
+            ms: 'ยังจ่ายเงินไม่ได้ — ต้องตรวจรับพัสดุให้ผ่านและลงสต็อกก่อน (ลำดับ: ตรวจรับ → ตั้งเบิก → จ่าย)',
           };
+        }
+      }
+
+      // ── guard: ห้ามจ่ายเกินยอดคงเหลือของประเภทเงิน ─────────────────────
+      // ระบบควบคุมเงินหน่วยงานย่อย 2544: เงินแต่ละประเภทห้ามติดลบ
+      // (ยอดคงเหลือ = ยอดยกมา + รับ − จ่าย) — เปิด/ปิดด้วย finance.block_overspend
+      if (dto.status === 202 && check.status !== 202) {
+        const blockOverspend = await this.regulatoryConfig.getThreshold(
+          scId,
+          'finance.block_overspend',
+        );
+        if (blockOverspend >= 1) {
+          const amount = Number(check.amount ?? 0);
+          const available = await this.fundBalance.availableInTx(
+            em,
+            scId,
+            check.syId ?? 0,
+            check.bgTypeId ?? 0,
+          );
+          // เผื่อ epsilon กันปัญหา float
+          if (amount - available > 0.005) {
+            return {
+              flag: false,
+              ms: `จ่ายไม่ได้ — ยอดคงเหลือประเภทเงินนี้ ${available.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท ไม่พอจ่าย ${amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท (เงินแต่ละประเภทห้ามติดลบ)`,
+            };
+          }
         }
       }
 
@@ -425,6 +494,18 @@ export class CheckService {
         check.offerCheckDate = new Date(dto.offer_check_date);
       if (dto.status !== undefined) check.status = dto.status;
       if (dto.del !== undefined) check.del = dto.del;
+
+      // ออกเลขใบสำคัญจ่ายอัตโนมัติ บค. (เบิกเงินสด) / บจ. (จ่ายเช็ค) เมื่อออกเช็ค
+      if (check.status === 202 && prevStatus !== 202) {
+        const voucherType = check.typeOfferCheck === 1 ? 'BC' : 'BJ';
+        const issued = await this.docCounter.issueWithin(
+          em,
+          scId,
+          String(check.year ?? ''),
+          voucherType,
+        );
+        check.noDoc = issued.formatted;
+      }
 
       await checkRepo.save(check);
 

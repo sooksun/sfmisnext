@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { CheckCircle } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { Button } from '@/components/ui/button'
@@ -174,6 +175,7 @@ export default function ReceiveParcelConfirmPage() {
 
   return (
     <div className="flex flex-col flex-auto min-w-0">
+      <ProcessFlow flow="procure" />
       <PageHeader title="ยืนยันการรับพัสดุ" />
       <div className="p-4">
         <DataTable

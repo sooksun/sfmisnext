@@ -12,7 +12,7 @@ export class PlnReceiveDetail {
   @Column({ name: 'bg_type_id', type: 'int', nullable: true })
   bgTypeId: number | null;
 
-  @Column({ name: 'prd_detail', type: 'varchar', length: 45, nullable: true })
+  @Column({ name: 'prd_detail', type: 'varchar', length: 255, nullable: true })
   prdDetail: string | null;
 
   @Column({ name: 'prd_budget', type: 'float', nullable: true })

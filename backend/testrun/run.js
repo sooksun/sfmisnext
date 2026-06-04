@@ -1,14 +1,29 @@
 // finance1 test-run harness — replays โจทย์ตัวอย่าง (ตย.2) ผ่าน API จริง
 // ใช้: node q.js @testrun/setup.sql && node testrun/run.js
 const L = require('./lib');
-const { SC_ID, SY_ID, BUDGET_YEAR_CE: YEAR, UP_BY, post, get, db, m } = L;
+const { SC_ID, SY_ID, BUDGET_YEAR_CE: YEAR, BUDGET_YEAR_BE: YEAR_BE, UP_BY, post, get, db, m } = L;
+const RUN_TAG = process.env.SFMIS_TEST_RUN_TAG || '';
+const DATE_SHIFT_YEARS = Number(process.env.SFMIS_TEST_DATE_SHIFT_YEARS || 0);
+const STOP_ON_FAIL = process.env.SFMIS_TEST_STOP_ON_FAIL === '1';
+const yearSuffix = String(Number(YEAR_BE) % 100).padStart(2, '0');
 
 const results = [];
 function rec(step, ok, detail) {
   results.push({ step, ok: !!ok, detail });
   console.log(`${ok ? '✅' : '❌'} ${step}${detail ? '  ' + detail : ''}`);
+  if (!ok && STOP_ON_FAIL) {
+    throw new Error(`${step}${detail ? ` :: ${detail}` : ''}`);
+  }
 }
 const short = (b) => (typeof b === 'string' ? b : JSON.stringify(b)).slice(0, 140);
+const d = (date) => {
+  if (!DATE_SHIFT_YEARS) return date;
+  const shifted = new Date(`${date}T00:00:00Z`);
+  shifted.setUTCFullYear(shifted.getUTCFullYear() + DATE_SHIFT_YEARS);
+  return shifted.toISOString().slice(0, 10);
+};
+const docNo = (value) => String(value).replace('/56', `/${yearSuffix}`);
+const tagged = (value) => (RUN_TAG ? `${RUN_TAG} ${value}` : value);
 
 // ── Recorders ────────────────────────────────────────────────────────────
 const CH_RCV = { cash: 2, bank: 3, check: 1 };  // receive_money_type
@@ -18,28 +33,61 @@ async function income(date, mt, amount, detail, channel = 'bank') {
   return incomeMulti(date, [{ bg_type_id: mt, prd_detail: detail, prd_budget: amount }], channel, detail);
 }
 async function incomeMulti(date, lines, channel, label) {
+  const actualDate = d(date);
+  const actualLabel = tagged(label || lines[0]?.prd_detail || '');
+  const existing = (await db(
+    'SELECT pr_id FROM pln_receive WHERE sc_id=? AND sy_id=? AND budget_year=? AND receive_form=? AND del=0 LIMIT 1',
+    [SC_ID, SY_ID, YEAR, actualLabel],
+  ))[0];
+  if (existing) {
+    const total = lines.reduce((s, l) => s + l.prd_budget, 0);
+    rec(`[รับ ${actualDate}] ${actualLabel} = ${m(total)} (${channel})`, true, 'skip exists');
+    return;
+  }
   const r = await post('Receive/addReceive', {
     sc_id: SC_ID, sy_id: SY_ID, budget_year: YEAR,
     receive_money_type: CH_RCV[channel] ?? 3,
-    receive_date: date, receive_form: label || lines[0]?.prd_detail || '',
+    receive_date: actualDate, receive_form: actualLabel,
     user_receive: UP_BY, up_by: UP_BY, cf_transaction: 0,
-    receiveList: lines.map(l => ({ bg_type_id: l.bg_type_id, prd_detail: l.prd_detail, prd_budget: l.prd_budget, up_by: UP_BY })),
+    receiveList: lines.map(l => ({ bg_type_id: l.bg_type_id, prd_detail: tagged(l.prd_detail), prd_budget: l.prd_budget, up_by: UP_BY })),
   });
   const total = lines.reduce((s, l) => s + l.prd_budget, 0);
-  rec(`[รับ ${date}] ${label || lines[0].prd_detail} = ${m(total)} (${channel})`, r.ok && r.body.flag !== false, short(r.body));
+  rec(`[รับ ${actualDate}] ${actualLabel} = ${m(total)} (${channel})`, r.ok && r.body.flag !== false, short(r.body));
 }
 
 let chequeNo = 1345781; // เลขเช็คเริ่มต้น (ตย.6)
 async function expense(date, no_doc, mt, amount, detail, channel = 'bank') {
   const toc = CH_PAY[channel] ?? 2;
-  const add = await post('Invoice/addInvoice', {
-    sc_id: SC_ID, no_doc, bg_type_id: mt, rw_type: 3, p_id: 0,
-    detail, amount, certificate_payment: toc, date_request: date,
-    user_request: UP_BY, sy_id: SY_ID, year: YEAR, status: 200,
-    type_offer_check: toc, up_by: UP_BY,
-  });
-  if (!add.ok || add.body.flag === false) { rec(`[จ่าย ${date}] ${detail} = ${m(amount)}`, false, 'addInvoice: ' + short(add.body)); return; }
-  const row = (await db('SELECT rw_id FROM request_withdraw WHERE sc_id=? AND year=? AND no_doc=? AND del=0 ORDER BY rw_id DESC LIMIT 1', [SC_ID, YEAR, no_doc]))[0];
+  const actualDate = d(date);
+  const actualNoDoc = docNo(no_doc);
+  const actualDetail = tagged(detail);
+  let row = (await db(
+    `SELECT rw_id, status FROM request_withdraw
+     WHERE sc_id=? AND sy_id=? AND year=? AND del=0
+       AND (no_doc=? OR (detail=? AND ABS(amount - ?) < 0.005 AND DATE(date_request)=?))
+     ORDER BY (status = 202) DESC, rw_id DESC LIMIT 1`,
+    [SC_ID, SY_ID, YEAR, actualNoDoc, actualDetail, amount, actualDate],
+  ))[0];
+  if (row?.status === 202) {
+    rec(`[จ่าย ${actualDate}] ${actualDetail} = ${m(amount)} (${channel} ${actualNoDoc})`, true, 'skip exists');
+    return;
+  }
+  if (!row) {
+    const add = await post('Invoice/addInvoice', {
+      sc_id: SC_ID, no_doc: actualNoDoc, bg_type_id: mt, rw_type: 3, p_id: 0,
+      detail: actualDetail, amount, certificate_payment: toc, date_request: actualDate,
+      user_request: UP_BY, sy_id: SY_ID, year: YEAR, status: 200,
+      type_offer_check: toc, up_by: UP_BY,
+    });
+    if (!add.ok || add.body.flag === false) { rec(`[จ่าย ${actualDate}] ${actualDetail} = ${m(amount)}`, false, 'addInvoice: ' + short(add.body)); return; }
+    row = (await db(
+      `SELECT rw_id, status FROM request_withdraw
+       WHERE sc_id=? AND sy_id=? AND year=? AND del=0
+         AND (no_doc=? OR (detail=? AND ABS(amount - ?) < 0.005 AND DATE(date_request)=?))
+       ORDER BY (status = 202) DESC, rw_id DESC LIMIT 1`,
+      [SC_ID, SY_ID, YEAR, actualNoDoc, actualDetail, amount, actualDate],
+    ))[0];
+  }
   if (!row) { rec(`[จ่าย ${date}] ${detail}`, false, 'rw_id not found'); return; }
   if (amount >= 5000) {
     await post('Check/saveCommittee', { rw_id: row.rw_id, sc_id: SC_ID, member1_name: 'นายตรวจรับ หนึ่ง', member1_position: 'ครู', up_by: UP_BY });
@@ -47,11 +95,11 @@ async function expense(date, no_doc, mt, amount, detail, channel = 'bank') {
   // จ่ายผ่านธนาคาร (บจ) → ออกเช็คเลขตัวเลข ; จ่ายเงินสด (บค) → ไม่มีเลขเช็ค
   const payload = {
     rw_id: row.rw_id, sc_id: SC_ID, status: 202, type_offer_check: toc,
-    offer_check_date: date, up_by: UP_BY,
+    offer_check_date: actualDate, up_by: UP_BY,
   };
   if (channel === 'bank') payload.check_no_doc = chequeNo++;
   const up = await post('Check/updateCheck', payload);
-  rec(`[จ่าย ${date}] ${detail} = ${m(amount)} (${channel} ${no_doc})`, up.ok && up.body.flag !== false, short(up.body));
+  rec(`[จ่าย ${actualDate}] ${actualDetail} = ${m(amount)} (${channel} ${actualNoDoc})`, up.ok && up.body.flag !== false, short(up.body));
 }
 
 async function taxReceive(date, amount, detail) {
@@ -59,45 +107,157 @@ async function taxReceive(date, amount, detail) {
 }
 
 async function loanBorrow(date, borrowerId, mt, amount, purpose, category = 3) {
+  const actualDate = d(date);
+  const actualPurpose = tagged(purpose);
+  const existing = (await db(
+    'SELECT la_id, status FROM loan_agreement WHERE sc_id=? AND sy_id=? AND borrower_id=? AND borrow_date=? AND amount=? AND purpose=? AND del=0 LIMIT 1',
+    [SC_ID, SY_ID, borrowerId, actualDate, amount, actualPurpose],
+  ))[0];
+  if (existing) {
+    rec(`[ยืม ${actualDate}] borrower#${borrowerId} ${actualPurpose} = ${m(amount)}`, true, 'skip exists');
+    return;
+  }
   const r = await post('LoanAgreement/addLoanAgreement', {
-    sc_id: SC_ID, sy_id: SY_ID, budget_year: '2556',
-    borrower_id: borrowerId, money_type_id: mt, purpose, amount,
-    borrow_date: date, loan_category: category, up_by: UP_BY,
+    sc_id: SC_ID, sy_id: SY_ID, budget_year: YEAR_BE,
+    borrower_id: borrowerId, money_type_id: mt, purpose: actualPurpose, amount,
+    borrow_date: actualDate, loan_category: category, up_by: UP_BY,
   });
-  rec(`[ยืม ${date}] borrower#${borrowerId} ${purpose} = ${m(amount)}`, r.ok && r.body.flag !== false, short(r.body));
+  rec(`[ยืม ${actualDate}] borrower#${borrowerId} ${actualPurpose} = ${m(amount)}`, r.ok && r.body.flag !== false, short(r.body));
 }
 async function loanReturn(date, borrowerId, cash, voucher, evNo) {
-  const row = (await db("SELECT la_id, amount FROM loan_agreement WHERE sc_id=? AND borrower_id=? AND status=1 AND del=0 ORDER BY la_id ASC LIMIT 1", [SC_ID, borrowerId]))[0];
-  if (!row) { rec(`[ส่งใช้ ${date}] borrower#${borrowerId}`, false, 'ไม่พบสัญญายืมค้าง'); return; }
+  const actualDate = d(date);
+  const existingReturn = (await db(
+    'SELECT la_id FROM loan_agreement WHERE sc_id=? AND sy_id=? AND borrower_id=? AND returned_date=? AND del=0 LIMIT 1',
+    [SC_ID, SY_ID, borrowerId, actualDate],
+  ))[0];
+  if (existingReturn) {
+    rec(`[ส่งใช้ ${actualDate}] borrower#${borrowerId} เงินสด ${m(cash)}+ใบสำคัญ ${m(voucher)}`, true, 'skip exists');
+    return;
+  }
+  const row = (await db("SELECT la_id, amount FROM loan_agreement WHERE sc_id=? AND sy_id=? AND borrower_id=? AND status=1 AND del=0 ORDER BY la_id ASC LIMIT 1", [SC_ID, SY_ID, borrowerId]))[0];
+  if (!row) { rec(`[ส่งใช้ ${actualDate}] borrower#${borrowerId}`, false, 'ไม่พบสัญญายืมค้าง'); return; }
   const r = await post('LoanAgreement/returnLoan', {
-    la_id: row.la_id, returned_date: date, return_cash: cash, return_voucher_amount: voucher,
-    evidence_no: evNo, up_by: UP_BY,
+    la_id: row.la_id, returned_date: actualDate, return_cash: cash, return_voucher_amount: voucher,
+    evidence_no: tagged(evNo), up_by: UP_BY,
   });
-  rec(`[ส่งใช้ ${date}] borrower#${borrowerId} เงินสด ${m(cash)}+ใบสำคัญ ${m(voucher)}`, r.ok && r.body.flag !== false, short(r.body));
+  rec(`[ส่งใช้ ${actualDate}] borrower#${borrowerId} เงินสด ${m(cash)}+ใบสำคัญ ${m(voucher)}`, r.ok && r.body.flag !== false, short(r.body));
 }
 
 async function govRev(date, revenue_type, entry_type, amount, detail) {
+  const actualDate = d(date);
+  const actualDetail = tagged(detail);
+  const existing = (await db(
+    'SELECT gre_id FROM gov_revenue_entry WHERE sc_id=? AND sy_id=? AND budget_year=? AND doc_date=? AND detail=? AND entry_type=? AND del=0 LIMIT 1',
+    [SC_ID, SY_ID, YEAR_BE, actualDate, actualDetail, entry_type],
+  ))[0];
+  if (existing) {
+    rec(`[รายได้แผ่นดิน ${actualDate}] ${entry_type === 1 ? 'รับ' : 'นำส่ง'} ${actualDetail} = ${m(amount)}`, true, 'skip exists');
+    return;
+  }
   const r = await post('GovRevenue/addEntry', {
-    sc_id: SC_ID, sy_id: SY_ID, budget_year: '2556',
-    revenue_type, entry_type, doc_date: date, detail, amount, up_by: UP_BY,
+    sc_id: SC_ID, sy_id: SY_ID, budget_year: YEAR_BE,
+    revenue_type, entry_type, doc_date: actualDate, detail: actualDetail, amount, up_by: UP_BY,
   });
-  rec(`[รายได้แผ่นดิน ${date}] ${entry_type === 1 ? 'รับ' : 'นำส่ง'} ${detail} = ${m(amount)}`, r.ok && r.body.flag !== false, short(r.body));
+  rec(`[รายได้แผ่นดิน ${actualDate}] ${entry_type === 1 ? 'รับ' : 'นำส่ง'} ${actualDetail} = ${m(amount)}`, r.ok && r.body.flag !== false, short(r.body));
 }
 async function smp(date, mt, entry_type, amount, detail) {
+  const actualDate = d(date);
+  const actualDetail = tagged(detail);
+  const existing = (await db(
+    'SELECT sde_id FROM smp_deposit_entry WHERE sc_id=? AND sy_id=? AND budget_year=? AND doc_date=? AND detail=? AND entry_type=? AND del=0 LIMIT 1',
+    [SC_ID, SY_ID, YEAR_BE, actualDate, actualDetail, entry_type],
+  ))[0];
+  if (existing) {
+    rec(`[ฝากส่วนราชการ ${actualDate}] ${entry_type === 1 ? 'ฝาก' : 'ถอน'} ${actualDetail} = ${m(amount)}`, true, 'skip exists');
+    return;
+  }
   const r = await post('SmpDeposit/addEntry', {
-    sc_id: SC_ID, sy_id: SY_ID, budget_year: '2556',
-    entry_type, doc_date: date, detail, amount, money_type_id: mt, up_by: UP_BY,
+    sc_id: SC_ID, sy_id: SY_ID, budget_year: YEAR_BE,
+    entry_type, doc_date: actualDate, detail: actualDetail, amount, money_type_id: mt, up_by: UP_BY,
   });
-  rec(`[ฝากส่วนราชการ ${date}] ${entry_type === 1 ? 'ฝาก' : 'ถอน'} ${detail} = ${m(amount)}`, r.ok && r.body.flag !== false, short(r.body));
+  rec(`[ฝากส่วนราชการ ${actualDate}] ${entry_type === 1 ? 'ฝาก' : 'ถอน'} ${actualDetail} = ${m(amount)}`, r.ok && r.body.flag !== false, short(r.body));
 }
 async function bankLedger(date, ba_id, entry_type, amount, detail) {
+  const actualDate = d(date);
+  const actualDetail = tagged(detail);
+  const existing = (await db(
+    'SELECT ble_id FROM bank_ledger_entry WHERE sc_id=? AND sy_id=? AND entry_date=? AND detail=? AND entry_type=? AND del=0 LIMIT 1',
+    [SC_ID, SY_ID, actualDate, actualDetail, entry_type],
+  ))[0];
+  if (existing) {
+    rec(`[ธนาคาร ${actualDate}] ${entry_type === 1 ? 'ฝาก' : 'ถอน'} ${actualDetail} = ${m(amount)}`, true, 'skip exists');
+    return;
+  }
   const r = await post('BankLedger/addEntry', {
-    sc_id: SC_ID, sy_id: SY_ID, ba_id, entry_type, entry_date: date, detail, amount, up_by: UP_BY,
+    sc_id: SC_ID, sy_id: SY_ID, ba_id, entry_type, entry_date: actualDate, detail: actualDetail, amount, up_by: UP_BY,
   });
-  rec(`[ธนาคาร ${date}] ${entry_type === 1 ? 'ฝาก' : 'ถอน'} ${detail} = ${m(amount)}`, r.ok && r.body.flag !== false, short(r.body));
+  rec(`[ธนาคาร ${actualDate}] ${entry_type === 1 ? 'ฝาก' : 'ถอน'} ${actualDetail} = ${m(amount)}`, r.ok && r.body.flag !== false, short(r.body));
 }
 
 // ── Opening balances (ตย.1) ────────────────────────────────────────────────
+async function phasePrereq() {
+  console.log('\n── Phase 0: เตรียมข้อมูลตั้งต้น ──');
+  const year = (await db(
+    'SELECT sy_id, budget_year, budget_date_s, budget_date_e FROM school_year WHERE sc_id=? AND sy_id=? AND del=0 LIMIT 1',
+    [SC_ID, SY_ID],
+  ))[0];
+  rec(`ตรวจปีงบ SY=${SY_ID} budget_year=${YEAR_BE}`, !!year && String(year.budget_year) === YEAR_BE, year ? `${year.budget_date_s}..${year.budget_date_e}` : 'ไม่พบปีงบ');
+
+  const borrowers = [
+    [101, 'นางนิภา ธันยพร', 'nipha_borrower'],
+    [102, 'นายสุชาติ วิทยาสุข', 'suchat_borrower'],
+    [103, 'นางสุดสวย เชิญยิ้ม', 'sudsuay_borrower'],
+    [104, 'นายทองดี อาทิตย์', 'thongdee_borrower'],
+  ];
+  for (const [id, name, username] of borrowers) {
+    await db(
+      `INSERT INTO admin (admin_id, name, username, password, type, position, sc_id, up_by, del, cre_date, up_date)
+       VALUES (?, ?, ?, 'x', 7, 5, ?, ?, 0, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE name=VALUES(name), username=VALUES(username), sc_id=VALUES(sc_id), del=0, up_date=NOW()`,
+      [id, name, username, SC_ID, UP_BY],
+    );
+  }
+  rec('ตรวจ/สร้างผู้ยืมตามโจทย์ 4 คน', true, 'OK');
+
+  const openingBorrowDate = d('2012-05-17');
+  const openingReturnDate = d('2012-10-12');
+  const existingOpeningLoan = (await db(
+    'SELECT la_id, status FROM loan_agreement WHERE sc_id=? AND sy_id=? AND borrower_id=101 AND amount=13975 AND del=0 AND (borrow_date=? OR returned_date=?) LIMIT 1',
+    [SC_ID, SY_ID, openingBorrowDate, openingReturnDate],
+  ))[0];
+  if (existingOpeningLoan) {
+    rec('เงินยืมค้างต้นปี: นางนิภา 13,975', true, 'skip exists');
+  } else {
+    const moneyType = (await db('SELECT budget_type FROM master_budget_income_type WHERE bg_type_id=106 LIMIT 1'))[0];
+    await db(
+      `INSERT INTO loan_agreement
+        (sc_id, sy_id, budget_year, la_seq, la_no, borrower_id, borrower_name, borrower_position,
+         money_type_id, money_type_name, purpose, amount, borrow_date, loan_category, due_date,
+         status, up_by, del, create_date, update_date)
+       VALUES (?, ?, ?, 0, ?, 101, 'นางนิภา ธันยพร', '5',
+         106, ?, ?, 13975, ?, 3, ?, 1, ?, 0, NOW(), NOW())`,
+      [
+        SC_ID,
+        SY_ID,
+        YEAR_BE,
+        `2/${String((Number(YEAR_BE) - 1) % 100).padStart(2, '0')}`,
+        moneyType?.budget_type || 'เงินอุดหนุน อปท. (อาหารกลางวัน)',
+        tagged('ยืมจัดทำอาหารกลางวัน (ยกมาต้นปี)'),
+        openingBorrowDate,
+        d('2012-06-16'),
+        UP_BY,
+      ],
+    );
+    rec('เงินยืมค้างต้นปี: นางนิภา 13,975', true, 'created');
+  }
+
+  const book = (await db(
+    'SELECT rb_id, book_code, current_no, to_no FROM receipt_book WHERE sc_id=? AND sy_id=? AND budget_year=? AND status=1 AND del=0 ORDER BY rb_id DESC LIMIT 1',
+    [SC_ID, SY_ID, YEAR],
+  ))[0];
+  rec('ตรวจสมุดใบเสร็จ active ตรงปีงบ', !!book, book ? `${book.book_code} เลขถัดไป ${book.current_no}/${book.to_no}` : 'ไม่พบสมุด active');
+}
+
 const OPENING = [
   [101, 2, 178590], [102, 2, 1500], [103, 2, 15400], [104, 2, 141500], [105, 2, 156500],
   [106, 2, 200000], [106, 3, 150500], [107, 2, 30000], [108, 2, 50000], [109, 3, 14500],
@@ -106,8 +266,17 @@ const OPENING = [
 async function phaseOpening() {
   console.log('\n── Phase 1: ยอดยกมา (ตย.1) ──');
   for (const [mt, st, amt] of OPENING) {
+    const balanceDate = d('2012-09-30');
+    const existing = (await db(
+      'SELECT ob_id FROM opening_balance WHERE sc_id=? AND sy_id=? AND budget_year=? AND balance_date=? AND money_type_id=? AND storage_type=? AND del=0 LIMIT 1',
+      [SC_ID, SY_ID, YEAR_BE, balanceDate, mt, st],
+    ))[0];
+    if (existing) {
+      rec(`opening mt=${mt} st=${st} ${m(amt)}`, true, 'skip exists');
+      continue;
+    }
     const r = await post('OpeningBalance/add', {
-      sc_id: SC_ID, sy_id: SY_ID, budget_year: '2556', balance_date: '2012-09-30',
+      sc_id: SC_ID, sy_id: SY_ID, budget_year: YEAR_BE, balance_date: balanceDate,
       money_type_id: mt, storage_type: st, amount: amt, up_by: UP_BY,
     });
     rec(`opening mt=${mt} st=${st} ${m(amt)}`, r.ok && r.body.flag !== false, short(r.body));
@@ -225,29 +394,29 @@ async function phaseTx() {
   // 27 ธ.ค.
   await expense('2012-12-27', 'บค.66-70/56', 106, 13975, 'เบิกชดเชยอาหารกลางวัน 20-21,24-26 ธ.ค.', 'cash');
   await income('2012-12-27', 105, 15000, 'เทศบาลสนับสนุนโครงการคุณหนูแสนดี', 'cash');
-  await loanBorrow('2012-12-27', 104, 101, 17000, 'นายทองดี ยืมจัดกิจกรรมเข้าค่ายคุณธรรม', 3);
+  await loanBorrow('2012-12-27', 104, 104, 17000, 'นายทองดี ยืมจัดกิจกรรมเข้าค่ายคุณธรรม (เรียนฟรี-กิจกรรมพัฒนาผู้เรียน)', 3);
   // 28 ธ.ค.
   await expense('2012-12-28', 'บค.71/56', 108, 5000, 'ค่าจ้างครูวงดุริยางค์', 'cash');
   await govRev('2012-12-28', 2, 1, 530, 'รับดอกเบี้ยบัญชีอุดหนุนอาหารกลางวัน');
   await govRev('2012-12-28', 1, 1, 1245, 'รับดอกเบี้ยบัญชีอุดหนุนทั่วไป');
   await govRev('2012-12-28', 4, 1, 1568, 'รับดอกเบี้ยบัญชีรายได้สถานศึกษา');
   await loanReturn('2012-12-28', 103, 850, 28650, 'นางสุดสวย ส่งใช้เงินยืมราชการ');
-  await expense('2012-12-28', 'บจ.27/56', 103, 25500, 'จัดซื้ออุปกรณ์เครื่องครัว ร้านสุภา', 'bank');
+  await expense('2012-12-28', 'บจ.27/56', 106, 25500, 'จัดซื้ออุปกรณ์เครื่องครัว ร้านสุภา (โครงการอาหารกลางวัน)', 'bank');
   await taxReceive('2012-12-28', 255, 'ร้านสุภาเครื่องครัว');
 }
 
 // ── Verification ───────────────────────────────────────────────────────────
 async function phaseVerify() {
   console.log('\n── Phase 3: ตรวจสอบผล ──');
-  const ft = await db("SELECT type, COUNT(*) c, SUM(amount) amt FROM financial_transactions WHERE sc_id=? AND bg_type_id BETWEEN 101 AND 120 AND del=0 GROUP BY type", [SC_ID]);
+  const ft = await db("SELECT type, COUNT(*) c, SUM(amount) amt FROM financial_transactions WHERE sc_id=? AND sy_id=? AND bg_type_id BETWEEN 101 AND 120 AND del=0 GROUP BY type", [SC_ID, SY_ID]);
   console.log('financial_transactions:', JSON.stringify(ft));
-  const byType = await db("SELECT bg_type_id, SUM(CASE WHEN type=1 THEN amount ELSE -amount END) net, COUNT(*) c FROM financial_transactions WHERE sc_id=? AND bg_type_id BETWEEN 101 AND 120 AND del=0 GROUP BY bg_type_id ORDER BY bg_type_id", [SC_ID]);
+  const byType = await db("SELECT bg_type_id, SUM(CASE WHEN type=1 THEN amount ELSE -amount END) net, COUNT(*) c FROM financial_transactions WHERE sc_id=? AND sy_id=? AND bg_type_id BETWEEN 101 AND 120 AND del=0 GROUP BY bg_type_id ORDER BY bg_type_id", [SC_ID, SY_ID]);
   console.table(byType.map(r => ({ bg_type_id: r.bg_type_id, net: m(r.net), entries: r.c })));
   const loans = await db("SELECT borrower_name, amount, status FROM loan_agreement WHERE sc_id=? AND sy_id=? AND del=0 ORDER BY la_id", [SC_ID, SY_ID]);
   console.log('loans:', JSON.stringify(loans));
-  const gov = await db("SELECT revenue_type, entry_type, SUM(amount) amt FROM gov_revenue_entry WHERE sc_id=? AND budget_year='2556' AND del=0 GROUP BY revenue_type, entry_type", [SC_ID]);
+  const gov = await db("SELECT revenue_type, entry_type, SUM(amount) amt FROM gov_revenue_entry WHERE sc_id=? AND sy_id=? AND budget_year=? AND del=0 GROUP BY revenue_type, entry_type", [SC_ID, SY_ID, YEAR_BE]);
   console.log('gov_revenue:', JSON.stringify(gov));
-  const smpRows = await db("SELECT entry_type, SUM(amount) amt FROM smp_deposit_entry WHERE sc_id=? AND budget_year='2556' AND del=0 GROUP BY entry_type", [SC_ID]);
+  const smpRows = await db("SELECT entry_type, SUM(amount) amt FROM smp_deposit_entry WHERE sc_id=? AND sy_id=? AND budget_year=? AND del=0 GROUP BY entry_type", [SC_ID, SY_ID, YEAR_BE]);
   console.log('smp_deposit:', JSON.stringify(smpRows));
 
   // ── ทะเบียนคุมเงินนอกงบประมาณ ทุกประเภท (ผ่าน read API จริง รวมยอดยกมา) ──
@@ -269,7 +438,8 @@ async function phaseVerify() {
 
 async function main() {
   await L.login();
-  console.log('logged in. SC=%d SY=%d YEAR(CE)=%s', SC_ID, SY_ID, YEAR);
+  console.log('logged in. SC=%d SY=%d YEAR(CE)=%s YEAR(BE)=%s', SC_ID, SY_ID, YEAR, YEAR_BE);
+  await phasePrereq();
   await phaseOpening();
   await phaseTx();
   await phaseVerify();

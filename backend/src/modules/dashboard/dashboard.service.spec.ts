@@ -42,13 +42,28 @@ describe('DashboardService', () => {
         DashboardService,
         { provide: getRepositoryToken(SchoolYear), useValue: syRepo },
         { provide: getRepositoryToken(School), useValue: schoolRepo },
-        { provide: getRepositoryToken(FinancialTransactions), useValue: ftRepo },
+        {
+          provide: getRepositoryToken(FinancialTransactions),
+          useValue: ftRepo,
+        },
         { provide: getRepositoryToken(BudgetIncomeType), useValue: bgTypeRepo },
-        { provide: getRepositoryToken(TbEstimateAcadyear), useValue: estimateRepo },
-        { provide: GovRevenueService, useValue: { interestReminder: jest.fn() } },
-        { provide: RegisterMoneyTypeService, useValue: { whtRemitReminder: jest.fn() } },
+        {
+          provide: getRepositoryToken(TbEstimateAcadyear),
+          useValue: estimateRepo,
+        },
+        {
+          provide: GovRevenueService,
+          useValue: { interestReminder: jest.fn() },
+        },
+        {
+          provide: RegisterMoneyTypeService,
+          useValue: { whtRemitReminder: jest.fn() },
+        },
         { provide: LoanAgreementService, useValue: { dueReminder: jest.fn() } },
-        { provide: ReportDailyBalanceService, useValue: { loadCashLimitCheck: jest.fn() } },
+        {
+          provide: ReportDailyBalanceService,
+          useValue: { loadCashLimitCheck: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -83,7 +98,9 @@ describe('DashboardService', () => {
     it('แปลง total string → number และ round ทศนิยม', async () => {
       const qb = makeQb([{ bgTypeId: 1, total: '12345.678' }]);
       ftRepo.createQueryBuilder.mockReturnValue(qb);
-      bgTypeRepo.find.mockResolvedValue([{ bgTypeId: 1, budgetType: 'เงินอุดหนุน', del: 0 }]);
+      bgTypeRepo.find.mockResolvedValue([
+        { bgTypeId: 1, budgetType: 'เงินอุดหนุน', del: 0 },
+      ]);
 
       const result = await service.loadChartBudgetTypePie(1);
       expect(result.data[0]).toBe(12345.68); // round 2 ทศนิยม
@@ -124,7 +141,9 @@ describe('DashboardService', () => {
     it('แปลง income/expense string → number', async () => {
       const qb = makeQb([{ bgTypeId: 1, income: '5000', expense: '1500' }]);
       ftRepo.createQueryBuilder.mockReturnValue(qb);
-      bgTypeRepo.find.mockResolvedValue([{ bgTypeId: 1, budgetType: 'เงินอุดหนุน', del: 0 }]);
+      bgTypeRepo.find.mockResolvedValue([
+        { bgTypeId: 1, budgetType: 'เงินอุดหนุน', del: 0 },
+      ]);
 
       const result = await service.loadChartBudgetTypeBar(1);
       expect(result.data[0].income).toBe(5000);
@@ -147,7 +166,10 @@ describe('DashboardService', () => {
       // ตรวจว่า ftQb.andWhere ถูกเรียกด้วย fiscalStart/End ที่ถูกต้อง
       expect(ftQb.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('ft.create_date'),
-        expect.objectContaining({ fiscalStart: '2024-10-01', fiscalEnd: '2025-09-30' }),
+        expect.objectContaining({
+          fiscalStart: '2024-10-01',
+          fiscalEnd: '2025-09-30',
+        }),
       );
     });
 
@@ -199,7 +221,11 @@ describe('DashboardService', () => {
     });
 
     it('คำนวณ remaining = income - expense', async () => {
-      syRepo.findOne.mockResolvedValue({ syId: 1, syYear: '2568', budgetYear: '2568' });
+      syRepo.findOne.mockResolvedValue({
+        syId: 1,
+        syYear: '2568',
+        budgetYear: '2568',
+      });
       const ftQb = makeQb({ income: '100000', expense: '30000' });
       ftRepo.createQueryBuilder.mockReturnValue(ftQb);
       const estQb = makeQb({ total: '90000' });
@@ -223,10 +249,24 @@ describe('DashboardService', () => {
     });
 
     it('map ปีการศึกษาถูกต้อง', async () => {
-      syRepo.find.mockResolvedValue([{ syId: 3, syYear: '2568', semester: 1, syDateS: null, syDateE: null, budgetYear: '2568' }]);
+      syRepo.find.mockResolvedValue([
+        {
+          syId: 3,
+          syYear: '2568',
+          semester: 1,
+          syDateS: null,
+          syDateE: null,
+          budgetYear: '2568',
+        },
+      ]);
 
       const result = await service.getRound(1);
-      expect(result.rounds[0]).toMatchObject({ sy_id: 3, sy_year: '2568', semester: 1, budget_year: '2568' });
+      expect(result.rounds[0]).toMatchObject({
+        sy_id: 3,
+        sy_year: '2568',
+        semester: 1,
+        budget_year: '2568',
+      });
     });
   });
 });

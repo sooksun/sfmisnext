@@ -1,13 +1,16 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Search, TrendingUp, TrendingDown, Wallet } from 'lucide-react'
+import { Search, TrendingUp, TrendingDown, Wallet, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 import { Button } from '@/components/ui/button'
 import { apiGet } from '@/lib/api'
 import { fmtDateTH, showNumber, cn } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
+import { openPrintWindow } from '@/lib/print-utils'
+import { officialNonBudgetRegisterForm, officialSchoolRevenueReport } from '@/lib/official-forms'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,7 +64,7 @@ function SkeletonRows({ count = 8 }: { count?: number }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function UnifiedRegisterPage() {
-  const { scId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const { scId, syId, budgetYear: budgetYearRaw, scName } = useAppContext()
   const budgetYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
   const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   // ── localStorage state ────────────────────────────────────────────────────
@@ -122,6 +125,70 @@ export default function UnifiedRegisterPage() {
     setAppliedTo('')
   }
 
+  // พิมพ์แบบฟอร์ม "ทะเบียนคุมเงินนอกงบประมาณ" (สพฐ. 2567)
+  function handlePrint() {
+    if (!detailData) return
+    const rows = (detailData.transactions ?? []).map((t) => {
+      const isCash = t.receive_money_type === 2 // 2=เงินสด ; 1=เช็ค/3=โอน → ธนาคาร
+      const bal = Number(t.balance)
+      return {
+        date: t.create_date,
+        docNo: t.doc_no,
+        detail: t.detail,
+        receive: t.type === 1 ? t.amount : null,
+        pay: t.type === -1 ? t.amount : null,
+        cash: isCash ? bal : null,
+        bank: isCash ? null : bal,
+        smp: null,
+        note: null,
+      }
+    })
+    const body = officialNonBudgetRegisterForm({
+      scName,
+      fundTypeName: detailData.budget_type,
+      budgetYear,
+      rows,
+    })
+    openPrintWindow({ title: `ทะเบียนคุมเงิน_${detailData.budget_type}`, body })
+  }
+
+  // พิมพ์ "รายงานการรับ-จ่ายเงินรายได้สถานศึกษา" (form-030) — เฉพาะกองทุนเงินรายได้สถานศึกษา
+  const isSchoolRevenue = (detailData?.budget_type ?? '').includes('รายได้สถานศึกษา')
+  async function handlePrintRevenueReport() {
+    if (!detailData || activeTab === null) return
+    try {
+      const rep = await apiGet<{
+        opening: number
+        income: Record<string, number>
+        expense: Record<string, number>
+        total_receive: number
+        total_pay: number
+        carry_forward: number
+      }>(`UnifiedRegister/schoolRevenueReport/${scId}/${syId}/${apiYear}/${activeTab}`)
+      const body = officialSchoolRevenueReport({
+        scName,
+        fiscalYear: budgetYear,
+        opening: rep.opening,
+        income: rep.income,
+        expense: rep.expense,
+        totalReceive: rep.total_receive,
+        totalPay: rep.total_pay,
+        carryForward: rep.carry_forward,
+      })
+      openPrintWindow({ title: `รายงานรับจ่ายรายได้สถานศึกษา_${budgetYear}`, body })
+    } catch {
+      // fallback: ยอดรวมอย่างเดียว
+      const body = officialSchoolRevenueReport({
+        scName,
+        fiscalYear: budgetYear,
+        totalReceive: Number(detailData.revenue || 0),
+        totalPay: Number(detailData.expenses || 0),
+        carryForward: Number(detailData.balance || 0),
+      })
+      openPrintWindow({ title: `รายงานรับจ่ายรายได้สถานศึกษา_${budgetYear}`, body })
+    }
+  }
+
   // ── Aggregate summary totals ───────────────────────────────────────────────
   const totalRevenue = summaryData?.reduce((s, r) => s + r.revenue, 0) ?? 0
   const totalExpenses = summaryData?.reduce((s, r) => s + r.expenses, 0) ?? 0
@@ -134,6 +201,7 @@ export default function UnifiedRegisterPage() {
   return (
     <div className="flex flex-col flex-auto min-w-0">
       <PageHeader title="ทะเบียนคุมเงินทุกประเภท" subtitle={budgetYear ? `ปีงบประมาณ พ.ศ. ${budgetYear}` : undefined} />
+      <ProcessFlow flow="receive" />
 
       <div className="p-4 space-y-4">
         {/* ── Summary Cards ──────────────────────────────────────────────── */}
@@ -257,6 +325,18 @@ export default function UnifiedRegisterPage() {
                   </div>
                 )}
               </div>
+              {transactions.length > 0 && (
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1">
+                    <Printer className="h-4 w-4" /> ทะเบียนคุม
+                  </Button>
+                  {isSchoolRevenue && (
+                    <Button variant="outline" size="sm" onClick={() => void handlePrintRevenueReport()} className="gap-1">
+                      <Printer className="h-4 w-4" /> รายงานรับ-จ่ายรายได้สถานศึกษา
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Transaction table */}

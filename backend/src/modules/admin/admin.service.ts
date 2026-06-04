@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import { Repository, DataSource } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { AddAdminDto } from './dto/add-admin.dto';
 import { UpdateAdminDto } from './dto/update-admin.dto';
 import { UpdateAdminStatusDto } from './dto/update-admin-status.dto';
@@ -125,6 +126,40 @@ export class AdminService {
       data: { ...this.toResponse(admin), sc_name: scName },
       access_token,
     };
+  }
+
+  /** เปลี่ยนรหัสผ่านของผู้ใช้ที่ login อยู่ (ต้องรู้รหัสผ่านเดิม) */
+  async changeMyPassword(adminId: number, payload: ChangePasswordDto) {
+    if (!adminId) {
+      return { flag: false, ms: 'ไม่พบผู้ใช้' };
+    }
+
+    const admin = await this.adminRepository.findOne({
+      where: { adminId, del: 0 },
+    });
+    if (!admin) {
+      return { flag: false, ms: 'ไม่พบผู้ใช้' };
+    }
+
+    const passwordMatch = await this.verifyPassword(
+      payload.old_password,
+      admin,
+    );
+    if (!passwordMatch) {
+      return { flag: false, ms: 'รหัสผ่านเดิมไม่ถูกต้อง' };
+    }
+
+    admin.password = await bcrypt.hash(payload.new_password, BCRYPT_ROUNDS);
+    admin.passwordDefault = undefined;
+    admin.upDate = new Date();
+
+    try {
+      await this.adminRepository.save(admin);
+      return { flag: true, ms: 'เปลี่ยนรหัสผ่านสำเร็จ' };
+    } catch (error) {
+      this.logger.error('changeMyPassword error:', error);
+      return { flag: false, ms: 'ไม่สามารถเปลี่ยนรหัสผ่านได้' };
+    }
   }
 
   /**

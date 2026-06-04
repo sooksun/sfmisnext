@@ -4,8 +4,10 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, XCircle, PenLine, Plus, Trash2, Scale } from 'lucide-react'
+import { CheckCircle2, XCircle, PenLine, Plus, Trash2, Scale, Printer } from 'lucide-react'
 import { toast } from 'sonner'
+import { openPrintWindow } from '@/lib/print-utils'
+import { officialBankReconciliationForm } from '@/lib/official-forms'
 import { PageHeader } from '@/components/shared/page-header'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { Button } from '@/components/ui/button'
@@ -109,7 +111,7 @@ type AddItemForm = z.infer<typeof addItemSchema>
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function BankReconciliationPage() {
-  const { scId, adminId } = useAppContext()
+  const { scId, adminId, scName } = useAppContext()
   const qc = useQueryClient()
   const [selectedBaId, setSelectedBaId] = useState(0)
   const [selectedBrId, setSelectedBrId] = useState<number | null>(null)
@@ -267,6 +269,42 @@ export default function BankReconciliationPage() {
     setCreateDialogOpen(true)
   }
 
+  // พิมพ์แบบฟอร์ม "งบเทียบยอดเงินฝากธนาคาร" (สพฐ. 2567)
+  const handlePrint = () => {
+    if (!reconDetail) return
+    const ym = reconDetail.recon_month || ''
+    let dateStr = ''
+    if (/^\d{4}-\d{2}$/.test(ym)) {
+      const [y, m] = ym.split('-').map(Number)
+      const last = new Date(y, m, 0).getDate()
+      dateStr = `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`
+    }
+    const checks = reconDetail.items
+      .filter((i) => i.item_type === 1)
+      .map((i) => ({
+        label: `เช็คเลขที่ ${i.doc_ref ?? '-'}${i.detail ? ' ' + i.detail : ''}`,
+        amount: Math.abs(Number(i.amount)),
+      }))
+    const deposits = reconDetail.items
+      .filter((i) => i.item_type !== 1)
+      .map((i) => ({
+        label: i.detail ?? i.doc_ref ?? 'รายการ',
+        amount: Math.abs(Number(i.amount)),
+      }))
+    const body = officialBankReconciliationForm({
+      scName,
+      bankName: selectedAccount?.bank_name,
+      accountNo: selectedAccount?.ba_no,
+      date: dateStr,
+      bankStatementBalance: Number(reconDetail.bank_statement_balance),
+      outstandingChecks: checks,
+      depositsInTransit: deposits,
+      bookBalance: Number(reconDetail.book_balance),
+      preparerName: reconDetail.signed_name ?? undefined,
+    })
+    openPrintWindow({ title: `งบเทียบยอด_${ym}`, body })
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-auto min-w-0">
@@ -373,17 +411,22 @@ export default function BankReconciliationPage() {
                     เดือน: {monthLabel(reconDetail.recon_month, monthOptions) || reconDetail.recon_month}
                   </p>
                 </div>
-                {reconDetail.is_balanced ? (
-                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-100 text-green-700 text-sm font-semibold">
-                    <CheckCircle2 className="h-4 w-4" />
-                    ยอดตรงกัน
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-100 text-red-600 text-sm font-semibold">
-                    <XCircle className="h-4 w-4" />
-                    ยอดไม่ตรงกัน
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {reconDetail.is_balanced ? (
+                    <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-100 text-green-700 text-sm font-semibold">
+                      <CheckCircle2 className="h-4 w-4" />
+                      ยอดตรงกัน
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-100 text-red-600 text-sm font-semibold">
+                      <XCircle className="h-4 w-4" />
+                      ยอดไม่ตรงกัน
+                    </span>
+                  )}
+                  <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1">
+                    <Printer className="h-4 w-4" /> พิมพ์แบบฟอร์ม
+                  </Button>
+                </div>
               </div>
 
               {/* ── Comparison table ── */}

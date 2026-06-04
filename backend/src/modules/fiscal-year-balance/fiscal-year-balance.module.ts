@@ -7,6 +7,8 @@ import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 import { SchoolYear } from '../school-year/entities/school-year.entity';
+import { LoanAgreement } from '../loan-agreement/entities/loan-agreement.entity';
+import { FundBorrowing } from '../fund-borrowing/entities/fund-borrowing.entity';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { SchoolYear } from '../school-year/entities/school-year.entity';
       BudgetIncomeType,
       OpeningBalance,
       SchoolYear,
+      LoanAgreement,
+      FundBorrowing,
     ]),
   ],
   controllers: [FiscalYearBalanceController],

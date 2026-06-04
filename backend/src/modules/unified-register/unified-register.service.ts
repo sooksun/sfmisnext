@@ -1,6 +1,43 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+
+/** จัดหมวดรายรับเงินรายได้สถานศึกษา ตามแบบ form-030 (heuristic จากข้อความรายการ) */
+function classifyRevenueIncome(detail: string): string {
+  const d = detail || '';
+  if (/ราชพัสดุ|ค่าเช่า|ให้เช่า/.test(d)) return 'raachapasadu'; // 1
+  if (/ปรับ/.test(d) && /ลาศึกษา|ลาเรียน/.test(d)) return 'fine_study'; // 2
+  if (/เบี้ยปรับ|ค่าปรับ|ผิดสัญญา/.test(d)) return 'fine_contract'; // 3
+  if (/บริจาค|มอบให้|ผ้าป่า|กฐิน|ทอดผ้าป่า/.test(d)) {
+    return /ไม่ระบุ/.test(d) ? 'donation_unclear' : 'donation_clear'; // 4.1/4.2
+  }
+  if (/บำรุงการศึกษา|ค่าบำรุง|บำรุง/.test(d)) return 'edu_support'; // 5
+  return 'other'; // 6
+}
+
+/** map request_withdraw.expense_type → หมวดรายจ่าย form-030 */
+function classifyRevenueExpense(expenseType: number | null): string {
+  switch (expenseType) {
+    case 1:
+      return 'personnel_wage'; // งบบุคลากร ค่าจ้างชั่วคราว
+    case 2:
+      return 'operate_remuneration'; // 2.1 ค่าตอบแทน
+    case 3:
+      return 'operate_service'; // 2.2 ค่าใช้สอย
+    case 4:
+      return 'operate_material'; // 2.3 ค่าวัสดุ
+    case 5:
+      return 'operate_utility'; // 2.4 ค่าสาธารณูปโภค
+    case 6:
+      return 'invest_durable'; // 3.1 ค่าครุภัณฑ์
+    case 7:
+      return 'invest_land'; // 3.2 ค่าที่ดินและสิ่งก่อสร้าง
+    case 9:
+      return 'subsidy'; // 4 งบเงินอุดหนุน
+    default:
+      return 'other'; // 5 อื่น ๆ
+  }
+}
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 import { PlnReceive } from '../receive/entities/pln-receive.entity';
@@ -233,6 +270,101 @@ export class UnifiedRegisterService {
       expenses,
       balance,
       transactions: processed,
+    };
+  }
+
+  /**
+   * รายงานการรับ-จ่ายเงินรายได้สถานศึกษา (form-030) แบบจัดหมวดอัตโนมัติ
+   *  - รายรับ: จัดหมวดจากข้อความรายการ (heuristic)
+   *  - รายจ่าย: จัดหมวดจาก request_withdraw.expense_type (แม่นยำ)
+   */
+  async getSchoolRevenueReport(
+    scId: number,
+    syId: number,
+    _year: string,
+    bgTypeId: number,
+  ) {
+    const budgetType = await this.budgetIncomeTypeRepository.findOne({
+      where: { bgTypeId },
+    });
+    const openingByType = await this.loadOpeningByType(scId, syId);
+    const opening = openingByType.get(bgTypeId) ?? 0;
+
+    const fts = await this.financialTransactionsRepository
+      .createQueryBuilder('ft')
+      .where('ft.sc_id = :scId', { scId })
+      .andWhere('ft.del = :del', { del: '0' })
+      .andWhere(syId ? 'ft.sy_id = :syId' : '1=1', { syId })
+      .andWhere('ft.bg_type_id = :bgTypeId', { bgTypeId })
+      .getMany();
+
+    const income: Record<string, number> = {
+      raachapasadu: 0,
+      fine_study: 0,
+      fine_contract: 0,
+      donation_clear: 0,
+      donation_unclear: 0,
+      edu_support: 0,
+      other: 0,
+    };
+    const expense: Record<string, number> = {
+      personnel_wage: 0,
+      operate_remuneration: 0,
+      operate_service: 0,
+      operate_material: 0,
+      operate_utility: 0,
+      invest_durable: 0,
+      invest_land: 0,
+      subsidy: 0,
+      other: 0,
+    };
+
+    // batch-load รายละเอียดรายรับ + ประเภทรายจ่าย
+    const prIds = [
+      ...new Set(fts.filter((f) => f.type === 1 && f.prId > 0).map((f) => f.prId)),
+    ];
+    const rwIds = [
+      ...new Set(fts.filter((f) => f.type === -1 && f.rwId > 0).map((f) => f.rwId)),
+    ];
+    const detailByPr = new Map<number, string>();
+    if (prIds.length) {
+      const rds = await this.plnReceiveDetailRepository.find({
+        where: { prId: In(prIds), del: 0 },
+      });
+      for (const d of rds) {
+        if (!detailByPr.has(d.prId)) detailByPr.set(d.prId, d.prdDetail ?? '');
+      }
+    }
+    const expTypeByRw = new Map<number, number | null>();
+    if (rwIds.length) {
+      const ws = await this.requestWithdrawRepository.find({
+        where: { rwId: In(rwIds) },
+      });
+      for (const w of ws) expTypeByRw.set(w.rwId, w.expenseType ?? null);
+    }
+
+    let totalReceive = 0;
+    let totalPay = 0;
+    for (const f of fts) {
+      const amt = Number(f.amount) || 0;
+      if (f.type === 1) {
+        totalReceive += amt;
+        income[classifyRevenueIncome(detailByPr.get(f.prId) ?? '')] += amt;
+      } else if (f.type === -1) {
+        totalPay += amt;
+        expense[classifyRevenueExpense(expTypeByRw.get(f.rwId) ?? null)] += amt;
+      }
+    }
+
+    return {
+      bg_type_id: bgTypeId,
+      budget_type: budgetType?.budgetType ?? '',
+      opening,
+      income,
+      total_receive: totalReceive,
+      expense,
+      total_pay: totalPay,
+      carry_forward: opening + totalReceive - totalPay, // ยอดยกไป
     };
   }
 }

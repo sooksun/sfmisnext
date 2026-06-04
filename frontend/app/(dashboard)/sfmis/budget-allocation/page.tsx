@@ -3,7 +3,9 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { apiGet } from '@/lib/api'
+import { toBE } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
 
 // ชื่อฟิลด์ตามที่ backend ส่งกลับมา (budget.service.ts::loadPLNBudgetCategory)
@@ -52,12 +54,16 @@ export default function BudgetAllocationPage() {
         <span>{Number(item.percents ?? 0).toLocaleString('th-TH')}</span>
       ),
     },
-    { header: 'ปีงบประมาณ', key: 'budget_year' as keyof BudgetCategory },
+    {
+      header: 'ปีงบประมาณ',
+      render: (item: BudgetCategory) => <span>{toBE(item.budget_year)}</span>,
+    },
   ], [])
 
   return (
     <div className="flex flex-col flex-auto min-w-0">
       <PageHeader title="การจัดสรรงบประมาณ" />
+      <ProcessFlow flow="plan" />
       <div className="p-4">
         <DataTable
           columns={columns}

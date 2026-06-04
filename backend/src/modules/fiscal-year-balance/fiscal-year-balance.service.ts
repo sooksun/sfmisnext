@@ -6,6 +6,8 @@ import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 import { SchoolYear } from '../school-year/entities/school-year.entity';
+import { LoanAgreement } from '../loan-agreement/entities/loan-agreement.entity';
+import { FundBorrowing } from '../fund-borrowing/entities/fund-borrowing.entity';
 import {
   FinalizeYearDto,
   SaveBalanceDto,
@@ -24,6 +26,10 @@ export class FiscalYearBalanceService {
     private readonly openingRepo: Repository<OpeningBalance>,
     @InjectRepository(SchoolYear)
     private readonly schoolYearRepo: Repository<SchoolYear>,
+    @InjectRepository(LoanAgreement)
+    private readonly loanRepo: Repository<LoanAgreement>,
+    @InjectRepository(FundBorrowing)
+    private readonly fundBorrowRepo: Repository<FundBorrowing>,
   ) {}
 
   /** โหลดยอดยกมาของปีที่ต้องการ */
@@ -135,6 +141,36 @@ export class FiscalYearBalanceService {
     });
     if (balances.length === 0)
       return { flag: false, ms: 'ไม่พบข้อมูลยอดยกมา กรุณาบันทึกก่อน' };
+
+    // Guard: ห้ามปิดปีงบถ้ายังมีลูกหนี้เงินยืม/ยืมข้ามประเภทค้างคืน (ต้องคืนภายในปีงบ)
+    const [openLoans, openBorrows] = await Promise.all([
+      this.loanRepo.count({
+        where: {
+          scId: dto.sc_id,
+          budgetYear: dto.budget_year,
+          status: 1,
+          del: 0,
+        },
+      }),
+      this.fundBorrowRepo.count({
+        where: {
+          scId: dto.sc_id,
+          budgetYear: dto.budget_year,
+          status: 1,
+          del: 0,
+        },
+      }),
+    ]);
+    if (openLoans > 0 || openBorrows > 0) {
+      const parts: string[] = [];
+      if (openLoans > 0) parts.push(`ลูกหนี้เงินยืม ${openLoans} รายการ`);
+      if (openBorrows > 0)
+        parts.push(`ยืมเงินข้ามประเภท ${openBorrows} รายการ`);
+      return {
+        flag: false,
+        ms: `ไม่สามารถปิดปีงบได้ — ยังมี${parts.join(' และ ')}ที่ค้างคืน กรุณาล้างให้เรียบร้อยก่อนปิดปี`,
+      };
+    }
 
     const admin = await this.adminRepo.findOne({
       where: { adminId: dto.signed_by },

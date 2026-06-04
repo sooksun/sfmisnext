@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import { AiRouterService } from '../ai-router.service';
 import { ChatMessage } from '../providers/ai-provider.interface';
 import { ChatRequestDto } from '../dto/chat.dto';
+import { RegulatoryConfigService } from '../../regulatory-config/regulatory-config.service';
 
 /** สรุปข้อมูลการเงิน */
 interface FinancialSummary {
@@ -46,6 +47,7 @@ export class ChatService {
   constructor(
     private readonly aiRouter: AiRouterService,
     private readonly dataSource: DataSource,
+    private readonly regulatoryConfig: RegulatoryConfigService,
   ) {}
 
   /**
@@ -99,7 +101,14 @@ export class ChatService {
   private async buildSystemPrompt(ctx: ChatContext): Promise<string> {
     const parts: string[] = [];
 
-    parts.push(`คุณคือผู้ช่วย AI ระบบบริหารการเงินโรงเรียน (SFMIS)`);
+    // ── 1) บทบาท ──────────────────────────────────────────────────────────
+    parts.push(
+      'คุณคือ "ผู้ช่วยการเงินอัจฉริยะ" ของระบบบริหารการเงินและพัสดุโรงเรียน (SFMIS) ' +
+        'สำหรับสถานศึกษาสังกัด สพฐ. — เป็นผู้เชี่ยวชาญด้านการเงิน การบัญชี และพัสดุภาครัฐ',
+    );
+    parts.push(
+      'คุณให้คำปรึกษาที่ถูกต้องตามระเบียบราชการ และตอบคำถามเกี่ยวกับข้อมูลจริงในระบบของโรงเรียนได้',
+    );
     parts.push(`โรงเรียน: ${ctx.scName ?? `รหัส ${ctx.scId}`}`);
     const ceYear =
       ctx.budgetYear && Number(ctx.budgetYear) >= 2400
@@ -111,79 +120,79 @@ export class ChatService {
       `วันที่ปัจจุบัน: ${new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}`,
     );
     parts.push('');
+
+    // ── 2) ฐานความรู้ระเบียบ ──────────────────────────────────────────────
+    try {
+      parts.push(await this.buildRegulatoryKnowledge(ctx.scId));
+      parts.push('');
+    } catch (err) {
+      this.logger.warn('สร้างฐานความรู้ระเบียบไม่สำเร็จ', err);
+    }
+
+    // ── 3) แนวทางการตอบ ───────────────────────────────────────────────────
+    parts.push('แนวทางการตอบ:');
+    parts.push('- ตอบเป็นภาษาไทย กระชับ ชัดเจน เป็นมืออาชีพ และนำไปใช้ได้จริง');
     parts.push(
-      'หน้าที่ของคุณ: ตอบคำถามเกี่ยวกับการเงิน งบประมาณ ใบสำคัญจ่าย เช็ค การยืมเงิน และรายงานต่างๆ ของโรงเรียน',
+      '- เมื่อให้คำปรึกษา ให้อ้างอิงระเบียบ/มาตรา/เกณฑ์ที่เกี่ยวข้องเสมอ (เช่น "ตามระเบียบฯ 2562 ต้องนำส่งภายใน...")',
     );
-    parts.push('ตอบเป็นภาษาไทย กระชับ ชัดเจน และเป็นมืออาชีพ');
-    parts.push('ตัวเลขเงินให้แสดงเป็นบาท เช่น 12,345.67 บาท');
+    parts.push('- ตัวเลขเงินแสดงเป็นบาท เช่น 12,345.67 บาท');
     parts.push(
-      '⚠️ สำคัญมาก: ห้ามใช้ placeholder เช่น (จำนวนเงิน) หรือ (ข้อมูล) เด็ดขาด — ถ้าไม่มีข้อมูลให้บอกตรงๆ ว่า "ไม่มีข้อมูลส่วนนี้ในระบบ"',
+      '- เมื่อถูกถามเรื่องข้อมูลในระบบ ให้ใช้เฉพาะตัวเลขใน "ข้อมูลจริงในระบบ" ด้านล่าง อย่าสร้างตัวเลขเอง',
     );
     parts.push(
-      'ใช้เฉพาะตัวเลขที่ระบุใน context ด้านล่างเท่านั้น อย่าสร้างตัวเลขขึ้นมาเอง',
+      '- ⚠️ ห้ามใช้ placeholder เช่น (จำนวนเงิน)/(ข้อมูล) เด็ดขาด — ถ้าไม่มีข้อมูลให้บอกตรงๆ ว่า "ไม่มีข้อมูลส่วนนี้ในระบบ"',
+    );
+    parts.push(
+      '- ถ้าพบความเสี่ยงผิดระเบียบ (เช่น เงินยืมเกินกำหนด, รายได้แผ่นดินค้างนำส่ง, เงินสดเกินวงเงิน) ให้เตือนและแนะนำวิธีแก้',
     );
     parts.push('');
 
-    // เพิ่มข้อมูลตามหน้าที่อยู่
+    // ── 4) ข้อมูลจริงในระบบ (snapshot) ────────────────────────────────────
+    parts.push('=== ข้อมูลจริงในระบบ (ใช้ตอบคำถามเกี่ยวกับข้อมูล) ===');
     try {
-      if (
-        !ctx.contextPage ||
-        ctx.contextPage === 'dashboard' ||
-        ctx.contextPage === 'finance'
-      ) {
-        const fin = await this.getFinancialSummary(ctx.scId, ctx.budgetYear);
-        parts.push('=== สรุปข้อมูลการเงินรวม ===');
-        parts.push(`รายรับรวมทั้งหมด: ${this.fmt(fin.total_receive)} บาท`);
-        parts.push(`รายจ่ายรวมทั้งหมด: ${this.fmt(fin.total_pay)} บาท`);
-        parts.push(`ยอดคงเหลือ: ${this.fmt(fin.balance)} บาท`);
-        parts.push(
-          `ใบสำคัญจ่ายค้างอนุมัติ: ${fin.pending_invoices} รายการ (${this.fmt(fin.pending_invoice_amount)} บาท)`,
-        );
-        parts.push('');
+      // ── การเงินรวม (เสมอ) ──
+      const fin = await this.getFinancialSummary(ctx.scId, ctx.budgetYear);
+      parts.push('— ภาพรวมการเงิน —');
+      parts.push(
+        `รายรับรวม ${this.fmt(fin.total_receive)} | รายจ่ายรวม ${this.fmt(fin.total_pay)} | คงเหลือ ${this.fmt(fin.balance)} บาท`,
+      );
+      parts.push(
+        `ใบสำคัญจ่ายค้างอนุมัติ: ${fin.pending_invoices} รายการ (${this.fmt(fin.pending_invoice_amount)} บาท)`,
+      );
 
-        // เพิ่ม breakdown ตามประเภทเงิน
-        const breakdown = await this.getBreakdownByMoneyType(ctx.scId);
-        if (breakdown.length > 0) {
-          parts.push('=== รายรับ-รายจ่าย แยกตามประเภทเงิน ===');
-          for (const b of breakdown) {
-            parts.push(
-              `${b.name}: รายรับ ${this.fmt(b.receive)} บาท | รายจ่าย ${this.fmt(b.pay)} บาท | สุทธิ ${this.fmt(b.receive - b.pay)} บาท`,
-            );
-          }
-          parts.push('');
+      const breakdown = await this.getBreakdownByMoneyType(ctx.scId);
+      if (breakdown.length > 0) {
+        parts.push('— รายรับ-รายจ่ายแยกตามประเภทเงิน —');
+        for (const b of breakdown) {
+          parts.push(
+            `• ${b.name}: รับ ${this.fmt(b.receive)} | จ่าย ${this.fmt(b.pay)} | สุทธิ ${this.fmt(b.receive - b.pay)} บาท`,
+          );
         }
       }
 
+      // ── เงินยืม (เสมอ) ──
+      const loan = await this.getLoanSummary(ctx.scId, ctx.budgetYear);
+      parts.push('— เงินยืม (ลูกหนี้เงินยืม บย.) —');
+      parts.push(
+        `ทั้งหมด ${loan.total_loans} สัญญา | ค้างคืน ${loan.pending_count} (${this.fmt(loan.pending_amount)} บาท) | เกินกำหนด ${loan.overdue_count} (${this.fmt(loan.overdue_amount)} บาท)`,
+      );
+
+      // ── ส่วนอื่น ๆ ในระบบ (รายได้แผ่นดิน / ยืมข้ามประเภท / ใบเสร็จ / จัดซื้อ / ส่งรายเดือน) ──
+      const extra = await this.getSystemSnapshotExtra(ctx.scId, ctx.budgetYear);
+      if (extra) parts.push(extra);
+
+      // ── งบประมาณ (รายละเอียดเมื่ออยู่หน้า budget) ──
       if (ctx.contextPage === 'budget') {
         const bud = await this.getBudgetSummary(ctx.scId, ctx.budgetYear);
-        parts.push('=== สรุปงบประมาณ ===');
-        parts.push(`งบประมาณทั้งหมด: ${this.fmt(bud.total_budget)} บาท`);
-        parts.push(`งบประมาณจริง: ${this.fmt(bud.total_real_budget)} บาท`);
-        parts.push(`ใช้จ่ายแล้ว: ${this.fmt(bud.total_spent)} บาท`);
-        parts.push(`คงเหลือ: ${this.fmt(bud.remaining)} บาท`);
-        parts.push(`อัตราใช้งาน: ${bud.utilization_pct.toFixed(1)}%`);
-        if (bud.categories.length > 0) {
-          parts.push('รายละเอียดตามหมวด:');
-          for (const cat of bud.categories.slice(0, 5)) {
-            parts.push(
-              `  - ${cat.name}: ${this.fmt(cat.budget)} บาท (ใช้ ${this.fmt(cat.spent)} บาท)`,
-            );
-          }
+        parts.push('— งบประมาณ —');
+        parts.push(
+          `งบทั้งหมด ${this.fmt(bud.total_budget)} | งบจริง ${this.fmt(bud.total_real_budget)} | ใช้ไป ${this.fmt(bud.total_spent)} | คงเหลือ ${this.fmt(bud.remaining)} (ใช้ ${bud.utilization_pct.toFixed(1)}%)`,
+        );
+        for (const cat of bud.categories.slice(0, 6)) {
+          parts.push(
+            `  - ${cat.name}: ${this.fmt(cat.budget)} บาท (ใช้ ${this.fmt(cat.spent)})`,
+          );
         }
-        parts.push('');
-      }
-
-      if (ctx.contextPage === 'loan') {
-        const loan = await this.getLoanSummary(ctx.scId, ctx.budgetYear);
-        parts.push('=== สรุปการยืมเงิน ===');
-        parts.push(`ยืมเงินทั้งหมด: ${loan.total_loans} สัญญา`);
-        parts.push(
-          `รอส่งคืน: ${loan.pending_count} สัญญา (${this.fmt(loan.pending_amount)} บาท)`,
-        );
-        parts.push(
-          `เกินกำหนด: ${loan.overdue_count} สัญญา (${this.fmt(loan.overdue_amount)} บาท)`,
-        );
-        parts.push('');
       }
     } catch (err) {
       this.logger.warn(
@@ -403,6 +412,155 @@ export class ChatService {
       receive: Number(r.receive),
       pay: Number(r.pay),
     }));
+  }
+
+  /**
+   * ฐานความรู้ระเบียบงานการเงิน-พัสดุ — ใช้เกณฑ์จริงจาก regulatory-config
+   */
+  private async buildRegulatoryKnowledge(scId: number): Promise<string> {
+    const k = await this.regulatoryConfig.getThresholds(scId, [
+      'procurement.specific_max',
+      'procurement.inspector_single_max',
+      'procurement.plan_publish_min',
+      'procurement.contract_security_pct',
+      'finance.wht_min',
+      'finance.wht_rate_goods',
+      'finance.wht_rate_service',
+      'finance.wht_rate_rent',
+      'finance.gov_revenue_urgent',
+      'finance.gov_revenue_urgent_days',
+      'finance.monthly_submit_day',
+      'finance.cash_reserve_default',
+    ]);
+    const f = (n: number) => Number(n).toLocaleString('th-TH');
+    return [
+      '=== ฐานความรู้ระเบียบงานการเงิน-พัสดุ (สพฐ.) — ใช้ให้คำปรึกษา ===',
+      'อ้างอิง: ระบบควบคุมเงินหน่วยงานย่อย พ.ศ.2544 · ระเบียบกระทรวงการคลังว่าด้วยการเบิกจ่ายฯ 2562 · พ.ร.บ.การจัดซื้อจัดจ้างฯ 2560 · แนวการประเมิน สพฐ. 2567',
+      '【พัสดุ】',
+      `- วิธีเฉพาะเจาะจงใช้ได้เมื่อวงเงินไม่เกิน ${f(k['procurement.specific_max'])} บาท เกินกว่านี้ต้องวิธีคัดเลือก/e-bidding (พ.ร.บ.ฯ ม.56)`,
+      `- วงเงินไม่เกิน ${f(k['procurement.inspector_single_max'])} บาท แต่งตั้งผู้ตรวจรับคนเดียวได้ เกินต้องคณะกรรมการตรวจรับ ≥3 คน`,
+      `- โครงการวงเงิน ≥ ${f(k['procurement.plan_publish_min'])} บาท ต้องประกาศเผยแพร่แผนการจัดซื้อจัดจ้าง (ม.11)`,
+      `- หลักประกันสัญญา ${k['procurement.contract_security_pct']}% ของวงเงินตามสัญญา`,
+      '- ลำดับงาน: รายงานขอซื้อขอจ้าง → อนุมัติ → ตรวจรับ → ตั้งเบิก → จ่าย (ห้ามจ่ายก่อนตรวจรับ)',
+      '【การเงิน/ภาษี】',
+      `- หักภาษี ณ ที่จ่ายเมื่อจ่าย ≥ ${f(k['finance.wht_min'])} บาท: ซื้อสินค้า/จ้างทำของ ${k['finance.wht_rate_goods']}% · บริการ/วิชาชีพ ${k['finance.wht_rate_service']}% · ค่าเช่า ${k['finance.wht_rate_rent']}%`,
+      `- เงินรายได้แผ่นดิน: ยอด > ${f(k['finance.gov_revenue_urgent'])} บาท นำส่งภายใน ${k['finance.gov_revenue_urgent_days']} วันทำการ มิฉะนั้นรวบรวมนำส่งเดือนละครั้ง`,
+      `- ส่งรายงานการเงินรายเดือนให้ สพท. ภายในวันที่ ${k['finance.monthly_submit_day']} ของเดือนถัดไป`,
+      `- วงเงินเก็บรักษาเงินสด (เงินรายได้สถานศึกษา) เริ่มต้น ${f(k['finance.cash_reserve_default'])} บาท ส่วนเกินต้องนำฝากธนาคาร`,
+      '- เงินยืม: ค่าเดินทางส่งใช้ภายใน 15 วัน, อื่น ๆ 30 วัน; ห้ามยืมใหม่ถ้ายังค้างเก่า; ต้องคืนหมดก่อนปิดปีงบ',
+      '- ยืมเงินข้ามประเภท: ห้ามยืมจากภาษี/ประกัน/รายได้แผ่นดิน และต้องมีเงินคงเหลือเพียงพอ',
+      '- เลขที่เอกสาร: บร.(ใบเสร็จ) บค.(เบิกเงินสด) บจ.(จ่ายเช็ค) บย.(ยืมเงิน) บง.(นำส่งรายได้แผ่นดิน) บฝ./บถ.(ฝาก/ถอน สพป.)',
+      '- ใบเสร็จรับเงินต้องมี: ชื่อ-ที่อยู่ผู้ชำระ, วันที่, รายการ, จำนวนเงิน (ตัวเลข+ตัวอักษร), ลายมือชื่อผู้รับเงิน, แสดง บร. เล่มที่/เลขที่',
+    ].join('\n');
+  }
+
+  /**
+   * snapshot ส่วนเพิ่ม: รายได้แผ่นดิน / ยืมข้ามประเภท / ใบเสร็จ / จัดซื้อ / ส่งรายเดือน
+   */
+  private async getSystemSnapshotExtra(
+    scId: number,
+    _budgetYear: string,
+  ): Promise<string> {
+    const lines: string[] = [];
+    const num = (v: unknown) => Number(v ?? 0);
+
+    try {
+      const [gr] = await this.dataSource.query(
+        `SELECT COALESCE(SUM(CASE WHEN entry_type=1 THEN amount ELSE 0 END),0) AS received,
+                COALESCE(SUM(CASE WHEN entry_type=2 THEN amount ELSE 0 END),0) AS remitted
+         FROM gov_revenue_entry WHERE sc_id=? AND del=0`,
+        [scId],
+      );
+      const outstanding = num(gr?.received) - num(gr?.remitted);
+      lines.push(
+        `— เงินรายได้แผ่นดิน — รับ ${this.fmt(num(gr?.received))} | นำส่งแล้ว ${this.fmt(num(gr?.remitted))} | ค้างนำส่ง ${this.fmt(outstanding)} บาท`,
+      );
+    } catch {
+      /* ข้ามถ้าตารางไม่พร้อม */
+    }
+
+    try {
+      const [fb] = await this.dataSource.query(
+        `SELECT COUNT(*) AS cnt,
+                COALESCE(SUM(CASE WHEN status=1 THEN amount ELSE 0 END),0) AS outstanding,
+                SUM(CASE WHEN status=1 THEN 1 ELSE 0 END) AS open_cnt
+         FROM fund_borrowing WHERE sc_id=? AND del=0`,
+        [scId],
+      );
+      if (num(fb?.cnt) > 0) {
+        lines.push(
+          `— ยืมเงินข้ามประเภท — ทั้งหมด ${num(fb?.cnt)} | ค้างคืน ${num(fb?.open_cnt)} (${this.fmt(num(fb?.outstanding))} บาท)`,
+        );
+      }
+    } catch {
+      /* ข้าม */
+    }
+
+    try {
+      const [rc] = await this.dataSource.query(
+        `SELECT COUNT(*) AS cnt FROM receipt WHERE sc_id=? AND status='1'`,
+        [scId],
+      );
+      const [bk] = await this.dataSource.query(
+        `SELECT book_code, current_no, to_no FROM receipt_book
+         WHERE sc_id=? AND status=1 AND del=0 ORDER BY rb_id DESC LIMIT 1`,
+        [scId],
+      );
+      const bookInfo = bk
+        ? `เล่มที่ใช้งาน ${bk.book_code ?? '-'} เลขถัดไป ${num(bk.current_no)} (ถึง ${num(bk.to_no)})`
+        : 'ยังไม่เปิดเล่มใบเสร็จ';
+      lines.push(
+        `— ใบเสร็จรับเงิน (บร.) — ออกแล้ว ${num(rc?.cnt)} ใบ | ${bookInfo}`,
+      );
+    } catch {
+      /* ข้าม */
+    }
+
+    try {
+      const rows: Array<{ s: number; cnt: number; amt: number }> =
+        await this.dataSource.query(
+          `SELECT order_status AS s, COUNT(*) AS cnt, COALESCE(SUM(budgets),0) AS amt
+           FROM parcel_order WHERE sc_id=? AND del=0 GROUP BY order_status`,
+          [scId],
+        );
+      if (rows.length) {
+        const map: Record<number, string> = {
+          0: 'ทบทวน',
+          1: 'ขอ',
+          2: 'แผน',
+          3: 'การเงิน',
+          4: 'พัสดุ',
+          5: 'ผอ.',
+          6: 'ตั้งกรรมการ',
+          7: 'จัดซื้อ',
+          8: 'สำเร็จ',
+          9: 'ยกเลิก',
+        };
+        const summary = rows
+          .map((r) => `${map[num(r.s)] ?? 'สถานะ' + r.s} ${num(r.cnt)}`)
+          .join(', ');
+        lines.push(`— จัดซื้อจัดจ้าง (ตามสถานะ) — ${summary}`);
+      }
+    } catch {
+      /* ข้าม */
+    }
+
+    try {
+      const [ms] = await this.dataSource.query(
+        `SELECT SUM(CASE WHEN status<2 THEN 1 ELSE 0 END) AS pending, COUNT(*) AS total
+         FROM monthly_submission WHERE sc_id=? AND del=0`,
+        [scId],
+      );
+      if (num(ms?.total) > 0) {
+        lines.push(
+          `— ส่งรายงานรายเดือน สพท. — ค้างส่ง ${num(ms?.pending)} / ${num(ms?.total)} เดือน`,
+        );
+      }
+    } catch {
+      /* ข้าม */
+    }
+
+    return lines.join('\n');
   }
 
   /** แปลง budget_year (BE หรือ CE) → CE year number */

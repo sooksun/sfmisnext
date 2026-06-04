@@ -16,6 +16,23 @@ export class Receipt {
   @Column({ name: 'r_no', type: 'varchar', length: 45, nullable: true })
   rNo: string | null;
 
+  @Column({
+    name: 'book_no',
+    type: 'varchar',
+    length: 45,
+    nullable: true,
+    comment: 'เล่มที่ (จาก receipt_book) — แบบฟอร์ม บร.',
+  })
+  bookNo: string | null;
+
+  @Column({
+    name: 'receipt_no',
+    type: 'int',
+    nullable: true,
+    comment: 'เลขที่ใบเสร็จในเล่ม',
+  })
+  receiptNo: number | null;
+
   @Column({ type: 'text', nullable: true })
   detail: string | null;
 

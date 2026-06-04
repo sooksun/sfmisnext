@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MonthlySubmission } from './entities/monthly-submission.entity';
 import { Admin } from '../admin/entities/admin.entity';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 import {
   SaveSubmissionDto,
   SubmitDto,
@@ -23,7 +24,27 @@ export class MonthlySubmissionService {
     private readonly msRepo: Repository<MonthlySubmission>,
     @InjectRepository(Admin)
     private readonly adminRepo: Repository<Admin>,
+    private readonly regulatoryConfig: RegulatoryConfigService,
   ) {}
+
+  /**
+   * คำนวณวันครบกำหนดส่งรายงานรายเดือน = วันที่ {submitDay} ของเดือนถัดไป
+   * (default 15 ตามแนวการประเมินฯ สพฐ. 2567 — ปรับได้ใน config)
+   */
+  private deadlineOf(submitMonth: string, submitDay: number): Date {
+    const [yearStr, monthStr] = submitMonth.split('-');
+    const yearRaw = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10); // 1-12
+    // แปลง BE → CE เพื่อสร้าง Date ที่ถูกต้อง (เช่น 2568 BE → 2025 CE)
+    const yearCE = yearRaw >= 2400 ? yearRaw - 543 : yearRaw;
+    let nextYear = yearCE;
+    let nextMonth = month + 1;
+    if (nextMonth > 12) {
+      nextMonth = 1;
+      nextYear += 1;
+    }
+    return new Date(nextYear, nextMonth - 1, submitDay, 23, 59, 59);
+  }
 
   async loadSubmissions(scId: number, syId: number) {
     const records = await this.msRepo.find({
@@ -32,24 +53,16 @@ export class MonthlySubmissionService {
     });
 
     const today = new Date();
+    const submitDay = await this.regulatoryConfig.getThreshold(
+      scId,
+      'finance.monthly_submit_day',
+    );
 
     const data = records.map((r) => {
       let isOverdue = false;
       if (r.status === 1 && r.submitMonth) {
-        // Overdue: today > day 5 of month following submit_month
-        const [yearStr, monthStr] = r.submitMonth.split('-');
-        const yearRaw = parseInt(yearStr, 10);
-        const month = parseInt(monthStr, 10); // 1-12
-        // แปลง BE → CE เพื่อสร้าง Date ที่ถูกต้อง (เช่น 2568 BE → 2025 CE)
-        const yearCE = yearRaw >= 2400 ? yearRaw - 543 : yearRaw;
-        // next month (CE)
-        let nextYear = yearCE;
-        let nextMonth = month + 1;
-        if (nextMonth > 12) {
-          nextMonth = 1;
-          nextYear += 1;
-        }
-        const deadline = new Date(nextYear, nextMonth - 1, 5, 23, 59, 59);
+        // Overdue: today > วันที่ {submitDay} ของเดือนถัดไป (default 15)
+        const deadline = this.deadlineOf(r.submitMonth, submitDay);
         isOverdue = today > deadline;
       }
       return {
@@ -198,22 +211,15 @@ export class MonthlySubmissionService {
     });
 
     const today = new Date();
+    const submitDay = await this.regulatoryConfig.getThreshold(
+      scId,
+      'finance.monthly_submit_day',
+    );
     const overdueMonths: string[] = [];
 
     for (const r of records) {
       if (r.status < 2 && r.submitMonth) {
-        const [yearStr, monthStr] = r.submitMonth.split('-');
-        const yearRaw = parseInt(yearStr, 10);
-        const month = parseInt(monthStr, 10);
-        // แปลง BE → CE
-        const yearCE = yearRaw >= 2400 ? yearRaw - 543 : yearRaw;
-        let nextYear = yearCE;
-        let nextMonth = month + 1;
-        if (nextMonth > 12) {
-          nextMonth = 1;
-          nextYear += 1;
-        }
-        const deadline = new Date(nextYear, nextMonth - 1, 5, 23, 59, 59);
+        const deadline = this.deadlineOf(r.submitMonth, submitDay);
         if (today > deadline) {
           overdueMonths.push(r.submitMonth);
         }

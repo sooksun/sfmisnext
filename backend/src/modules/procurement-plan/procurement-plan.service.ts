@@ -138,7 +138,9 @@ export class ProcurementPlanService {
     });
     if (!plan) throw new NotFoundException('ไม่พบแผน');
     if (user.type !== 1 && plan.scId !== user.sc_id) {
-      throw new ForbiddenException('ไม่สามารถดำเนินการข้อมูลของโรงเรียนอื่นได้');
+      throw new ForbiddenException(
+        'ไม่สามารถดำเนินการข้อมูลของโรงเรียนอื่นได้',
+      );
     }
     const items = await this.itemRepo.find({
       where: { ppId: plan.ppId, del: 0 },

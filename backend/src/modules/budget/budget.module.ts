@@ -7,6 +7,7 @@ import { PlnBudgetCategoryDetail } from './entities/pln-budget-category-detail.e
 import { TbEstimateAcadyear } from './entities/tb-estimate-acadyear.entity';
 import { MasterBudgetCategory } from './entities/master-budget-category.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { PlnRealBudget } from '../policy/entities/pln-real-budget.entity';
 import { TbExpenses } from './entities/tb-expenses.entity';
 
 @Module({
@@ -17,6 +18,7 @@ import { TbExpenses } from './entities/tb-expenses.entity';
       TbEstimateAcadyear,
       MasterBudgetCategory,
       BudgetIncomeType,
+      PlnRealBudget,
       TbExpenses,
     ]),
   ],

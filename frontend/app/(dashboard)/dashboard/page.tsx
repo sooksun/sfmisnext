@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useAppContext } from '@/hooks/use-app-context'
 import { DashboardBudgetSection } from '@/components/dashboard/dashboard-budget-section'
 import { AlertsWidget } from '@/components/dashboard/alerts-widget'
+import { WorkflowGuide } from '@/components/dashboard/workflow-guide'
 
 export default function DashboardPage() {
   const { userName, scName, syYear, budgetYear: budgetYearRaw } = useAppContext()
@@ -74,6 +75,8 @@ export default function DashboardPage() {
 
       {/* แจ้งเตือนการเงิน (ดอกเบี้ย/ภาษี/เงินยืม/เงินสดเกินวงเงิน) */}
       <AlertsWidget />
+
+      <WorkflowGuide />
 
       <DashboardBudgetSection />
 

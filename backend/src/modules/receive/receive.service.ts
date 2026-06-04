@@ -9,6 +9,8 @@ import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 import { CashKeepingRecord } from '../cash-keeping/entities/cash-keeping-record.entity';
 import { FinancialAuditService } from '../financial-audit/financial-audit.service';
+import { Receipt } from '../receipt/entities/receipt.entity';
+import { ReceiptBook } from '../receipt-book/entities/receipt-book.entity';
 
 /**
  * Map receive_money_type → money_channel
@@ -195,9 +197,23 @@ export class ReceiveService {
       : [];
     const btMap = new Map(btList.map((b) => [b.bgTypeId, b.budgetType]));
 
+    // เล่มที่ — จากเล่มใบเสร็จที่ใช้งานอยู่ (receipt_book status=1)
+    let bookNo: string | null = null;
+    try {
+      const [book] = await this.dataSource.query(
+        `SELECT book_code FROM receipt_book
+         WHERE sc_id=? AND status=1 AND del=0 ORDER BY rb_id DESC LIMIT 1`,
+        [scId],
+      );
+      bookNo = book?.book_code ?? null;
+    } catch {
+      /* ไม่มีเล่ม — ปล่อยว่าง */
+    }
+
     return {
       pr_id: receive.prId,
       pr_no: receive.prNo,
+      book_no: bookNo,
       sc_id: receive.scId,
       sy_id: receive.syId,
       budget_year: receive.budgetYear,
@@ -218,7 +234,8 @@ export class ReceiveService {
   }
 
   async addReceive(dto: AddReceiveDto) {
-    return this.dataSource.transaction(async (manager) => {
+    try {
+      return await this.dataSource.transaction(async (manager) => {
       // Create or update pln_receive
       let receive: PlnReceive;
       if (dto.pr_id && dto.pr_id > 0) {
@@ -340,8 +357,65 @@ export class ReceiveService {
         }
       }
 
-      return { flag: true };
-    });
+      // ── ออกใบเสร็จ บร. + เดินเลขเล่ม (จุดเดียวที่รับเงิน — one-step) ────────
+      // ออกเฉพาะตอน "สร้างใหม่" และเมื่อมีเล่มใบเสร็จเปิดใช้อยู่ (lock กันเลขซ้ำ)
+      let issuedRNo: string | null = null;
+      const isNew = !(dto.pr_id && dto.pr_id > 0);
+      if (isNew) {
+        const book = await manager.findOne(ReceiptBook, {
+          where: {
+            scId: dto.sc_id,
+            syId: dto.sy_id,
+            budgetYear: dto.budget_year,
+            status: 1,
+            del: 0,
+          },
+          order: { rbId: 'DESC' },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (book && book.currentNo <= book.toNo) {
+          const bookNo = book.bookCode ?? String(book.rbId);
+          const receiptNo = book.currentNo;
+          issuedRNo = `บร. เล่มที่ ${bookNo} เลขที่ ${receiptNo}`;
+          const receiptRow = manager.create(Receipt, {
+            rNo: issuedRNo,
+            bookNo,
+            receiptNo,
+            detail: receive.receiveForm ?? 'รับเงิน',
+            prId: String(receive.prId),
+            dateGenerate: receive.receiveDate ?? new Date(),
+            status: '1',
+            syId: receive.syId,
+            year: receive.budgetYear,
+            scId: receive.scId,
+            upBy: receive.upBy ?? 0,
+          });
+          await manager.save(Receipt, receiptRow);
+          // สะท้อนเลขที่ในเล่มลงบน pln_receive
+          receive.prNo = String(receiptNo);
+          await manager.save(PlnReceive, receive);
+          // เดินเลขถัดไป + ปิดเล่มอัตโนมัติถ้าหมด
+          book.currentNo += 1;
+          if (book.currentNo > book.toNo) {
+            book.status = 2;
+            book.closedDate = new Date().toISOString().substring(0, 10);
+          }
+          await manager.save(ReceiptBook, book);
+        }
+      }
+
+      return {
+        flag: true,
+        ms: issuedRNo
+          ? `บันทึกและออกใบเสร็จ ${issuedRNo} เรียบร้อยแล้ว`
+          : 'บันทึกเรียบร้อยแล้ว',
+      };
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'บันทึกการรับเงินไม่สำเร็จ';
+      return { flag: false, ms: message };
+    }
   }
 
   /**
@@ -376,7 +450,8 @@ export class ReceiveService {
     const receiverId = director?.adminId || senderId;
 
     const snap = async (id: number) => {
-      if (!id) return { name: null as string | null, pos: null as string | null };
+      if (!id)
+        return { name: null as string | null, pos: null as string | null };
       const a = await this.adminRepository.findOne({ where: { adminId: id } });
       return {
         name: a?.name ?? a?.username ?? null,
@@ -427,7 +502,10 @@ export class ReceiveService {
           : String(receive.receiveDate).slice(0, 10)
         : null;
       if (dateStr) {
-        const locked = await this.financialAuditService.isDateLocked(scId, dateStr);
+        const locked = await this.financialAuditService.isDateLocked(
+          scId,
+          dateStr,
+        );
         if (locked) {
           return {
             flag: false,

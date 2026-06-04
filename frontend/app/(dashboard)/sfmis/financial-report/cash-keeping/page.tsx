@@ -5,8 +5,12 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Plus, RotateCcw, Trash2, AlertTriangle, Banknote } from 'lucide-react'
+import { Plus, RotateCcw, Trash2, AlertTriangle, Banknote, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
+import { ProcessFlow } from '@/components/shared/process-flow'
+import { openPrintWindow } from '@/lib/print-utils'
+import { officialCashKeepingForm } from '@/lib/official-forms'
+import { KRUT_EMBLEM } from '@/lib/krut-emblem'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -71,7 +75,7 @@ type ReturnForm = z.infer<typeof returnSchema>
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function CashKeepingPage() {
-  const { scId, adminId, syId } = useAppContext()
+  const { scId, adminId, syId, scName } = useAppContext()
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
@@ -214,6 +218,27 @@ export default function CashKeepingPage() {
   const fmt = (n: number) =>
     Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })
 
+  // พิมพ์แบบฟอร์มทางการ "บันทึกการรับเงินเพื่อเก็บรักษา" (กลุ่มตรวจสอบภายใน สพฐ.)
+  const handlePrint = (item: CashKeepingRow) => {
+    const body = officialCashKeepingForm({
+      scName,
+      date: item.record_date ?? undefined,
+      rows: [
+        {
+          detail: item.money_detail || 'เงินสดรับประจำวัน',
+          amount: Number(item.amount || 0),
+          note: item.note ?? undefined,
+        },
+      ],
+      directorName: item.receiver_name ?? undefined,
+      financeOfficerName: item.sender_name ?? undefined,
+      returnedDate: item.returned_date,
+      returnedAmount: item.returned_amount,
+      emblemSrc: KRUT_EMBLEM,
+    })
+    openPrintWindow({ title: `บันทึกเก็บรักษา_${item.ckr_id}`, body, paper: 'A4' })
+  }
+
   const openReturnDialog = (record: CashKeepingRow) => {
     setSelectedRecord(record)
     returnForm.reset({
@@ -304,6 +329,16 @@ export default function CashKeepingPage() {
       header: 'จัดการ',
       render: (item: CashKeepingRow) => (
         <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1 text-xs h-7 px-2"
+            onClick={() => handlePrint(item)}
+            title="พิมพ์บันทึกการรับเงินเพื่อเก็บรักษา"
+          >
+            <Printer className="h-3 w-3" />
+            พิมพ์
+          </Button>
           {item.status === 1 && (
             <>
               <Button
@@ -343,6 +378,7 @@ export default function CashKeepingPage() {
           </Button>
         }
       />
+      <ProcessFlow flow="receive" />
 
       <div className="p-4 space-y-4">
         {/* ── Summary card ──────────────────────────────────────────────── */}

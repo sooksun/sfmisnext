@@ -5,8 +5,10 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Pencil, Trash2, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
+import { openPrintWindow } from '@/lib/print-utils'
+import { officialReceipt } from '@/lib/official-forms'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -28,6 +30,8 @@ import { useAppContext } from '@/hooks/use-app-context'
 interface ReceiptRow {
   r_id: number
   r_no: string
+  book_no?: string | null
+  receipt_no?: number | null
   detail: string
   pr_id: string
   date_generate: string
@@ -45,7 +49,7 @@ interface ReceiveRef {
 }
 
 const receiptSchema = z.object({
-  r_no: z.string().min(1, 'กรุณากรอกเลขที่ใบเสร็จ'),
+  r_no: z.string().optional(), // เว้นว่าง = ออกเลข บร. อัตโนมัติจากเล่มใบเสร็จ
   detail: z.string().min(1, 'กรุณากรอกรายละเอียด'),
   pr_id: z.string().min(1, 'กรุณาเลือกใบรับเงิน'),
   date_generate: z.string().min(1, 'กรุณาเลือกวันที่'),
@@ -54,7 +58,7 @@ const receiptSchema = z.object({
 type ReceiptForm = z.infer<typeof receiptSchema>
 
 export default function ReceiptPage() {
-  const { scId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const { scId, syId, budgetYear: budgetYearRaw, scName } = useAppContext()
   const year = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
   const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
@@ -119,10 +123,16 @@ export default function ReceiptPage() {
     onError: () => toast.error('เกิดข้อผิดพลาด'),
   })
 
-  function openAdd() {
-    setEditing(null)
-    reset({ r_no: '', detail: '', pr_id: '', date_generate: '', status: '1' })
-    setDialogOpen(true)
+  // พิมพ์ใบเสร็จรับเงิน (ระเบียบกระทรวงการคลัง 2562 ข้อ 46)
+  function handlePrintReceipt(item: ReceiptRow) {
+    const body = officialReceipt({
+      scName,
+      bookNo: item.book_no ?? undefined,
+      receiptNo: item.receipt_no != null ? String(item.receipt_no) : item.r_no,
+      date: item.date_generate?.substring(0, 10),
+      items: [{ detail: item.detail || 'รับเงิน', amount: Number(item.total_budget || 0) }],
+    })
+    openPrintWindow({ title: `ใบเสร็จรับเงิน_${item.r_no}`, body, paper: 'A5' })
   }
 
   function openEdit(item: ReceiptRow) {
@@ -146,6 +156,9 @@ export default function ReceiptPage() {
       header: 'จัดการ',
       render: (item: ReceiptRow) => (
         <div className="flex gap-1">
+          <Button size="sm" variant="outline" onClick={() => handlePrintReceipt(item)} title="พิมพ์ใบเสร็จ">
+            <Printer className="h-3 w-3" />
+          </Button>
           <Button size="sm" variant="warning" onClick={() => openEdit(item)}>
             <Pencil className="h-3 w-3" />
           </Button>
@@ -178,13 +191,8 @@ export default function ReceiptPage() {
   return (
     <div className="flex flex-col flex-auto min-w-0">
       <PageHeader
-        title="ใบเสร็จรับเงิน"
-        actions={
-          <Button onClick={openAdd} disabled={scId === 0}>
-            <Plus className="h-4 w-4" />
-            เพิ่มใบเสร็จ
-          </Button>
-        }
+        title="ทะเบียนใบเสร็จรับเงิน (ที่ออกแล้ว)"
+        subtitle='ใบเสร็จ "บร." ออกอัตโนมัติเมื่อบันทึกที่เมนู "รับเงิน" — หน้านี้ใช้ดู / พิมพ์ซ้ำ / แก้ไขรายละเอียด'
       />
       <div className="p-4">
         <DataTable
@@ -207,9 +215,11 @@ export default function ReceiptPage() {
       >
         <div className="space-y-3">
           <div>
-            <Label>เลขที่ใบเสร็จ *</Label>
-            <Input {...register('r_no')} placeholder="เลขที่ใบเสร็จ" />
-            {errors.r_no && <p className="text-red-500 text-xs mt-1">{errors.r_no.message}</p>}
+            <Label>เลขที่ใบเสร็จ</Label>
+            <Input {...register('r_no')} placeholder="เว้นว่างเพื่อออกเลข บร. อัตโนมัติจากเล่มใบเสร็จ" />
+            <p className="text-gray-500 text-xs mt-1">
+              เว้นว่างไว้ ระบบจะออก &quot;บร. เล่มที่/เลขที่&quot; อัตโนมัติจากเล่มใบเสร็จที่ใช้งานอยู่
+            </p>
           </div>
           <div>
             <Label>ใบรับเงิน *</Label>

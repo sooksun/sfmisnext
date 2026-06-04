@@ -26,13 +26,22 @@ describe('AuditCommitteeService', () => {
       repo.find.mockResolvedValue([]);
       await service.loadAuditCommitteeStatus(5, 3);
       expect(repo.find).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ scId: 5, del: 0 }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ scId: 5, del: 0 }),
+        }),
       );
     });
 
     it('คืน { data, count } ถูกต้อง', async () => {
       repo.find.mockResolvedValue([
-        { orderId: 1, projectId: 2, projectType: 1, scId: 5, bgTypeId: 1, adminId: 3 },
+        {
+          orderId: 1,
+          projectId: 2,
+          projectType: 1,
+          scId: 5,
+          bgTypeId: 1,
+          adminId: 3,
+        },
       ]);
 
       const result = await service.loadAuditCommitteeStatus(5, 3);
@@ -50,17 +59,52 @@ describe('AuditCommitteeService', () => {
 
     it('map ทุก field ของ parcel_order ถูกต้อง', async () => {
       const order = {
-        orderId: 7, projectId: 2, projectType: 1, scId: 5, bgTypeId: 2, adminId: 4,
-        orderDate: null, orderStatus: 3, remark: 'test', remarkCfPlan: null,
-        remarkCfBusiness: null, remarkCfSuppile: null, remarkCfCeo: null,
-        operateDate: null, acadYear: 2568, numbers: '5', details: 'detail',
-        pId: 10, resources: null, budgets: 5000, jobType: 1, noteNumber: null,
-        buyDate: null, buyReason: null, departments: null, dueDate: null,
-        committee1: 1, committee2: 2, committee3: 3, dateDeadline: null, dayDeadline: 30,
-        bookOrderCommittee: null, dateOrderCommittee: null, bookReportNumber: null,
-        dateBookReport: null, suppliers: 8, presentCost: 4500, dateWin: null,
-        numberOrders: null, ordersDate: null, dueOrdersDate: null, overDueDate: null,
-        proveDate: null, numberReportWiddraw: null, dateReportWiddraw: null, upBy: 1,
+        orderId: 7,
+        projectId: 2,
+        projectType: 1,
+        scId: 5,
+        bgTypeId: 2,
+        adminId: 4,
+        orderDate: null,
+        orderStatus: 3,
+        remark: 'test',
+        remarkCfPlan: null,
+        remarkCfBusiness: null,
+        remarkCfSuppile: null,
+        remarkCfCeo: null,
+        operateDate: null,
+        acadYear: 2568,
+        numbers: '5',
+        details: 'detail',
+        pId: 10,
+        resources: null,
+        budgets: 5000,
+        jobType: 1,
+        noteNumber: null,
+        buyDate: null,
+        buyReason: null,
+        departments: null,
+        dueDate: null,
+        committee1: 1,
+        committee2: 2,
+        committee3: 3,
+        dateDeadline: null,
+        dayDeadline: 30,
+        bookOrderCommittee: null,
+        dateOrderCommittee: null,
+        bookReportNumber: null,
+        dateBookReport: null,
+        suppliers: 8,
+        presentCost: 4500,
+        dateWin: null,
+        numberOrders: null,
+        ordersDate: null,
+        dueOrdersDate: null,
+        overDueDate: null,
+        proveDate: null,
+        numberReportWiddraw: null,
+        dateReportWiddraw: null,
+        upBy: 1,
       };
       repo.find.mockResolvedValue([order]);
 
@@ -77,8 +121,12 @@ describe('AuditCommitteeService', () => {
   describe('updateSetCommittee', () => {
     const dto = {
       order_id: 10,
-      committee1: 1, committee2: 2, committee3: 3,
-      order_status: 6, p_id: 5, day_deadline: 30,
+      committee1: 1,
+      committee2: 2,
+      committee3: 3,
+      order_status: 6,
+      p_id: 5,
+      day_deadline: 30,
       date_deadline: '2026-06-30',
     };
 
@@ -103,7 +151,12 @@ describe('AuditCommitteeService', () => {
       repo.findOne.mockResolvedValue(order);
       repo.save.mockResolvedValue(order);
 
-      await service.updateSetCommittee({ ...dto, committee1: 5, committee2: 6, committee3: 7 });
+      await service.updateSetCommittee({
+        ...dto,
+        committee1: 5,
+        committee2: 6,
+        committee3: 7,
+      });
       expect(order.committee1).toBe(5);
       expect(order.committee2).toBe(6);
       expect(order.committee3).toBe(7);

@@ -6,7 +6,10 @@ import {
   Matches,
   MinLength,
 } from 'class-validator';
-import { PASSWORD_MSG, PASSWORD_PATTERN } from '../../../common/constants/password';
+import {
+  PASSWORD_MSG,
+  PASSWORD_PATTERN,
+} from '../../../common/constants/password';
 
 export class AddAdminDto {
   @IsString()

@@ -6,6 +6,7 @@ import { AddReceiptDto } from './dto/add-receipt.dto';
 import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity';
 import { FinancialAuditService } from '../financial-audit/financial-audit.service';
+import { ReceiptBook } from '../receipt-book/entities/receipt-book.entity';
 
 @Injectable()
 export class ReceiptService {
@@ -31,6 +32,8 @@ export class ReceiptService {
       .andWhere('r.status = :status', { status: '1' })
       .select('r.r_id', 'r_id')
       .addSelect('r.r_no', 'r_no')
+      .addSelect('r.book_no', 'book_no')
+      .addSelect('r.receipt_no', 'receipt_no')
       .addSelect('r.detail', 'detail')
       .addSelect('r.pr_id', 'pr_id')
       .addSelect('r.date_generate', 'date_generate')
@@ -48,7 +51,7 @@ export class ReceiptService {
 
     // H5: คำนวณ total_budget จาก pln_receive_detail แทน hard-code 0
     const prIds = [...new Set(rows.map((r) => r.pr_id).filter(Boolean))];
-    let totalBudgetMap = new Map<number, number>();
+    const totalBudgetMap = new Map<number, number>();
     if (prIds.length > 0) {
       const details = await this.plnReceiveDetailRepository.find({
         where: { prId: In(prIds), del: 0 },
@@ -120,21 +123,65 @@ export class ReceiptService {
   }
 
   async addReceipt(dto: AddReceiptDto) {
-    const receipt = this.receiptRepository.create({
-      rNo: dto.r_no,
-      detail: dto.detail,
-      prId: dto.pr_id,
-      dateGenerate: new Date(dto.date_generate),
-      status: dto.status || '1',
-      syId: dto.sy_id,
-      year: dto.year,
-      scId: dto.sc_id,
-      upBy: dto.up_by || 0,
+    // ออกเลขที่ใบเสร็จอัตโนมัติ "บร. เล่มที่ X เลขที่ Y" จากเล่มใบเสร็จที่ใช้งานอยู่
+    return this.receiptRepository.manager.transaction(async (em) => {
+      let rNo: string | null = dto.r_no ?? null;
+      let bookNo: string | null = null;
+      let receiptNo: number | null = null;
+
+      if (!rNo) {
+        const book = await em.findOne(ReceiptBook, {
+          where: {
+            scId: dto.sc_id,
+            syId: dto.sy_id,
+            budgetYear: dto.year,
+            status: 1,
+            del: 0,
+          },
+          order: { rbId: 'DESC' },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!book) {
+          return {
+            flag: false,
+            ms: 'ไม่พบเล่มใบเสร็จที่ใช้งานอยู่ — กรุณาเปิดเล่มใบเสร็จก่อน (เมนูทะเบียนคุมใบเสร็จ)',
+          };
+        }
+        if (book.currentNo > book.toNo) {
+          return {
+            flag: false,
+            ms: 'เล่มใบเสร็จเต็มแล้ว — กรุณาปิดเล่มและเปิดเล่มใหม่',
+          };
+        }
+        bookNo = book.bookCode ?? String(book.rbId);
+        receiptNo = book.currentNo;
+        rNo = `บร. เล่มที่ ${bookNo} เลขที่ ${receiptNo}`;
+        // เดินเลขถัดไป + ปิดเล่มอัตโนมัติถ้าหมด
+        book.currentNo += 1;
+        if (book.currentNo > book.toNo) {
+          book.status = 2;
+          book.closedDate = new Date().toISOString().substring(0, 10);
+        }
+        await em.save(ReceiptBook, book);
+      }
+
+      const receipt = em.create(Receipt, {
+        rNo,
+        bookNo,
+        receiptNo,
+        detail: dto.detail,
+        prId: dto.pr_id,
+        dateGenerate: new Date(dto.date_generate),
+        status: dto.status || '1',
+        syId: dto.sy_id,
+        year: dto.year,
+        scId: dto.sc_id,
+        upBy: dto.up_by || 0,
+      });
+      await em.save(Receipt, receipt);
+
+      return { flag: true, ms: `ออกใบเสร็จ ${rNo} เรียบร้อยแล้ว` };
     });
-
-    await this.receiptRepository.save(receipt);
-
-    return { flag: true };
   }
 
   async updateReceipt(dto: AddReceiptDto) {
@@ -150,7 +197,7 @@ export class ReceiptService {
       return { flag: false, ms: 'ไม่พบข้อมูลใบเสร็จ' };
     }
 
-    receipt.rNo = dto.r_no;
+    if (dto.r_no) receipt.rNo = dto.r_no;
     receipt.detail = dto.detail;
     receipt.prId = dto.pr_id;
     receipt.dateGenerate = new Date(dto.date_generate);

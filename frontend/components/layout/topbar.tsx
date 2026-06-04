@@ -1,7 +1,8 @@
 'use client'
 import { useSession, signOut } from 'next-auth/react'
 import { useEffect, useRef, useState } from 'react'
-import { LogOut, User, ChevronDown, CalendarDays, Search } from 'lucide-react'
+import { LogOut, User, ChevronDown, CalendarDays, Search, KeyRound } from 'lucide-react'
+import { ChangePasswordDialog } from '@/components/auth/change-password-dialog'
 import { useRouter } from 'next/navigation'
 import {
   DropdownMenu,
@@ -20,6 +21,7 @@ export function Topbar() {
   const { syYear, budgetYear: budgetYearRaw } = useAppContext()
   const [mounted, setMounted] = useState(false)
   const [searchValue, setSearchValue] = useState('')
+  const [passwordOpen, setPasswordOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -117,6 +119,13 @@ export function Topbar() {
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem
+            className="cursor-pointer"
+            onClick={() => setPasswordOpen(true)}
+          >
+            <KeyRound className="h-4 w-4 mr-2" />
+            เปลี่ยนรหัสผ่าน
+          </DropdownMenuItem>
+          <DropdownMenuItem
             className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
             onClick={() => signOut({ callbackUrl: '/sign-in' })}
           >
@@ -125,6 +134,7 @@ export function Topbar() {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
     </header>
   )
 }

@@ -1,21 +1,82 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { DocumentCounter } from './entities/document-counter.entity';
 import { GetNextNumberDto, ResetCounterDto } from './dto/doc-counter.dto';
 
-/** แมปรหัสเอกสาร → คำนำหน้าภาษาไทย */
-const DOC_TYPE_PREFIX: Record<string, string> = {
+/**
+ * แมปรหัสเอกสาร → คำนำหน้าภาษาไทย ตามระเบียบควบคุมเงินหน่วยงานย่อย 2544
+ *  บร. = ใบเสร็จ/หลักฐานรับเงิน   บค. = เบิกเงินสด (ใบสำคัญ)   บจ. = จ่ายเช็ค/ธนาคาร
+ *  บย. = สัญญายืมเงิน            บง. = นำส่งเงินรายได้แผ่นดิน   บฝ. = นำฝากส่วนราชการผู้เบิก
+ *  บถ. = เบิกถอนส่วนราชการผู้เบิก  บก. = ภาษีหัก ณ ที่จ่าย
+ */
+export const DOC_TYPE_PREFIX: Record<string, string> = {
+  BR: 'บร.',
   BC: 'บค.',
   BJ: 'บจ.',
   BY: 'บย.',
   BG: 'บง.',
+  BF: 'บฝ.',
+  BT: 'บถ.',
+  BK: 'บก.',
 };
 
-const ALL_DOC_TYPES = ['BC', 'BJ', 'BY', 'BG'];
+const ALL_DOC_TYPES = ['BR', 'BC', 'BJ', 'BY', 'BG', 'BF', 'BT', 'BK'];
 
 @Injectable()
 export class DocCounterService {
   constructor(private readonly dataSource: DataSource) {}
+
+  /** จัด format เลขที่เอกสารภาษาไทย เช่น บค.12/2569 */
+  static format(docType: string, seq: number, budgetYear: string): string {
+    const prefix = DOC_TYPE_PREFIX[docType] ?? docType;
+    return `${prefix}${seq}/${budgetYear}`;
+  }
+
+  /**
+   * ออกเลขที่เอกสารถัดไป "ภายใน transaction ที่มีอยู่แล้ว" (atomic ด้วย row lock)
+   * ใช้โดย service อื่นที่กำลังอยู่ใน dataSource.transaction(...)
+   */
+  async issueWithin(
+    manager: EntityManager,
+    scId: number,
+    budgetYear: string,
+    docType: string,
+  ): Promise<{ seq: number; formatted: string }> {
+    let row = await manager.findOne(DocumentCounter, {
+      where: { scId, budgetYear, docType },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!row) {
+      row = manager.create(DocumentCounter, {
+        scId,
+        budgetYear,
+        docType,
+        lastNo: 0,
+      });
+      await manager.save(DocumentCounter, row);
+      row = await manager.findOne(DocumentCounter, {
+        where: { scId, budgetYear, docType },
+        lock: { mode: 'pessimistic_write' },
+      });
+    }
+    row!.lastNo += 1;
+    await manager.save(DocumentCounter, row!);
+    return {
+      seq: row!.lastNo,
+      formatted: DocCounterService.format(docType, row!.lastNo, budgetYear),
+    };
+  }
+
+  /** ออกเลขที่เอกสารถัดไป (เปิด transaction เอง) — สำหรับ caller ที่ไม่มี transaction */
+  async issue(
+    scId: number,
+    budgetYear: string,
+    docType: string,
+  ): Promise<{ seq: number; formatted: string }> {
+    return this.dataSource.transaction((em) =>
+      this.issueWithin(em, scId, budgetYear, docType),
+    );
+  }
 
   /** ดึงเลขที่ถัดไป พร้อม lock row เพื่อป้องกัน race condition */
   async getNextNumber(dto: GetNextNumberDto) {

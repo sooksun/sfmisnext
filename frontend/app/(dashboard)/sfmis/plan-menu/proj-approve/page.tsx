@@ -9,6 +9,7 @@ import { CheckCircle, XCircle, Ban, Zap } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -361,6 +362,7 @@ export default function ProjApprovePage() {
   return (
     <div className="flex flex-col flex-auto min-w-0">
       <PageHeader title="อนุมัติโครงการจัดซื้อจัดจ้าง" />
+      <ProcessFlow flow="plan" />
       <div className="p-4">
         <DataTable
           columns={columns}

@@ -32,11 +32,13 @@ export class ReceiptBookController {
 
   @Get('activeBook/:sc_id/:budget_year')
   @HttpCode(HttpStatus.OK)
-  getActiveBook(
+  async getActiveBook(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('budget_year') budgetYear: string,
   ) {
-    return this.receiptBookService.getActiveBook(scId, budgetYear);
+    // ห่อด้วย { data } เสมอ เพื่อให้ body เป็น JSON (เลี่ยง body ว่างเมื่อไม่มีเล่ม)
+    const data = await this.receiptBookService.getActiveBook(scId, budgetYear);
+    return { data };
   }
 
   @Post('addBook')

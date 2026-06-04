@@ -1,11 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { LoanAgreement } from './entities/loan-agreement.entity';
 import { LoanReturnEvidence } from './entities/loan-return-evidence.entity';
 import { AddLoanAgreementDto } from './dto/add-loan-agreement.dto';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import { DocCounterService } from '../doc-counter/doc-counter.service';
+import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 
 const DUE_DAYS: Record<number, number> = { 1: 15, 2: 30, 3: 30, 4: 30 };
 const CATEGORY_NAMES: Record<number, string> = {
@@ -32,6 +36,12 @@ export class LoanAgreementService {
     private readonly adminRepo: Repository<Admin>,
     @InjectRepository(BudgetIncomeType)
     private readonly budgetTypeRepo: Repository<BudgetIncomeType>,
+    @InjectRepository(FinancialTransactions)
+    private readonly ftRepo: Repository<FinancialTransactions>,
+    private readonly docCounter: DocCounterService,
+    private readonly dataSource: DataSource,
+    private readonly fundBalance: FundBalanceService,
+    private readonly regulatoryConfig: RegulatoryConfigService,
   ) {}
 
   async loadLoanAgreements(scId: number, syId: number, budgetYear: string) {
@@ -135,6 +145,8 @@ export class LoanAgreementService {
     const openLoan = await this.laRepo.findOne({
       where: {
         scId: dto.sc_id,
+        syId: dto.sy_id,
+        budgetYear: dto.budget_year,
         borrowerId: dto.borrower_id,
         status: 1,
         del: 0,
@@ -143,17 +155,33 @@ export class LoanAgreementService {
     if (openLoan) {
       return {
         flag: false,
-        ms: `ไม่สามารถยืมใหม่ได้ — ${openLoan.borrowerName ?? 'ผู้ยืม'} ยังมีสัญญายืมเงิน บย.${openLoan.laNo} (ยอด ${openLoan.amount?.toLocaleString('th-TH')} บาท) ที่ยังไม่ปิด กรุณาล้างรายการเก่าก่อน`,
+        ms: `ไม่สามารถยืมใหม่ได้ — ${openLoan.borrowerName ?? 'ผู้ยืม'} ยังมีสัญญายืมเงิน ${openLoan.laNo} (ยอด ${openLoan.amount?.toLocaleString('th-TH')} บาท) ที่ยังไม่ปิด กรุณาล้างรายการเก่าก่อน`,
       };
     }
 
-    // auto-generate la_seq
-    const lastLoan = await this.laRepo.findOne({
-      where: { scId: dto.sc_id, budgetYear: dto.budget_year, del: 0 },
-      order: { laSeq: 'DESC' },
-    });
-    const laSeq = lastLoan ? lastLoan.laSeq + 1 : 1;
-    const laNo = `${laSeq}/${dto.budget_year}`;
+    // guard: ห้ามยืมเกินยอดคงเหลือของประเภทเงิน (เงินแต่ละประเภทห้ามติดลบ)
+    const blockOverspend = await this.regulatoryConfig.getThreshold(
+      dto.sc_id,
+      'finance.block_overspend',
+    );
+    if (blockOverspend >= 1) {
+      const available = await this.fundBalance.available(
+        dto.sc_id,
+        dto.sy_id,
+        dto.money_type_id,
+      );
+      if (Number(dto.amount) - available > 0.005) {
+        return {
+          flag: false,
+          ms: `ยืมไม่ได้ — ยอดคงเหลือประเภทเงินนี้ ${available.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท ไม่พอให้ยืม ${Number(dto.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท`,
+        };
+      }
+    }
+
+    // ออกเลขที่เอกสารอัตโนมัติ บย. (atomic ผ่าน doc-counter)
+    const issued = await this.docCounter.issue(dto.sc_id, dto.budget_year, 'BY');
+    const laSeq = issued.seq;
+    const laNo = issued.formatted; // เช่น บย.5/2569
 
     // snapshot borrower — Admin entity ใช้ name field เดียว
     let borrowerName: string | null = null;
@@ -178,31 +206,56 @@ export class LoanAgreementService {
     const dueDays = DUE_DAYS[dto.loan_category] ?? 30;
     const dueDate = dto.borrow_date ? addDays(dto.borrow_date, dueDays) : null;
 
-    const loan = this.laRepo.create({
-      scId: dto.sc_id,
-      syId: dto.sy_id,
-      budgetYear: dto.budget_year,
-      laSeq,
-      laNo,
-      borrowerId: dto.borrower_id,
-      borrowerName,
-      borrowerPosition,
-      moneyTypeId: dto.money_type_id,
-      moneyTypeName,
-      purpose: dto.purpose ?? null,
-      amount: dto.amount,
-      borrowDate: dto.borrow_date,
-      loanCategory: dto.loan_category,
-      dueDate,
-      status: 1,
-      rwId: dto.rw_id ?? null,
-      note: dto.note ?? null,
-      upBy: dto.up_by ?? 0,
-      del: 0,
-    });
+    // สร้างสัญญา + ตัดยอดทะเบียนคุมเงิน (financial_transactions) ใน transaction เดียว
+    //   ระบบควบคุมเงินหน่วยงานย่อย 2544: การยืมเงินเป็น "ลูกหนี้เงินยืม" ที่ตัด
+    //   ยอดเงินประเภทนั้นออก (ตย.8/11) — ตอนคืนเงินสดจึงค่อยคืนยอดกลับ
+    return this.dataSource.transaction(async (em) => {
+      const ftRepo = em.getRepository(FinancialTransactions);
+      const laRepo = em.getRepository(LoanAgreement);
 
-    await this.laRepo.save(loan);
-    return { flag: true, ms: `สร้างสัญญายืมเงิน บย.${laNo} เรียบร้อยแล้ว` };
+      const ftBorrow = await ftRepo.save(
+        ftRepo.create({
+          type: -1, // ตัดยอดออกจากประเภทเงิน (จ่ายเป็นเงินยืม)
+          bgTypeId: dto.money_type_id,
+          amount: dto.amount,
+          scId: dto.sc_id,
+          syId: dto.sy_id,
+          moneyChannel: 2, // จ่ายผ่านเงินฝากธนาคาร (ตย.8)
+          upBy: dto.up_by ?? 0,
+          del: 0,
+          createDate: dto.borrow_date ? new Date(dto.borrow_date) : new Date(),
+        }),
+      );
+
+      const loan = await laRepo.save(
+        laRepo.create({
+          scId: dto.sc_id,
+          syId: dto.sy_id,
+          budgetYear: dto.budget_year,
+          laSeq,
+          laNo,
+          borrowerId: dto.borrower_id,
+          borrowerName,
+          borrowerPosition,
+          moneyTypeId: dto.money_type_id,
+          moneyTypeName,
+          purpose: dto.purpose ?? null,
+          amount: dto.amount,
+          borrowDate: dto.borrow_date,
+          loanCategory: dto.loan_category,
+          dueDate,
+          status: 1,
+          rwId: dto.rw_id ?? null,
+          ftBorrowId: ftBorrow.ftId,
+          note: dto.note ?? null,
+          upBy: dto.up_by ?? 0,
+          del: 0,
+        }),
+      );
+      void loan;
+
+      return { flag: true, ms: `สร้างสัญญายืมเงิน ${laNo} เรียบร้อยแล้ว` };
+    });
   }
 
   async returnLoan(dto: {
@@ -228,28 +281,61 @@ export class LoanAgreementService {
       };
     }
 
-    // update loan
-    loan.returnedDate = dto.returned_date;
-    loan.returnCash = dto.return_cash;
-    loan.returnVoucherAmount = dto.return_voucher_amount;
-    loan.status = 2;
-    loan.upBy = dto.up_by ?? 0;
-    await this.laRepo.save(loan);
+    const returnCash = Number(dto.return_cash);
 
-    // save evidence
-    const evidence = this.lreRepo.create({
-      laId: dto.la_id,
-      evidenceNo: dto.evidence_no ?? null,
-      evidenceDate: dto.returned_date,
-      cashAmount: dto.return_cash,
-      voucherAmount: dto.return_voucher_amount,
-      note: dto.note ?? null,
-      upBy: dto.up_by ?? 0,
-      del: 0,
+    return this.dataSource.transaction(async (em) => {
+      const ftRepo = em.getRepository(FinancialTransactions);
+      const laRepo = em.getRepository(LoanAgreement);
+      const lreRepo = em.getRepository(LoanReturnEvidence);
+
+      // คืนเฉพาะ "เงินสดที่เหลือ" กลับเข้าประเภทเงิน (type=+1)
+      //   ส่วนใบสำคัญ (voucher) = ค่าใช้จ่ายจริง → ถือว่าถูกตัดไปแล้วตอนยืม
+      //   ผลสุทธิต่อประเภทเงิน = −ยอดยืม + เงินสดคืน = −(ใบสำคัญ) ตรงตามคู่มือ
+      let ftReturnId: number | null = null;
+      if (returnCash > 0) {
+        const ftReturn = await ftRepo.save(
+          ftRepo.create({
+            type: 1, // คืนยอดเงินสดที่ไม่ได้ใช้กลับเข้าประเภทเงิน
+            bgTypeId: loan.moneyTypeId,
+            amount: returnCash,
+            scId: loan.scId,
+            syId: loan.syId,
+            moneyChannel: 2,
+            upBy: dto.up_by ?? 0,
+            del: 0,
+            createDate: dto.returned_date
+              ? new Date(dto.returned_date)
+              : new Date(),
+          }),
+        );
+        ftReturnId = ftReturn.ftId;
+      }
+
+      // update loan
+      loan.returnedDate = dto.returned_date;
+      loan.returnCash = dto.return_cash;
+      loan.returnVoucherAmount = dto.return_voucher_amount;
+      loan.status = 2;
+      loan.ftReturnId = ftReturnId;
+      loan.upBy = dto.up_by ?? 0;
+      await laRepo.save(loan);
+
+      // save evidence
+      await lreRepo.save(
+        lreRepo.create({
+          laId: dto.la_id,
+          evidenceNo: dto.evidence_no ?? null,
+          evidenceDate: dto.returned_date,
+          cashAmount: dto.return_cash,
+          voucherAmount: dto.return_voucher_amount,
+          note: dto.note ?? null,
+          upBy: dto.up_by ?? 0,
+          del: 0,
+        }),
+      );
+
+      return { flag: true, ms: `บันทึกการคืนเงิน ${loan.laNo} เรียบร้อยแล้ว` };
     });
-    await this.lreRepo.save(evidence);
-
-    return { flag: true, ms: `บันทึกการคืนเงิน บย.${loan.laNo} เรียบร้อยแล้ว` };
   }
 
   async cancelLoan(laId: number, note: string, upBy: number) {
@@ -258,11 +344,21 @@ export class LoanAgreementService {
     if (loan.status === 2)
       return { flag: false, ms: 'ไม่สามารถยกเลิกสัญญาที่ชำระแล้ว' };
 
-    loan.status = 3;
-    loan.note = note || loan.note;
-    loan.upBy = upBy;
-    await this.laRepo.save(loan);
-    return { flag: true, ms: 'ยกเลิกสัญญายืมเงินเรียบร้อยแล้ว' };
+    return this.dataSource.transaction(async (em) => {
+      const ftRepo = em.getRepository(FinancialTransactions);
+      const laRepo = em.getRepository(LoanAgreement);
+
+      // คืนยอดที่ตัดไปตอนยืม (soft-delete FT) — เงินยังไม่ได้ออกจริง/ยกเลิกการยืม
+      if (loan.ftBorrowId) {
+        await ftRepo.update({ ftId: loan.ftBorrowId }, { del: 1 });
+      }
+
+      loan.status = 3;
+      loan.note = note || loan.note;
+      loan.upBy = upBy;
+      await laRepo.save(loan);
+      return { flag: true, ms: 'ยกเลิกสัญญายืมเงินเรียบร้อยแล้ว' };
+    });
   }
 
   async loadEvidence(laId: number) {

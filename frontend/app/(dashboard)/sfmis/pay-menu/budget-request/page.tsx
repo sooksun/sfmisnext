@@ -6,10 +6,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, CheckCircle } from 'lucide-react'
+import { Plus, CheckCircle, Printer } from 'lucide-react'
 import { toast } from 'sonner'
+import { openPrintWindow } from '@/lib/print-utils'
+import { officialDisbursementEvidenceRegister } from '@/lib/official-forms'
 
 import { PageHeader } from '@/components/shared/page-header'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { DataTable } from '@/components/shared/data-table'
 import { Button } from '@/components/ui/button'
@@ -61,7 +64,7 @@ type FormValues = z.infer<typeof schema>
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function BudgetRequestPage() {
-  const { scId, syId, budgetYear, adminId } = useAppContext()
+  const { scId, syId, budgetYear, adminId, scName } = useAppContext()
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [editItem, setEditItem] = useState<BudgetRequestItem | null>(null)
@@ -86,6 +89,23 @@ export default function BudgetRequestPage() {
   const sendDateVal = watch('send_date')
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['budget-request', scId, syId, budgetYear] })
+
+  function handlePrint() {
+    if (items.length === 0) return
+    const body = officialDisbursementEvidenceRegister({
+      scName,
+      budgetYear,
+      rows: items.map((r) => ({
+        date: r.action_date,
+        creditor: r.creditor_name,
+        expenseType: EXPENSE_TYPES[r.expense_type] ?? '',
+        amount: r.amount,
+        sendDate: r.send_date,
+        note: r.remark,
+      })),
+    })
+    openPrintWindow({ title: `ทะเบียนคุมหลักฐานขอเบิก_${budgetYear}`, body })
+  }
 
   const addMut = useMutation({
     mutationFn: (dto: Record<string, unknown>) => apiPost<{ flag: boolean; ms: string }>('BudgetRequest/add', dto),
@@ -145,11 +165,15 @@ export default function BudgetRequestPage() {
 
   return (
     <div className="space-y-4">
+      <ProcessFlow flow="pay" />
       <PageHeader
         title="ทะเบียนคุมหลักฐานขอเบิกเงินงบประมาณ"
         subtitle={`ปีงบประมาณ ${budgetYear}`}
         actions={
           <div className="flex gap-2">
+            <Button variant="outline" onClick={handlePrint} disabled={items.length === 0}>
+              <Printer className="h-4 w-4 mr-1" />พิมพ์แบบฟอร์ม
+            </Button>
             <ExportButton onExport={() => exportToXlsx(items.map((r) => ({ 'ที่': r.br_seq, 'วันที่': fmtDateTH(r.action_date), 'เจ้าหนี้': r.creditor_name, 'ประเภท': EXPENSE_TYPES[r.expense_type], 'จำนวน': r.amount, 'ส่ง สพป.': r.send_date ? fmtDateTH(r.send_date) : 'ยังไม่ส่ง' })), 'หลักฐานขอเบิก', `budget-request-${budgetYear}`)} />
             <Button onClick={openAdd}><Plus className="h-4 w-4 mr-1" />เพิ่มรายการ</Button>
           </div>

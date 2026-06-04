@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, RotateCcw, ShieldOff } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { Button } from '@/components/ui/button'
@@ -270,6 +271,7 @@ export default function ContractSecurityPage() {
 
   return (
     <div className="flex flex-col flex-auto min-w-0">
+      <ProcessFlow flow="procure" />
       <PageHeader title="หลักประกันสัญญา" />
 
       <div className="p-4 space-y-4">

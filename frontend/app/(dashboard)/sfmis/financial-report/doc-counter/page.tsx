@@ -5,6 +5,7 @@ import { RotateCcw, Hash } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/shared/page-header'
 import { FormDialog } from '@/components/shared/form-dialog'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
 import { apiGet, apiPost } from '@/lib/api'
 import { useAppContext } from '@/hooks/use-app-context'
@@ -94,6 +95,7 @@ export default function DocCounterPage() {
   return (
     <div className="flex flex-col flex-auto min-w-0">
       <PageHeader title="ตั้งเลขที่เอกสารอัตโนมัติ" />
+      <ProcessFlow flow="receive" />
 
       <div className="p-4 space-y-4">
         {budgetYear && (

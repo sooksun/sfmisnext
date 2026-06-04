@@ -46,6 +46,7 @@ const PATH_ROLES: Array<{ prefix: string; roles: number[] }> = [
   { prefix: '/sfmis/year',                 roles: ADMIN },
   { prefix: '/sfmis/school-policy',        roles: ADMIN },
   { prefix: '/sfmis/business-setting',     roles: ADMIN },
+  { prefix: '/sfmis/admin-tools',          roles: ADMIN },
 
   // ระบบแอดมิน
   { prefix: '/sfmis/school',              roles: SUPER },

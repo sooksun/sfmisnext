@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -180,6 +181,7 @@ export default function SuppliesPage() {
 
   return (
     <div className="flex flex-col flex-auto min-w-0">
+      <ProcessFlow flow="procure" />
       <PageHeader
         title="บัญชีวัสดุ"
         actions={

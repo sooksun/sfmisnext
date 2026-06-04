@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Printer } from 'lucide-react'
 import { openPrintWindow, makeHeader, makeSignatures, esc, thaiFullDate } from '@/lib/print-utils'
 import { PageHeader } from '@/components/shared/page-header'
+import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -183,6 +184,7 @@ export default function InspectionPage() {
 
   return (
     <div className="flex flex-col flex-auto min-w-0">
+      <ProcessFlow flow="procure" />
       <PageHeader
         title="ตรวจรับพัสดุ (พ.ร.บ. ม.100-104)"
         actions={<Button onClick={openAdd} disabled={scId === 0}><Plus className="h-4 w-4" />บันทึกการตรวจรับ</Button>}

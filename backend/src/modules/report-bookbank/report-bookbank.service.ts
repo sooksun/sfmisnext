@@ -49,11 +49,13 @@ export class ReportBookbankService {
     }
 
     // โหลด financial transactions ของประเภทเงินที่ผูกกับบัญชีนี้
+    // กรองตามปีงบ (sy_id) ด้วย — มิฉะนั้นยอดสะสมจะปนข้ามปี (ยอดไม่ตรง)
     const transactions = await this.financialTransactionsRepository
       .createQueryBuilder('ft')
       .where('ft.sc_id = :scId', { scId })
       .andWhere('ft.del = :del', { del: '0' })
       .andWhere('ft.bg_type_id IN (:...bgTypeIds)', { bgTypeIds })
+      .andWhere(syId ? 'ft.sy_id = :syId' : '1=1', { syId })
       .orderBy('ft.create_date', 'ASC')
       .addOrderBy('ft.ft_id', 'ASC')
       .getMany();

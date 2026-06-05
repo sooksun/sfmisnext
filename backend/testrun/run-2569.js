@@ -54,6 +54,23 @@ const V = {
 
 const CH_RCV = { cash: 2, bank: 3, check: 1 };
 
+// ── map ประเภทเงินในโจทย์ (คู่มือ 101–110) → id จริงใน master_budget_income_type (1–16)
+//    เปลี่ยนทีเดียวที่นี่ ถ้า id ในระบบเปลี่ยน — ฟังก์ชันลงรายการแปลงให้อัตโนมัติ
+const MT = {
+  101: 2,  // เงินอุดหนุนค่าใช้จ่ายรายหัว
+  102: 3,  // ปัจจัยพื้นฐานนักเรียนยากจน
+  103: 13, // อาหารนักเรียนพักนอน
+  104: 4,  // เรียนฟรี 15 ปี
+  105: 9,  // รายได้สถานศึกษา
+  106: 8,  // อุดหนุน อปท. (อาหารกลางวัน)
+  107: 15, // อุดหนุน อปท. (ประชาธิปไตย)
+  108: 16, // อุดหนุน อปท. (วงดุริยางค์)
+  109: 11, // ประกันสัญญา
+  110: 12, // ภาษีหัก ณ ที่จ่าย
+  10: 10,  // รายได้แผ่นดิน
+};
+const toMt = (id) => MT[id] ?? id; // แปลง id โจทย์ → id ระบบ
+
 // ── รับเงิน (ออกใบเสร็จ บร. อัตโนมัติจากเล่มที่ใช้งานอยู่) ─────────────────────
 async function income(date, mt, amount, detail, channel = 'bank') {
   return incomeMulti(date, [{ bg_type_id: mt, prd_detail: detail, prd_budget: amount }], channel, detail);
@@ -66,7 +83,7 @@ async function incomeMulti(date, lines, channel, label) {
     receive_money_type: CH_RCV[channel] ?? 3,
     receive_date: actualDate, receive_form: actualLabel,
     user_receive: UP_BY, up_by: UP_BY, cf_transaction: 0,
-    receiveList: lines.map((l) => ({ bg_type_id: l.bg_type_id, prd_detail: tagged(l.prd_detail), prd_budget: l.prd_budget, up_by: UP_BY })),
+    receiveList: lines.map((l) => ({ bg_type_id: toMt(l.bg_type_id), prd_detail: tagged(l.prd_detail), prd_budget: l.prd_budget, up_by: UP_BY })),
   });
   const total = lines.reduce((s, l) => s + l.prd_budget, 0);
   rec(`[รับ ${actualDate}] ${actualLabel} = ${m(total)} (${channel})`, r.ok && r.body.flag !== false, short(r.body));
@@ -81,7 +98,7 @@ async function expense(date, mt, amount, detail, channel = 'bank', pId = 0) {
 
   // 1) ขอเบิก (เลขที่จริงระบบจะออกให้ตอนออกเช็ค — ที่นี่ใส่ค่าร่างชั่วคราว)
   const add = await post('Invoice/addInvoice', {
-    sc_id: SC_ID, no_doc: '(รออกเลขอัตโนมัติ)', bg_type_id: mt, rw_type: 3, p_id: pId,
+    sc_id: SC_ID, no_doc: '(รออกเลขอัตโนมัติ)', bg_type_id: toMt(mt), rw_type: 3, p_id: pId,
     detail: actualDetail, amount, certificate_payment: toc, date_request: actualDate,
     user_request: UP_BY, sy_id: SY_ID, year: YEAR, status: 200,
     type_offer_check: toc, up_by: UP_BY,
@@ -122,12 +139,23 @@ async function expense(date, mt, amount, detail, channel = 'bank', pId = 0) {
 // ── เงินยืม / ส่งใช้เงินยืม ───────────────────────────────────────────────────
 async function loanBorrow(date, borrowerId, mt, amount, purpose, category = 3) {
   const actualDate = d(date);
+  const label = `[ยืม ${actualDate}] borrower#${borrowerId} ${tagged(purpose)} = ${m(amount)}`;
+  // ขั้นที่ 0 — ตั้งเรื่องยืม (สถานะ "รอตรวจสอบ")
   const r = await post('LoanAgreement/addLoanAgreement', {
     sc_id: SC_ID, sy_id: SY_ID, budget_year: YEAR_BE,
-    borrower_id: borrowerId, money_type_id: mt, purpose: tagged(purpose), amount,
+    borrower_id: borrowerId, money_type_id: toMt(mt), purpose: tagged(purpose), amount,
     borrow_date: actualDate, loan_category: category, up_by: UP_BY,
   });
-  rec(`[ยืม ${actualDate}] borrower#${borrowerId} ${tagged(purpose)} = ${m(amount)}`, r.ok && r.body.flag !== false, short(r.body));
+  if (!r.ok || r.body.flag === false) { rec(label, false, 'add: ' + short(r.body)); return; }
+  const la = (await db('SELECT la_id FROM loan_agreement WHERE sc_id=? AND sy_id=? AND borrower_id=? AND status=10 AND del=0 ORDER BY la_id DESC LIMIT 1', [SC_ID, SY_ID, borrowerId]))[0];
+  if (!la) { rec(label, false, 'หา la_id (รอตรวจสอบ) ไม่เจอ'); return; }
+  // workflow: ตรวจสอบ → อนุมัติ → รับเงิน (ตัดยอดประเภทเงิน FT type=-1 ตอนรับเงิน)
+  const v = await post('LoanAgreement/verifyLoan', { la_id: la.la_id, verify_by: UP_BY, verify_date: actualDate, up_by: UP_BY });
+  if (!v.ok || v.body.flag === false) { rec(label, false, 'verify: ' + short(v.body)); return; }
+  const a = await post('LoanAgreement/approveLoan', { la_id: la.la_id, approve_by: UP_BY, approve_date: actualDate, up_by: UP_BY });
+  if (!a.ok || a.body.flag === false) { rec(label, false, 'approve: ' + short(a.body)); return; }
+  const dis = await post('LoanAgreement/disburseLoan', { la_id: la.la_id, receipt_date: actualDate, up_by: UP_BY });
+  rec(label, dis.ok && dis.body.flag !== false, short(dis.body));
 }
 async function loanReturn(date, borrowerId, cash, voucher, evNo) {
   const actualDate = d(date);
@@ -153,7 +181,7 @@ async function smp(date, mt, entry_type, amount, detail) {
   const actualDate = d(date);
   const r = await post('SmpDeposit/addEntry', {
     sc_id: SC_ID, sy_id: SY_ID, budget_year: YEAR_BE,
-    entry_type, doc_date: actualDate, detail: tagged(detail), amount, money_type_id: mt, up_by: UP_BY,
+    entry_type, doc_date: actualDate, detail: tagged(detail), amount, money_type_id: toMt(mt), up_by: UP_BY,
   });
   rec(`[ฝากส่วนราชการ ${actualDate}] ${entry_type === 1 ? 'ฝาก' : 'ถอน'} ${tagged(detail)} = ${m(amount)}`, r.ok && r.body.flag !== false, short(r.body));
 }
@@ -168,6 +196,9 @@ async function bankLedger(date, ba_id, entry_type, amount, detail) {
 // ── Phase 0: ตรวจความพร้อม ───────────────────────────────────────────────────
 async function phasePrereq() {
   console.log('\n── Phase 0: ตรวจความพร้อมปี 2569 ──');
+  // config (wht_min=0, block_cash_negative=0) ตั้งไว้ใน reset-2569.sql แล้ว
+  // หมายเหตุ: RegulatoryConfigService cache ค่าใน process — ถ้าเคยรันแล้วเปลี่ยนค่า
+  // ให้ restart backend เพื่อให้อ่านค่าใหม่ (admin_local เป็น role 2 จึง upsert ผ่าน API ไม่ได้)
   const year = (await db('SELECT sy_id, budget_year FROM school_year WHERE sc_id=? AND sy_id=? AND del=0 LIMIT 1', [SC_ID, SY_ID]))[0];
   rec(`ตรวจปีงบ SY=${SY_ID} budget_year=${YEAR_BE}`, !!year && String(year.budget_year) === YEAR_BE, year ? `sy_year/budget_year=${year.budget_year}` : 'ไม่พบปีงบ');
   const loan = (await db('SELECT la_id FROM loan_agreement WHERE sc_id=? AND sy_id=? AND borrower_id=101 AND status=1 AND del=0 LIMIT 1', [SC_ID, SY_ID]))[0];
@@ -184,12 +215,12 @@ const OPENING = [
 ];
 async function phaseOpening() {
   console.log('\n── Phase 1: ยอดยกมาต้นปี (ตย.1) ──');
-  for (const [mt, st, amt] of OPENING) {
+  for (const [mtId, st, amt] of OPENING) {
     const r = await post('OpeningBalance/add', {
       sc_id: SC_ID, sy_id: SY_ID, budget_year: YEAR_BE, balance_date: d('2012-09-30'),
-      money_type_id: mt, storage_type: st, amount: amt, up_by: UP_BY,
+      money_type_id: toMt(mtId), storage_type: st, amount: amt, up_by: UP_BY,
     });
-    rec(`opening mt=${mt} st=${st} ${m(amt)}`, r.ok && r.body.flag !== false, short(r.body));
+    rec(`opening mt=${mtId}→${toMt(mtId)} st=${st} ${m(amt)}`, r.ok && r.body.flag !== false, short(r.body));
   }
 }
 
@@ -316,7 +347,7 @@ async function phaseVerify() {
   rec(`เลขใบสำคัญเป็น พ.ศ. (บค./บจ. .../2569)`, ceCount === 0 && beCount > 0, `พ.ศ.=${beCount} ค.ศ.=${ceCount} ตัวอย่าง: ${vouchers.slice(0, 3).map((v) => v.no_doc).join(', ')}`);
 
   // 3.2 ภาษีหัก ณ ที่จ่าย: ลงทะเบียนคุมเงินภาษี (type 110) อัตโนมัติ
-  const whtFt = (await db("SELECT COUNT(*) c, COALESCE(SUM(amount),0) amt FROM financial_transactions WHERE sc_id=? AND sy_id=? AND bg_type_id=110 AND type=1 AND del=0", [SC_ID, SY_ID]))[0];
+  const whtFt = (await db("SELECT COUNT(*) c, COALESCE(SUM(amount),0) amt FROM financial_transactions WHERE sc_id=? AND sy_id=? AND bg_type_id=? AND type=1 AND del=0", [SC_ID, SY_ID, toMt(110)]))[0];
   rec(`หักภาษีอัตโนมัติเข้าทะเบียนคุมภาษี 9 รายการ`, Number(whtFt.c) === 9, `พบ ${whtFt.c} รายการ รวม ${m(whtFt.amt)} (คาดหวัง 1,964.43)`);
 
   // 3.3 ออกหนังสือรับรองหักภาษีอัตโนมัติ (ไม่ใช่ใบเสร็จ)
@@ -328,7 +359,7 @@ async function phaseVerify() {
   rec(`ไม่ออกใบเสร็จรับเงินซ้ำจากการหักภาษี`, Number(taxReceipts.c) === 0, `พบใบเสร็จภาษี ${taxReceipts.c} (ต้องเป็น 0)`);
 
   // 3.5 ทะเบียนคุมเงินภาษี (type 110) คงเหลือ = 1,194.06 (ตย.12)
-  const r110 = await get(`Register_control_money_type/load_register_control_money_type/110/${SC_ID}/${SY_ID}/${YEAR}`);
+  const r110 = await get(`Register_control_money_type/load_register_control_money_type/${toMt(110)}/${SC_ID}/${SY_ID}/${YEAR}`);
   const tx110 = r110.body.data?.[0]?.transaction || [];
   const bal110 = tx110.length ? tx110[tx110.length - 1].balance : (r110.body.carry_forward || 0);
   rec(`ทะเบียนคุมเงินภาษีคงเหลือ = 1,194.06 (ตย.12)`, Math.abs(Number(bal110) - 1194.06) < 0.05, `ระบบ = ${m(bal110)}`);
@@ -336,7 +367,7 @@ async function phaseVerify() {
   // 3.6 สรุปทะเบียนคุมเงินทุกประเภท
   console.log('\nทะเบียนคุมเงินนอกงบประมาณ (ยอดยกมา + รับ − จ่าย = คงเหลือ):');
   const rowsOut = [];
-  for (const t of [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]) {
+  for (const t of [101, 102, 103, 104, 105, 106, 107, 108, 109, 110].map(toMt)) {
     const r = await get(`Register_control_money_type/load_register_control_money_type/${t}/${SC_ID}/${SY_ID}/${YEAR}`);
     const j = r.body;
     const tx = j.data?.[0]?.transaction || [];

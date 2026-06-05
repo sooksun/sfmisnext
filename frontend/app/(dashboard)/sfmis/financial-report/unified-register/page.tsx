@@ -37,6 +37,7 @@ interface TransactionRow {
 interface DetailResponse {
   bg_type_id: number
   budget_type: string
+  carry_forward: number
   revenue: number
   expenses: number
   balance: number
@@ -125,28 +126,47 @@ export default function UnifiedRegisterPage() {
     setAppliedTo('')
   }
 
-  // พิมพ์แบบฟอร์ม "ทะเบียนคุมเงินนอกงบประมาณ" (สพฐ. 2567)
+  // พิมพ์แบบฟอร์ม "ทะเบียนคุมเงินนอกงบประมาณ" (คู่มือ ตย.8 / ตย.15)
   function handlePrint() {
     if (!detailData) return
+    const isSR = (detailData.budget_type ?? '').includes('รายได้สถานศึกษา')
     const rows = (detailData.transactions ?? []).map((t) => {
-      const isCash = t.receive_money_type === 2 // 2=เงินสด ; 1=เช็ค/3=โอน → ธนาคาร
-      const bal = Number(t.balance)
+      const doc = t.doc_no ?? ''
+      // ที่เก็บเงินที่ยอดเปลี่ยน: เงินสด (รับเงินสด / จ่าย บค.) ที่เหลือเป็นธนาคาร
+      const storage: 'cash' | 'bank' | 'smp' =
+        (t.type === 1 && t.receive_money_type === 2) || /^บค/.test(doc) ? 'cash' : 'bank'
+      if (isSR) {
+        // เงินรายได้สถานศึกษา — แยกหมวด รายรับ/รายจ่าย จากข้อความรายการ (heuristic)
+        const d = t.detail ?? ''
+        const isIn = t.type === 1
+        const isOut = t.type === -1
+        return {
+          date: t.create_date ?? '', docNo: t.doc_no, detail: t.detail, storage, note: null,
+          inLgo: isIn && /อปท|เทศบาล|ท้องถิ่น/.test(d) ? t.amount : null,
+          inDonation: isIn && /บริจาค|มอบให้|ผ้าป่า|กฐิน/.test(d) ? t.amount : null,
+          inOther: isIn && !/อปท|เทศบาล|ท้องถิ่น|บริจาค|มอบให้|ผ้าป่า|กฐิน/.test(d) ? t.amount : null,
+          outTeacher: isOut && /จ้าง.*ครู|ค่าจ้างครู|ค่าตอบแทนครู/.test(d) ? t.amount : null,
+          outUtility: isOut && /ไฟฟ้า|น้ำประปา|ค่าน้ำ|โทรศัพท์|อินเทอร์เน็ต|สาธารณูปโภค/.test(d) ? t.amount : null,
+          outOperate:
+            isOut && !/จ้าง.*ครู|ค่าจ้างครู|ค่าตอบแทนครู|ไฟฟ้า|น้ำประปา|ค่าน้ำ|โทรศัพท์|อินเทอร์เน็ต|สาธารณูปโภค/.test(d)
+              ? t.amount : null,
+        }
+      }
+      // มาตรฐาน — จ่าย: บย.=ลูกหนี้(เงินยืม) อื่น ๆ=ใบสำคัญ
+      const isLoan = /^บย/.test(doc)
       return {
-        date: t.create_date,
-        docNo: t.doc_no,
-        detail: t.detail,
+        date: t.create_date ?? '', docNo: t.doc_no, detail: t.detail, storage, note: null,
         receive: t.type === 1 ? t.amount : null,
-        pay: t.type === -1 ? t.amount : null,
-        cash: isCash ? bal : null,
-        bank: isCash ? null : bal,
-        smp: null,
-        note: null,
+        payDebtor: t.type === -1 && isLoan ? t.amount : null,
+        payVoucher: t.type === -1 && !isLoan ? t.amount : null,
       }
     })
     const body = officialNonBudgetRegisterForm({
       scName,
       fundTypeName: detailData.budget_type,
       budgetYear,
+      variant: isSR ? 'school_revenue' : 'standard',
+      opening: { bank: Number(detailData.carry_forward || 0) },
       rows,
     })
     openPrintWindow({ title: `ทะเบียนคุมเงิน_${detailData.budget_type}`, body })

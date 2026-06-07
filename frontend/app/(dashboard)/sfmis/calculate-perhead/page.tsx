@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
@@ -31,6 +31,11 @@ export default function CalculatePerheadPage() {
   const [page, setPage] = useState(0)
   const pageSize = 25
 
+  // เปลี่ยนโรงเรียน/ปีงบ → กลับไปหน้าแรก กันค้างหน้าเกินช่วงข้อมูล
+  useEffect(() => {
+    setPage(0)
+  }, [scId, syId])
+
   const { data, isLoading } = useQuery({
     queryKey: ['calculate-perhead', scId, syId],
     queryFn: () => apiGet<PerheadCalcResponse>(`Student/loadCalculatePerhead/${scId}/${syId}`),
@@ -39,6 +44,9 @@ export default function CalculatePerheadPage() {
 
   const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })
   const rows = Array.isArray(data?.data) ? data.data : []
+  // loadCalculatePerhead คืนข้อมูลทั้งหมดในครั้งเดียว → แบ่งหน้าฝั่ง client
+  // (DataTable แสดงทุกแถวใน data ตามที่ส่งเข้าไป จึงต้อง slice เองตามหน้า)
+  const pagedRows = rows.slice(page * pageSize, (page + 1) * pageSize)
   const totalPrice = data?.totalprice ?? 0
 
   const columns = [
@@ -73,7 +81,7 @@ export default function CalculatePerheadPage() {
       <div className="p-4 space-y-4">
         <DataTable
           columns={columns}
-          data={rows}
+          data={pagedRows}
           total={rows.length}
           page={page}
           pageSize={pageSize}

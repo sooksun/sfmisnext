@@ -1,12 +1,21 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Search, TrendingUp, TrendingDown, Wallet, Printer } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { Search, TrendingUp, TrendingDown, Wallet, Printer, Landmark } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { ProcessFlow } from '@/components/shared/process-flow'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 import { Button } from '@/components/ui/button'
-import { apiGet } from '@/lib/api'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { apiGet, apiPost } from '@/lib/api'
 import { fmtDateTH, showNumber, cn } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
 import { openPrintWindow } from '@/lib/print-utils'
@@ -32,12 +41,29 @@ interface TransactionRow {
   detail: string | null
   balance: number
   receive_money_type: number | null
+  // ทะเบียนคุมเงินยืม (backend คำนวณให้)
+  kind?: string
+  receive?: number
+  pay_debtor?: number
+  pay_voucher?: number
+  cash?: number
+  bank?: number
+  smp?: number
+  debtor?: number
+}
+
+interface OpeningSplit {
+  cash: number
+  bank: number
+  smp: number
+  debtor: number
 }
 
 interface DetailResponse {
   bg_type_id: number
   budget_type: string
   carry_forward: number
+  opening?: OpeningSplit
   revenue: number
   expenses: number
   balance: number
@@ -126,6 +152,56 @@ export default function UnifiedRegisterPage() {
     setAppliedTo('')
   }
 
+  // ── นำเงินสดฝากธนาคาร (deposit) ────────────────────────────────────────────
+  const queryClient = useQueryClient()
+  const [depositOpen, setDepositOpen] = useState(false)
+  const [depositDate, setDepositDate] = useState('')
+  const [depositAmount, setDepositAmount] = useState('')
+  const [depositDoc, setDepositDoc] = useState('')
+  const [depositSaving, setDepositSaving] = useState(false)
+
+  async function handleDeposit() {
+    if (activeTab === null) return
+    const amount = Number(depositAmount)
+    if (!(amount > 0)) {
+      toast.error('กรุณากรอกจำนวนเงินที่นำฝาก')
+      return
+    }
+    if (!depositDate) {
+      toast.error('กรุณาเลือกวันที่นำฝาก')
+      return
+    }
+    setDepositSaving(true)
+    try {
+      const res = await apiPost<{ flag: boolean; ms: string }>(
+        'Register_control_money_type/deposit_cash',
+        {
+          sc_id: scId,
+          sy_id: syId,
+          bg_type_id: activeTab,
+          deposit_date: depositDate,
+          amount,
+          doc_no: depositDoc || undefined,
+        },
+      )
+      if (res.flag) {
+        toast.success(res.ms || 'นำเงินฝากธนาคารเรียบร้อยแล้ว')
+        setDepositOpen(false)
+        setDepositAmount('')
+        setDepositDoc('')
+        setDepositDate('')
+        await queryClient.invalidateQueries({ queryKey: ['unified-register-detail'] })
+        await queryClient.invalidateQueries({ queryKey: ['unified-register-summary'] })
+      } else {
+        toast.error(res.ms || 'นำฝากไม่สำเร็จ')
+      }
+    } catch {
+      toast.error('เกิดข้อผิดพลาดในการนำฝาก')
+    } finally {
+      setDepositSaving(false)
+    }
+  }
+
   // พิมพ์แบบฟอร์ม "ทะเบียนคุมเงินนอกงบประมาณ" (คู่มือ ตย.8 / ตย.15)
   function handlePrint() {
     if (!detailData) return
@@ -152,13 +228,16 @@ export default function UnifiedRegisterPage() {
               ? t.amount : null,
         }
       }
-      // มาตรฐาน — จ่าย: บย.=ลูกหนี้(เงินยืม) อื่น ๆ=ใบสำคัญ
-      const isLoan = /^บย/.test(doc)
+      // มาตรฐาน — ใช้ค่าที่ backend จำแนกให้ (รับ/ลูกหนี้/ใบสำคัญ + ยอดคงเหลือ running)
       return {
-        date: t.create_date ?? '', docNo: t.doc_no, detail: t.detail, storage, note: null,
-        receive: t.type === 1 ? t.amount : null,
-        payDebtor: t.type === -1 && isLoan ? t.amount : null,
-        payVoucher: t.type === -1 && !isLoan ? t.amount : null,
+        date: t.create_date ?? '', docNo: t.doc_no, detail: t.detail, note: null,
+        receive: t.receive ?? null,
+        payDebtor: t.pay_debtor ?? null,
+        payVoucher: t.pay_voucher ?? null,
+        cash: t.cash ?? null,
+        bank: t.bank ?? null,
+        smp: t.smp ?? null,
+        debtor: t.debtor ?? null,
       }
     })
     const body = officialNonBudgetRegisterForm({
@@ -166,10 +245,17 @@ export default function UnifiedRegisterPage() {
       fundTypeName: detailData.budget_type,
       budgetYear,
       variant: isSR ? 'school_revenue' : 'standard',
-      opening: { bank: Number(detailData.carry_forward || 0) },
+      opening: detailData.opening
+        ? {
+            cash: detailData.opening.cash,
+            bank: detailData.opening.bank,
+            smp: detailData.opening.smp,
+            debtor: detailData.opening.debtor,
+          }
+        : { bank: Number(detailData.carry_forward || 0) },
       rows,
     })
-    openPrintWindow({ title: `ทะเบียนคุมเงิน_${detailData.budget_type}`, body })
+    openPrintWindow({ title: `ทะเบียนคุมเงิน_${detailData.budget_type}`, body, paper: 'A4 landscape' })
   }
 
   // พิมพ์ "รายงานการรับ-จ่ายเงินรายได้สถานศึกษา" (form-030) — เฉพาะกองทุนเงินรายได้สถานศึกษา
@@ -347,6 +433,17 @@ export default function UnifiedRegisterPage() {
               </div>
               {transactions.length > 0 && (
                 <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setDepositDate(toDate || fromDate || '')
+                      setDepositOpen(true)
+                    }}
+                    className="gap-1"
+                  >
+                    <Landmark className="h-4 w-4" /> นำเงินฝากธนาคาร
+                  </Button>
                   <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1">
                     <Printer className="h-4 w-4" /> ทะเบียนคุม
                   </Button>
@@ -465,6 +562,52 @@ export default function UnifiedRegisterPage() {
           </div>
         )}
       </div>
+
+      {/* ── Dialog: นำเงินสดฝากธนาคาร ───────────────────────────────────────── */}
+      <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>นำเงินสดฝากธนาคาร</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-gray-500">
+              ย้ายเงินสดคงมือของ “{activeDetail?.budget_type ?? ''}” เข้าเงินฝากธนาคาร
+              (ทะเบียนจะลงแถว “นำเงินฝากธนาคาร” อัตโนมัติ)
+            </p>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">วันที่นำฝาก</label>
+              <ThaiDatePicker value={depositDate} onChange={setDepositDate} placeholder="เลือกวันที่" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">จำนวนเงิน (บาท)</label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-600">เลขที่เอกสาร (Pay-in) — ถ้ามี</label>
+              <Input
+                value={depositDoc}
+                onChange={(e) => setDepositDoc(e.target.value)}
+                placeholder="เช่น Pay-in 4/2569"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setDepositOpen(false)} disabled={depositSaving}>
+              ยกเลิก
+            </Button>
+            <Button size="sm" onClick={() => void handleDeposit()} disabled={depositSaving}>
+              {depositSaving ? 'กำลังบันทึก…' : 'นำฝาก'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

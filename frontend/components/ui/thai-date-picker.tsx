@@ -5,7 +5,8 @@
  * - รับ/คืนค่าเป็น "YYYY-MM-DD" (CE) เพื่อส่ง API
  * - ไม่ต้องติดตั้ง package เพิ่ม
  */
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, CalendarDays, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -81,8 +82,13 @@ export function ThaiDatePicker({
   const [viewYear, setViewYear] = useState(initYear)
   const [viewMonth, setViewMonth] = useState(initMonth)
   const [pickingYear, setPickingYear] = useState(false)
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null)
+  const [mounted, setMounted] = useState(false)
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => setMounted(true), [])
 
   // ── sync view เมื่อ value เปลี่ยนจากภายนอก ───────────────────────────────
   useEffect(() => {
@@ -96,13 +102,39 @@ export function ThaiDatePicker({
   useEffect(() => {
     if (!open) return
     function handler(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const t = e.target as Node
+      const inTrigger = !!containerRef.current?.contains(t)
+      const inPopover = !!popoverRef.current?.contains(t)
+      if (!inTrigger && !inPopover) {
         setOpen(false)
         setPickingYear(false)
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  // ── คำนวณตำแหน่ง popup (portal → fixed) เมื่อเปิด/scroll/resize ────────────
+  useLayoutEffect(() => {
+    if (!open) return
+    function place() {
+      const el = containerRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      const popH = 320
+      const popW = 288
+      const spaceBelow = window.innerHeight - r.bottom
+      const top = spaceBelow >= popH || r.top < popH ? r.bottom + 4 : r.top - popH - 4
+      const left = Math.min(r.left, window.innerWidth - popW - 8)
+      setCoords({ top, left })
+    }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
   }, [open])
 
   // ── navigation ────────────────────────────────────────────────────────────
@@ -189,12 +221,13 @@ export function ThaiDatePicker({
         </span>
       </button>
 
-      {/* Dropdown */}
-      {open && (
-        <div className={cn(
-          'absolute z-50 mt-1 w-72 rounded-lg border border-gray-200 bg-white shadow-lg',
-          'left-0',
-        )}>
+      {/* Dropdown — render via portal เพื่อหลุดจาก overflow:hidden ของ Dialog */}
+      {open && mounted && coords && createPortal(
+        <div
+          ref={popoverRef}
+          style={{ position: 'fixed', top: coords.top, left: coords.left, zIndex: 9999 }}
+          className="w-72 rounded-lg border border-gray-200 bg-white shadow-lg"
+        >
           {/* ── Header ── */}
           <div className="flex items-center justify-between border-b px-3 py-2">
             <button
@@ -286,7 +319,8 @@ export function ThaiDatePicker({
               </div>
             </>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

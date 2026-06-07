@@ -221,6 +221,7 @@ export default function ContractPage() {
         title={editing ? 'แก้ไขสัญญา' : 'เพิ่มสัญญา'}
         onSubmit={handleSubmit((d) => save.mutate(d))}
         loading={save.isPending}
+        size="2xl"
       >
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">

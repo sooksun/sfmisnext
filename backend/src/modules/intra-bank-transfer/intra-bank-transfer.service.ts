@@ -6,6 +6,10 @@ import {
   AddIntraBankTransferDto,
   CompleteIntraBankTransferDto,
 } from './dto/intra-bank-transfer.dto';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const STATUS_NAMES: Record<number, string> = {
   0: 'ร่าง',
@@ -107,11 +111,12 @@ export class IntraBankTransferService {
     };
   }
 
-  async complete(dto: CompleteIntraBankTransferDto) {
+  async complete(dto: CompleteIntraBankTransferDto, user: JwtUser) {
     const t = await this.ibtRepo.findOne({
       where: { ibtId: dto.ibt_id, del: 0 },
     });
     if (!t) return { flag: false, ms: 'ไม่พบรายการ' };
+    assertSameSchool(user, t.scId);
     if (t.status !== 1) return { flag: false, ms: 'สถานะไม่ถูกต้อง' };
     t.status = 2;
     t.completedDate = dto.completed_date;
@@ -122,9 +127,10 @@ export class IntraBankTransferService {
     return { flag: true, ms: 'บันทึกการโอนเงินสำเร็จ' };
   }
 
-  async cancel(ibtId: number, reason: string, upBy: number) {
+  async cancel(ibtId: number, reason: string, upBy: number, user: JwtUser) {
     const t = await this.ibtRepo.findOne({ where: { ibtId, del: 0 } });
     if (!t) return { flag: false, ms: 'ไม่พบรายการ' };
+    assertSameSchool(user, t.scId);
     if (t.status === 2)
       return { flag: false, ms: 'รายการสำเร็จแล้ว ยกเลิกไม่ได้' };
     t.status = 3;

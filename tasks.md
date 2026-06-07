@@ -1,6 +1,15 @@
 ## งานรวมสำหรับ Backend SFMIS
 
-### สรุปสถานะระดับโมดูล
+> ⚠️ **ขอบเขตของเอกสารนี้ (อ่านก่อน):** checklist ด้านล่างคือ **เฟสแรก (21 โมดูล core)** ที่สร้างคู่กับ Angular frontend และ "เสร็จ 100%" จริงตามที่ระบุ — เก็บไว้เป็นบันทึกประวัติ
+>
+> **สถานะปัจจุบัน (มิ.ย. 2569) ขยายไปไกลกว่านี้มาก:**
+> - Backend จริงมี **68 โมดูล** (21 core + ขยาย เช่น loan-agreement, travel-reimbursement, bank-reconciliation, gov-revenue, regulatory-config, doc-counter ฯลฯ) — ดู `backend/src/app.module.ts`
+> - Frontend หลักคือ **Next.js** (`frontend/`, 84 หน้า) — Angular (`src/`) กำลัง phase-out; script `start:frontend` ด้านล่างยังชี้ Angular เดิม สำหรับ Next.js ใช้ `cd frontend && npm run dev`
+> - มี **unit test 306 / 20 suites**, security (JWT/RBAC/Helmet/Throttler/multi-tenant), Docker + CI/CD ครบ
+>
+> 👉 **แหล่งความจริงของสถานะล่าสุด:** `plan.md`, `DEVELOPMENT_ROADMAP.md`, `CLAUDE.md`
+
+### สรุปสถานะระดับโมดูล (เฟสแรก — 21 โมดูล core)
 - ✅ **AdminModule**: เสร็จสมบูรณ์ (login / load / update / remove / updateAdmin / loadPosition)
 - ✅ **DashboardModule**: เสร็จสมบูรณ์ (loadChartBudgetType_Pie, loadChartBudgetType_Bar, predictBudget, load_dashboard, get_round)
 - ✅ **SchoolYearModule**: เสร็จสมบูรณ์ (loadScoolYearByYear, change_year, check_year, CRUD)

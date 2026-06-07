@@ -44,17 +44,23 @@ export class IntraBankTransferController {
     return this.svc.add(dto);
   }
 
-  // TODO: complete/cancel รับแค่ ibt_id — service ต้อง findOne({ ibtId, scId: user.sc_id })
-  // เพื่อ assertSameSchool ก่อน update (DTO ไม่มี sc_id)
+  // complete/cancel รับแค่ ibt_id — service โหลด record แล้ว assertSameSchool(user, t.scId)
+  // กัน cross-tenant (DTO ไม่มี sc_id)
   @Post('complete')
   @HttpCode(HttpStatus.OK)
-  complete(@Body() dto: CompleteIntraBankTransferDto) {
-    return this.svc.complete(dto);
+  complete(
+    @Body() dto: CompleteIntraBankTransferDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.svc.complete(dto, user);
   }
 
   @Post('cancel')
   @HttpCode(HttpStatus.OK)
-  cancel(@Body() dto: CancelIntraBankTransferDto) {
-    return this.svc.cancel(dto.ibt_id, dto.reason, dto.up_by);
+  cancel(
+    @Body() dto: CancelIntraBankTransferDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.svc.cancel(dto.ibt_id, dto.reason, dto.up_by, user);
   }
 }

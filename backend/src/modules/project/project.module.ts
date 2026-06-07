@@ -6,9 +6,11 @@ import {
 } from './project.controller';
 import { ProjectService } from './project.service';
 import { Project } from './entities/project.entity';
+import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
+import { SchoolYear } from '../school-year/entities/school-year.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Project])],
+  imports: [TypeOrmModule.forFeature([Project, ParcelOrder, SchoolYear])],
   controllers: [ProjectController, ProjectLowerController],
   providers: [ProjectService],
   exports: [ProjectService],

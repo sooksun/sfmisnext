@@ -25,6 +25,7 @@ import Link from 'next/link'
 import { BookOpen, AlertTriangle } from 'lucide-react'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime, fmtDateTH, todayISO } from '@/lib/utils'
+import { getLastEntryDate, setLastEntryDate } from '@/lib/last-entry-date'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 import { useAppContext } from '@/hooks/use-app-context'
 import { useActiveReceiptBook } from '@/hooks/use-receipt-book'
@@ -129,7 +130,7 @@ export default function ReceivePage() {
       defaultValues: {
         pr_no: '',
         receive_form: '',
-        receive_date: todayISO(),
+        receive_date: getLastEntryDate('receive'),
         receive_money_type: 2,
         receiveList: [{ bg_type_id: 0, prd_detail: '', prd_budget: 0 }],
       },
@@ -171,6 +172,7 @@ export default function ReceivePage() {
       }),
     onSuccess: (res: any, form: ReceiveForm) => {
       if (res.flag) {
+        setLastEntryDate(form.receive_date, 'receive')
         // backend ออกใบเสร็จ บร. + เดินเลขเล่มให้แล้ว (atomic) — แสดงเลขที่ออก
         toast.success(res.ms || 'บันทึกเรียบร้อยแล้ว')
         // รับเป็นเงินสด → ระบบสร้าง "บันทึกการรับเงินเพื่อเก็บรักษา" ให้อัตโนมัติ

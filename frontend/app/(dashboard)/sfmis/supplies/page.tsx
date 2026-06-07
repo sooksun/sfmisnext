@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
@@ -14,6 +14,8 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { openPrintWindow } from '@/lib/print-utils'
+import { materialsRegisterForm } from '@/lib/official-procurement-forms'
 import {
   Select,
   SelectContent,
@@ -60,7 +62,7 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export default function SuppliesPage() {
-  const { scId } = useAppContext()
+  const { scId, scName } = useAppContext()
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
@@ -152,6 +154,25 @@ export default function SuppliesPage() {
     setDialogOpen(true)
   }
 
+  // พิมพ์บัญชีวัสดุ (pdf14) — ดึงทั้งหมด (สูงสุด 500) แล้วสร้างฟอร์ม
+  async function printRegister() {
+    try {
+      const all = await apiGet<PaginatedResponse<Supply>>(
+        `General_db/load_supplies/${scId}/0/500`,
+      )
+      const rows = (all?.data ?? []).map((s) => ({
+        supp_name: s.supp_name,
+        unit: s.un_name,
+        qty: s.supp_amount,
+        balance: s.supp_amount,
+      }))
+      const { title, body } = materialsRegisterForm({ scName, rows })
+      openPrintWindow({ title, body })
+    } catch {
+      toast.error('พิมพ์บัญชีวัสดุไม่สำเร็จ')
+    }
+  }
+
   const columns = useMemo(() => [
     {
       header: 'จัดการ',
@@ -185,10 +206,16 @@ export default function SuppliesPage() {
       <PageHeader
         title="บัญชีวัสดุ"
         actions={
-          <Button onClick={openAdd} disabled={scId === 0}>
-            <Plus className="h-4 w-4" />
-            เพิ่มวัสดุ
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={printRegister} disabled={scId === 0} title="พิมพ์บัญชีวัสดุ">
+              <Printer className="h-4 w-4" />
+              พิมพ์บัญชีวัสดุ
+            </Button>
+            <Button onClick={openAdd} disabled={scId === 0}>
+              <Plus className="h-4 w-4" />
+              เพิ่มวัสดุ
+            </Button>
+          </div>
         }
       />
       <div className="p-4">

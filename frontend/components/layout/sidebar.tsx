@@ -63,6 +63,7 @@ import {
   Shield,
   BellRing,
   ClipboardSignature,
+  Plane,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
@@ -103,17 +104,19 @@ const navGroups: NavItem[] = [
     roles: PLAN,
     children: [
       { label: '1.1 เตรียมงบประมาณ',          href: '/sfmis/student',                    icon: GraduationCap, roles: PLAN },
-      { label: '1.2 แผนงาน/โครงการ',          href: '/sfmis/plan-menu/project',           icon: FolderOpen,    roles: [...PLAN, 4, 7] },
-      { label: '1.3 อนุมัติโครงการ',          href: '/sfmis/plan-menu/proj-approve',      icon: CheckSquare,   roles: [...PLAN, 4, 7] },
-      { label: '1.4 แผนจัดซื้อจัดจ้าง',       href: '/sfmis/plan-menu/procurement-plan',  icon: ClipboardList, roles: [...PLAN, 4, 7] },
-      { label: '1.5 ติดตามแผน-โครงการ',       href: '/sfmis/plan-menu/plan-trace',        icon: GitBranch,     roles: PLAN },
-      { label: '1.6 รายงาน SAR',              href: '/sfmis/plan-menu/sar-report',        icon: FileBarChart2, roles: PLAN },
-      { label: 'เกณฑ์เงินต่อหัวนักเรียน',    href: '/sfmis/perhead-rate-setting',        icon: TrendingUp,    roles: PLAN, hidden: true },
-      { label: 'คำนวณเงินต่อหัวนักเรียน',    href: '/sfmis/calculate-perhead',           icon: Calculator,    roles: PLAN, hidden: true },
+      { label: '1.2 กำหนดชั้นที่เปิดสอน',     href: '/sfmis/class-open-config',           icon: School,        roles: PLAN },
+      { label: '1.3 ตั้งค่าประเภทเงินรายหัว', href: '/sfmis/perhead-rate-config',         icon: ListOrdered,   roles: PLAN },
+      { label: '1.4 กำหนดอัตราเงินต่อหัว',    href: '/sfmis/perhead-rate-setting',        icon: TrendingUp,    roles: PLAN },
+      { label: '1.5 คำนวณงบจากรายหัว',        href: '/sfmis/calculate-perhead',           icon: Calculator,    roles: PLAN },
+      { label: '1.6 งบประมาณรวมรายปี',        href: '/sfmis/estimate-acadyear',           icon: CalendarRange, roles: PLAN },
+      { label: '1.7 กำหนดวงเงินงบประมาณ',     href: '/sfmis/budget-category',             icon: Layers,        roles: PLAN },
+      { label: '1.8 แผนงาน/โครงการ',          href: '/sfmis/plan-menu/project',           icon: FolderOpen,    roles: [...PLAN, 4, 7] },
+      { label: '1.9 บริหารโครงการ',           href: '/sfmis/plan-menu/manage-project',    icon: Boxes,         roles: [...PLAN, 4, 7] },
+      { label: '1.10 อนุมัติโครงการ',         href: '/sfmis/plan-menu/proj-approve',      icon: CheckSquare,   roles: [...PLAN, 4, 7] },
+      { label: '1.11 แผนจัดซื้อจัดจ้าง',      href: '/sfmis/plan-menu/procurement-plan',  icon: ClipboardList, roles: [...PLAN, 4, 7] },
+      { label: '1.12 ติดตามแผน-โครงการ',      href: '/sfmis/plan-menu/plan-trace',        icon: GitBranch,     roles: PLAN },
       { label: 'การจัดสรรงบประมาณ',          href: '/sfmis/budget-allocation',           icon: Wallet,        roles: PLAN, hidden: true },
-      { label: 'หมวดงบประมาณ',               href: '/sfmis/budget-category',             icon: Layers,        roles: PLAN, hidden: true },
       { label: 'งบประมาณที่ได้รับจริง',       href: '/sfmis/real-budget',                 icon: ArrowUpDown,   roles: PLAN, hidden: true },
-      { label: 'ประมาณการปีการศึกษา',        href: '/sfmis/estimate-acadyear',           icon: CalendarRange, roles: PLAN, hidden: true },
       { label: 'ประกาศ e-GP',                 href: '/sfmis/plan-menu/egp-announcement', icon: FileBarChart2, roles: [...PLAN, 4, 7], hidden: true },
       { label: 'โอนงบประมาณ',                href: '/sfmis/plan-menu/budget-transfer',   icon: ArrowUpDown,   roles: PLAN, hidden: true },
       { label: 'รายจ่าย',                     href: '/sfmis/expenses',                   icon: DollarSign,    roles: PLAN, hidden: true },
@@ -121,58 +124,60 @@ const navGroups: NavItem[] = [
     ],
   },
   {
-    label: '2. งานการเงิน',
-    icon: DollarSign,
-    roles: FINANCE,
-    children: [
-      { label: '2.1 ตั้งค่าต้นปี',                  href: '/sfmis/financial-report/receipt-book',       icon: Notebook,        roles: FINANCE },
-      { label: '2.2 รับเงิน',                        href: '/sfmis/receive-menu/receive',                icon: ArrowDownToLine, roles: FINANCE },
-      // 2.4 เดิมออกใบเสร็จแบบ 2 ขั้น — รวมเข้า 2.3 แล้ว (รับเงิน=ออกใบเสร็จ บร. ในตัว)
-      // หน้านี้ซ้ำกับ 2.3 (ดู/พิมพ์ซ้ำ) + 2.1 (ทะเบียนเล่ม) → ซ่อนจากเมนู (เก็บ route ไว้)
-      { label: '2.4 ใบเสร็จรับเงิน (ที่ออกแล้ว)',     href: '/sfmis/financial-report/receipt',            icon: BookMarked,      roles: FINANCE, hidden: true },
-      { label: 'รับเงินเพื่อเก็บรักษา',              href: '/sfmis/financial-report/cash-keeping',       icon: KeyRound,        roles: FINANCE, hidden: true },
-      { label: '2.3 จ่ายเงิน',                       href: '/sfmis/pay-menu/invoice',                    icon: FileText,        roles: FINANCE },
-      // ขั้นต่อเนื่องของการจ่ายเงิน — เข้าถึงผ่านแถบ "ขั้นตอนการจ่ายเงิน" (ProcessFlow)
-      { label: '2.7 ตรวจสอบใบสำคัญจ่าย',            href: '/sfmis/confirm-invoice',                     icon: ClipboardList,   roles: FINANCE, hidden: true },
-      { label: 'สร้างเช็ค',                          href: '/sfmis/pay-menu/generate-check',             icon: CreditCard,      roles: FINANCE, hidden: true },
-      { label: 'หนังสือรับรองหักภาษี ณ ที่จ่าย',    href: '/sfmis/pay-menu/withholding-certificate',    icon: FileText,        roles: FINANCE, hidden: true },
-      { label: '2.10 หลักฐานขอเบิกเงินงบประมาณ',     href: '/sfmis/pay-menu/budget-request',             icon: ClipboardList,   roles: FINANCE, hidden: true },
-      { label: '2.4 เงินยืม',                        href: '/sfmis/pay-menu/loan-agreement',             icon: BookCopy,        roles: FINANCE },
-      { label: 'ยืมเงินข้ามประเภท',                 href: '/sfmis/pay-menu/fund-borrowing',             icon: BookCopy,        roles: FINANCE, hidden: true },
-      { label: '2.5 เงินฝาก/นำส่ง/โอน',              href: '/sfmis/receive-menu/spp-deposit',            icon: BookOpenCheck,   roles: FINANCE },
-      { label: 'ทะเบียนสมุดคู่ฝาก สพป.',            href: '/sfmis/financial-report/smp-deposit',        icon: BookOpenCheck,   roles: FINANCE, hidden: true },
-      { label: 'เงินรายได้แผ่นดิน (ดอกเบี้ย)',      href: '/sfmis/financial-report/gov-revenue',        icon: Banknote,        roles: FINANCE, hidden: true },
-      { label: 'โอนเงินระหว่างบัญชี',               href: '/sfmis/financial-report/intra-bank-transfer', icon: Landmark,       roles: FINANCE, hidden: true },
-      { label: '2.6 ปิดวัน',                         href: '/sfmis/financial-report/daily-balance',      icon: BarChart2,       roles: FINANCE },
-      { label: '2.7 รายงานประจำเดือน',              href: '/sfmis/financial-report/monthly-submission', icon: Send,            roles: FINANCE },
-      { label: '2.8 ปิดปี / ยอดยกมา',               href: '/sfmis/financial-report/fiscal-year-close',  icon: CalendarClock,   roles: FINANCE },
-      { label: 'รายงานสิ้นปีงบประมาณ',              href: '/sfmis/financial-report/year-end-report',    icon: FileBarChart2,   roles: FINANCE, hidden: true },
-      { label: 'ตั้งเลขที่เอกสาร',                  href: '/sfmis/financial-report/doc-counter',        icon: Hash,            roles: FINANCE, hidden: true },
-    ],
-  },
-  {
-    label: '3. จัดซื้อจัดจ้าง',
+    label: '2. จัดซื้อจัดจ้าง',
     icon: Package,
     roles: SUPPLY,
     children: [
-      { label: '3.1 คำขอจัดซื้อ/จัดจ้าง', href: '/sfmis/supplie-setting/withdraw-confirm', icon: CheckSquare, roles: SUPPLY },
-      { label: '3.2 สัญญา/ส่งมอบ/ตรวจรับ', href: '/sfmis/supplie-setting/contract',    icon: FileText,    roles: SUPPLY },
-      { label: '3.3 บัญชีวัสดุ/เบิกพัสดุ', href: '/sfmis/supplies',                    icon: Boxes,       roles: SUPPLY },
-      { label: '3.4 ตรวจสอบ/จำหน่ายประจำปี', href: '/sfmis/supplie-setting/annual-check', icon: ShieldCheck, roles: SUPPLY },
-      { label: '3.5 ตั้งค่าพัสดุ',        href: '/sfmis/supplie-setting/type-supplies', icon: ListOrdered, roles: SUPPLY },
+      { label: '2.1 แต่งตั้งคณะกรรมการ',  href: '/sfmis/setting-committee',            icon: UserCheck,   roles: SUPPLY },
+      { label: '2.2 คำขอจัดซื้อ/จัดจ้าง', href: '/sfmis/supplie-setting/withdraw-confirm', icon: CheckSquare, roles: SUPPLY },
+      { label: '2.3 เอกสารจัดซื้อ/ตรวจรับ', href: '/sfmis/supplie-setting/procurement-docs', icon: BadgeCheck, roles: SUPPLY },
+      { label: '2.4 สัญญา/ส่งมอบ',        href: '/sfmis/supplie-setting/contract',    icon: FileText,    roles: SUPPLY },
+      { label: '2.5 รับพัสดุ',            href: '/sfmis/receive-parcel',               icon: Truck,       roles: SUPPLY },
+      { label: '2.6 ยืนยันรับพัสดุ',      href: '/sfmis/receive-parcel-confirm',        icon: PackageCheck, roles: SUPPLY },
+      { label: '2.7 บัญชีวัสดุ',          href: '/sfmis/supplies',                    icon: Boxes,       roles: SUPPLY },
+      { label: '2.8 เบิกพัสดุ/ใบเบิก',    href: '/sfmis/supplie-setting/requisition',   icon: ClipboardSignature, roles: SUPPLY },
+      { label: '2.9 ตรวจสอบ/จำหน่ายประจำปี', href: '/sfmis/supplie-setting/annual-check', icon: ShieldCheck, roles: SUPPLY },
+      // ── ตั้งค่า/ขั้นย่อย (เข้าถึงผ่านลิงก์/ProcessFlow) ──
+      { label: 'ตั้งค่าพัสดุ (ประเภท)',  href: '/sfmis/supplie-setting/type-supplies', icon: ListOrdered, roles: SUPPLY, hidden: true },
       { label: 'หน่วยนับ',                href: '/sfmis/supplie-setting/unit',          icon: Ruler,       roles: SUPPLY, hidden: true },
       { label: 'ร้านค้า/ผู้รับจ้าง',      href: '/sfmis/supplie-setting/partner',      icon: Store,       roles: SUPPLY, hidden: true },
-      { label: 'แต่งตั้งคณะกรรมการ',      href: '/sfmis/setting-committee',            icon: UserCheck,   roles: SUPPLY, hidden: true },
       { label: 'หลักประกันสัญญา',         href: '/sfmis/contract-security',            icon: Shield,      roles: SUPPLY, hidden: true },
-      { label: 'รับพัสดุ',                href: '/sfmis/receive-parcel',               icon: Truck,       roles: SUPPLY, hidden: true },
-      // ขั้นต่อเนื่องของการจัดซื้อ — เข้าถึงผ่านแถบ "ขั้นตอนจัดซื้อ/จัดจ้าง" (ProcessFlow)
-      { label: '3.9 ยืนยันรับพัสดุ',     href: '/sfmis/receive-parcel-confirm',        icon: PackageCheck, roles: SUPPLY, hidden: true },
-      { label: 'ตรวจรับพัสดุ',           href: '/sfmis/supplie-setting/inspection',    icon: BadgeCheck,  roles: SUPPLY, hidden: true },
+      { label: 'ตรวจรับพัสดุ (รายการ)',  href: '/sfmis/supplie-setting/inspection',    icon: BadgeCheck,  roles: SUPPLY, hidden: true },
       { label: 'ทะเบียนครุภัณฑ์',         href: '/sfmis/supplie-setting/fixed-asset',   icon: HardDrive,   roles: SUPPLY, hidden: true },
-      { label: 'เบิกพัสดุ',               href: '/sfmis/supplie-setting/withdraw',      icon: ClipboardCheck, roles: SUPPLY, hidden: true },
-      { label: '3.14 ใบเบิกพัสดุ',        href: '/sfmis/supplie-setting/requisition',   icon: ClipboardSignature, roles: SUPPLY, hidden: true },
+      { label: 'เบิกพัสดุ (คลัง)',        href: '/sfmis/supplie-setting/withdraw',      icon: ClipboardCheck, roles: SUPPLY, hidden: true },
       { label: 'จำหน่ายพัสดุ',            href: '/sfmis/supplie-setting/disposal',      icon: Scale,       roles: SUPPLY, hidden: true },
       { label: 'แจ้งเตือนรับประกัน',      href: '/sfmis/supplie-setting/warranty-alert', icon: BellRing,   roles: SUPPLY, hidden: true },
+    ],
+  },
+  {
+    label: '3. งานการเงิน',
+    icon: DollarSign,
+    roles: FINANCE,
+    children: [
+      { label: '3.1 ตั้งค่าต้นปี',                  href: '/sfmis/financial-report/receipt-book',       icon: Notebook,        roles: FINANCE },
+      { label: '3.2 รับเงิน',                        href: '/sfmis/receive-menu/receive',                icon: ArrowDownToLine, roles: FINANCE },
+      // 2.4 เดิมออกใบเสร็จแบบ 2 ขั้น — รวมเข้า 2.3 แล้ว (รับเงิน=ออกใบเสร็จ บร. ในตัว)
+      // หน้านี้ซ้ำกับ 2.3 (ดู/พิมพ์ซ้ำ) + 2.1 (ทะเบียนเล่ม) → ซ่อนจากเมนู (เก็บ route ไว้)
+      { label: '3.4 ใบเสร็จรับเงิน (ที่ออกแล้ว)',     href: '/sfmis/financial-report/receipt',            icon: BookMarked,      roles: FINANCE, hidden: true },
+      { label: 'รับเงินเพื่อเก็บรักษา',              href: '/sfmis/financial-report/cash-keeping',       icon: KeyRound,        roles: FINANCE, hidden: true },
+      { label: '3.3 จ่ายเงิน',                       href: '/sfmis/pay-menu/invoice',                    icon: FileText,        roles: FINANCE },
+      // ขั้นต่อเนื่องของการจ่ายเงิน — เข้าถึงผ่านแถบ "ขั้นตอนการจ่ายเงิน" (ProcessFlow)
+      { label: '3.7 ตรวจสอบใบสำคัญจ่าย',            href: '/sfmis/confirm-invoice',                     icon: ClipboardList,   roles: FINANCE, hidden: true },
+      { label: 'สร้างเช็ค',                          href: '/sfmis/pay-menu/generate-check',             icon: CreditCard,      roles: FINANCE, hidden: true },
+      { label: 'หนังสือรับรองหักภาษี ณ ที่จ่าย',    href: '/sfmis/pay-menu/withholding-certificate',    icon: FileText,        roles: FINANCE, hidden: true },
+      { label: '3.10 หลักฐานขอเบิกเงินงบประมาณ',     href: '/sfmis/pay-menu/budget-request',             icon: ClipboardList,   roles: FINANCE, hidden: true },
+      { label: '3.4 เงินยืม',                        href: '/sfmis/pay-menu/loan-agreement',             icon: BookCopy,        roles: FINANCE },
+      { label: 'ยืมเงินข้ามประเภท',                 href: '/sfmis/pay-menu/fund-borrowing',             icon: BookCopy,        roles: FINANCE, hidden: true },
+      { label: '3.5 ขอเบิกค่าเดินทาง',               href: '/sfmis/pay-menu/travel-reimbursement',       icon: Plane,           roles: ALL },
+      { label: '3.6 เงินฝาก/นำส่ง/โอน',              href: '/sfmis/receive-menu/spp-deposit',            icon: BookOpenCheck,   roles: FINANCE },
+      { label: 'ทะเบียนสมุดคู่ฝาก สพป.',            href: '/sfmis/financial-report/smp-deposit',        icon: BookOpenCheck,   roles: FINANCE, hidden: true },
+      { label: 'เงินรายได้แผ่นดิน (ดอกเบี้ย)',      href: '/sfmis/financial-report/gov-revenue',        icon: Banknote,        roles: FINANCE, hidden: true },
+      { label: 'โอนเงินระหว่างบัญชี',               href: '/sfmis/financial-report/intra-bank-transfer', icon: Landmark,       roles: FINANCE, hidden: true },
+      { label: '3.7 เงินคงเหลือประจำวัน',             href: '/sfmis/financial-report/daily-balance',      icon: BarChart2,       roles: FINANCE },
+      { label: '3.8 รายงานประจำเดือน',              href: '/sfmis/financial-report/monthly-submission', icon: Send,            roles: FINANCE },
+      { label: '3.9 ปิดปี / ยอดยกมา',               href: '/sfmis/financial-report/fiscal-year-close',  icon: CalendarClock,   roles: FINANCE },
+      { label: 'รายงานสิ้นปีงบประมาณ',              href: '/sfmis/financial-report/year-end-report',    icon: FileBarChart2,   roles: FINANCE, hidden: true },
+      { label: 'ตั้งเลขที่เอกสาร',                  href: '/sfmis/financial-report/doc-counter',        icon: Hash,            roles: FINANCE, hidden: true },
     ],
   },
   {
@@ -235,6 +240,8 @@ const navGroups: NavItem[] = [
 ]
 
 function canAccess(item: NavItem, userType: number): boolean {
+  // ผู้ดูแลพิเศษ (type=1) เข้าได้ทุกเมนู — ตรงกับ backend RolesGuard
+  if (userType === 1) return true
   if (!item.roles || item.roles.length === 0) return true
   return item.roles.includes(userType)
 }
@@ -246,11 +253,13 @@ function NavLink({ item, depth = 0, userType }: { item: NavItem; depth?: number;
     return item.children.some((child) => child.href && pathname.startsWith(child.href))
   })
 
-  if (!canAccess(item, userType) || item.hidden) return null
+  if (item.hidden) return null
 
   const isActive = item.href ? pathname === item.href || pathname.startsWith(item.href + '/') : false
 
   if (item.children) {
+    // กลุ่มแสดงเมื่อมีเมนูย่อยที่ผู้ใช้เข้าถึงได้อย่างน้อย 1 รายการ
+    // (ไม่ผูกกับ roles ของกลุ่มเอง — เผื่อมีเมนูย่อย role กว้างกว่ากลุ่ม เช่น ขอเบิกค่าเดินทาง)
     const visibleChildren = item.children.filter(
       (c) => canAccess(c, userType) && !c.hidden,
     )

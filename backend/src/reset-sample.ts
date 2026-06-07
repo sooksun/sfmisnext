@@ -126,7 +126,6 @@ const TRANSACTIONAL_TABLES = [
   'pln_budget_category_detail',
   'pln_budget_category',
   'tb_estimate_acadyear',
-  'tb_sar_report',
   // ── นักเรียน ──
   'submitting_student_records',
   'tb_student',

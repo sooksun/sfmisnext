@@ -10,6 +10,7 @@ import { GovRevenueService } from '../gov-revenue/gov-revenue.service';
 import { RegisterMoneyTypeService } from '../register-money-type/register-money-type.service';
 import { LoanAgreementService } from '../loan-agreement/loan-agreement.service';
 import { ReportDailyBalanceService } from '../report-daily-balance/report-daily-balance.service';
+import { CashKeepingService } from '../cash-keeping/cash-keeping.service';
 
 // ─── QueryBuilder mock factory ─────────────────────────────────────────────────
 function makeQb(rawResult?: unknown) {
@@ -63,6 +64,10 @@ describe('DashboardService', () => {
         {
           provide: ReportDailyBalanceService,
           useValue: { loadCashLimitCheck: jest.fn() },
+        },
+        {
+          provide: CashKeepingService,
+          useValue: { depositReminder: jest.fn() },
         },
       ],
     }).compile();

@@ -132,4 +132,44 @@ export class StudentController {
   setPerheadRate(@Body() payload: SetPerheadRateDto) {
     return this.studentService.setPerheadRate(payload);
   }
+
+  // ── ตั้งค่าว่าประเภทเงินใดกำหนดเงินต่อหัวได้ ────────────────────────────────
+  @Get('loadPerheadBudgetTypes/:sc_id')
+  @HttpCode(HttpStatus.OK)
+  loadPerheadBudgetTypes(@Param('sc_id', ParseIntPipe) scId: number) {
+    return this.studentService.loadPerheadBudgetTypes(scId);
+  }
+
+  @Post('setPerheadBudgetTypes')
+  @HttpCode(HttpStatus.OK)
+  setPerheadBudgetTypes(
+    @Body()
+    payload: {
+      sc_id: number;
+      up_by?: number;
+      items: { bg_type_school_id: number; perhead: number }[];
+    },
+  ) {
+    return this.studentService.setPerheadBudgetTypes(payload);
+  }
+
+  // ── ชั้นที่เปิดสอนของโรงเรียน ────────────────────────────────────────────────
+  @Get('loadSchoolClassrooms/:sc_id')
+  @HttpCode(HttpStatus.OK)
+  loadSchoolClassrooms(@Param('sc_id', ParseIntPipe) scId: number) {
+    return this.studentService.loadSchoolClassrooms(scId);
+  }
+
+  @Post('setSchoolClassrooms')
+  @HttpCode(HttpStatus.OK)
+  setSchoolClassrooms(
+    @Body()
+    payload: {
+      sc_id: number;
+      up_by?: number;
+      items: { class_id: number; is_open: number }[];
+    },
+  ) {
+    return this.studentService.setSchoolClassrooms(payload);
+  }
 }

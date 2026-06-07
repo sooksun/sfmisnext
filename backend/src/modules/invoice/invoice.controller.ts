@@ -47,6 +47,30 @@ export class InvoiceController {
     return this.invoiceService.loadPayableParcels(scId);
   }
 
+  @Get('loadPayableTravel/:sc_id/:sy_id/:budget_year')
+  @HttpCode(HttpStatus.OK)
+  loadPayableTravel(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('sy_id', ParseIntPipe) syId: number,
+    @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
+    return this.invoiceService.loadPayableTravel(scId, syId, budgetYear);
+  }
+
+  @Get('loadPayableLoans/:sc_id/:sy_id/:budget_year')
+  @HttpCode(HttpStatus.OK)
+  loadPayableLoans(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('sy_id', ParseIntPipe) syId: number,
+    @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
+    return this.invoiceService.loadPayableLoans(scId, syId, budgetYear);
+  }
+
   @Get('loadProjects/:sc_id/:sy_id')
   @HttpCode(HttpStatus.OK)
   loadProjects(

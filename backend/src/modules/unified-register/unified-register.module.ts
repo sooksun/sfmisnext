@@ -9,6 +9,7 @@ import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity'
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 import { Receipt } from '../receipt/entities/receipt.entity';
+import { LoanAgreement } from '../loan-agreement/entities/loan-agreement.entity';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { Receipt } from '../receipt/entities/receipt.entity';
       RequestWithdraw,
       OpeningBalance,
       Receipt,
+      LoanAgreement,
     ]),
   ],
   controllers: [UnifiedRegisterController],

@@ -51,6 +51,22 @@ export class RequestWithdraw {
   orderId: number;
 
   @Column({
+    name: 'tr_id',
+    type: 'int',
+    default: 0,
+    comment: 'FK travel_reimbursement.tr_id (เชื่อมใบขอเบิกค่าเดินทางที่อนุมัติแล้ว)',
+  })
+  trId: number;
+
+  @Column({
+    name: 'la_id',
+    type: 'int',
+    default: 0,
+    comment: 'FK loan_agreement.la_id (เชื่อมใบยืมเงินที่อนุมัติแล้ว)',
+  })
+  laId: number;
+
+  @Column({
     name: 'p_id',
     type: 'int',
     default: 0,

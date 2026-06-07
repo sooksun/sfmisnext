@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, FindOptionsWhere } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { PlnBudgetCategory } from './entities/pln-budget-category.entity';
 import { PlnBudgetCategoryDetail } from './entities/pln-budget-category-detail.entity';
 import { TbEstimateAcadyear } from './entities/tb-estimate-acadyear.entity';
@@ -20,6 +20,7 @@ import { AddNewBudgetCategoryDto } from './dto/add-new-budget-category.dto';
 import { UpdateEstimateDto } from './dto/update-estimate.dto';
 import { AddEstimateAcadyearDto } from './dto/add-estimate-acadyear.dto';
 import { UpdateRealBudgetDto } from './dto/update-real-budget.dto';
+import { StudentService } from '../student/student.service';
 
 @Injectable()
 export class BudgetService {
@@ -40,44 +41,20 @@ export class BudgetService {
     private readonly plnRealBudgetRepository: Repository<PlnRealBudget>,
     @InjectRepository(TbExpenses)
     private readonly tbExpensesRepository: Repository<TbExpenses>,
+    private readonly studentService: StudentService,
   ) {}
 
   /**
-   * โหลด "งบประมาณการที่ประมวลผล" — ยอดประมาณการรายรับรายประเภท
-   * จาก pln_real_budget (SUM amount GROUP BY bg_type_id)
+   * โหลดยอดประมาณการรายรับ "แยกตามประเภทเงิน" — ใช้ใน budget-category dialog (หน้า 1.7)
    *
-   * `acadYear` ที่นี่คือ **CE budget year** (เช่น 2026) ตาม pln_real_budget.acad_year
-   * ส่งกลับเฉพาะประเภทที่มียอด > 0 — ใช้ใน budget-category dialog
+   * ดึงสดจากการคำนวณรายหัว (หน้า 1.5) แยกตาม bg_type_id เพื่อให้รายการ/ยอด
+   * ตรงกับวงเงินหมวด (= ผลรวมรายหัว) เสมอ — คีย์ด้วย `syId` ไม่ใช่ปี พ.ศ./ค.ศ.
+   * ส่งกลับเฉพาะประเภทที่มียอด > 0
    */
-  async loadEstimatedIncomeByType(scId: number, acadYear: number) {
+  async loadEstimatedIncomeByType(scId: number, syId: number) {
     try {
-      const incomeTypes = await this.budgetIncomeTypeRepository.find({
-        where: { del: 0 },
-        order: { bgTypeId: 'ASC' },
-      });
-
-      const rows = await this.plnRealBudgetRepository
-        .createQueryBuilder('rb')
-        .select('rb.bg_type_id', 'bg_type_id')
-        .addSelect('SUM(rb.amount)', 'estimated_amount')
-        .where('rb.sc_id = :scId', { scId })
-        .andWhere('rb.acad_year = :acadYear', { acadYear })
-        .andWhere('rb.del = 0')
-        .groupBy('rb.bg_type_id')
-        .getRawMany<{ bg_type_id: number; estimated_amount: string }>();
-
-      const sumMap = new Map<number, number>();
-      for (const r of rows) {
-        sumMap.set(Number(r.bg_type_id), Number(r.estimated_amount) || 0);
-      }
-
-      return incomeTypes
-        .map((it) => ({
-          bg_type_id: it.bgTypeId,
-          budget_type: it.budgetType,
-          estimated_amount: sumMap.get(it.bgTypeId) ?? 0,
-        }))
-        .filter((it) => it.estimated_amount > 0);
+      const byType = await this.studentService.getPerheadByType(scId, syId);
+      return byType.filter((it) => it.estimated_amount > 0);
     } catch (error) {
       this.logger.error('loadEstimatedIncomeByType error:', error);
       return [];
@@ -103,7 +80,7 @@ export class BudgetService {
         };
       }
 
-      // Get total estimate for this school/year
+      // เก็บ record ไว้สำหรับ ea_id / สถานะ เท่านั้น
       const estimate = await this.tbEstimateAcadyearRepository.findOne({
         where: {
           scId,
@@ -113,7 +90,11 @@ export class BudgetService {
         },
       });
 
-      const totalEstimate = estimate?.eaBudget || 0;
+      // ยอดประมาณการ = ผลรวมจากการคำนวณรายหัว (หน้า 1.5) แบบสด — ตรงกันเสมอ
+      const totalEstimate = await this.studentService.getPerheadTotal(
+        scId,
+        syId,
+      );
 
       // ── Batch-load เพื่อหลีกเลี่ยง N+1 ──────────────────────────────────────
       const bgCateIds = categories.map((c) => c.bgCateId);
@@ -333,17 +314,12 @@ export class BudgetService {
         }
       }
 
-      // Get total budget from estimate
-      const estimate = await this.tbEstimateAcadyearRepository.findOne({
-        where: {
-          scId: payload.sc_id,
-          syId: payload.sy_id,
-          budgetYear: payload.budget_date,
-          del: 0,
-        },
-      });
-
-      const budget = estimate?.eaBudget || 0;
+      // ยอดประมาณการ = ผลรวมจากการคำนวณรายหัว (หน้า 1.5) แบบสด
+      // ให้ตรงกับหน้า "คำนวณงบจากรายหัว" เสมอ ไม่อ่านค่าที่เก็บใน tb_estimate_acadyear
+      const budget = await this.studentService.getPerheadTotal(
+        payload.sc_id,
+        payload.sy_id,
+      );
 
       return { valid: true, budget };
     } catch (error) {
@@ -399,17 +375,11 @@ export class BudgetService {
         0,
       );
 
-      // Get estimate budget
-      const estimate = await this.tbEstimateAcadyearRepository.findOne({
-        where: {
-          scId: payload.sc_id,
-          syId: payload.sy_id,
-          budgetYear: payload.budget_date,
-          del: 0,
-        },
-      });
-
-      const budgetProject = estimate?.eaBudget || 0;
+      // ยอดประมาณการ = ผลรวมจากการคำนวณรายหัว (หน้า 1.5) แบบสด
+      const budgetProject = await this.studentService.getPerheadTotal(
+        payload.sc_id,
+        payload.sy_id,
+      );
       const balanceBudget = budgetProject - totalBudgetGroup;
       const percent =
         budgetProject > 0 ? (totalBudgetGroup * 100) / budgetProject : 0;
@@ -624,21 +594,13 @@ export class BudgetService {
       const total = details.reduce((sum, detail) => sum + detail.budget, 0);
       plnBudget.total = total;
 
-      // Get estimate for percent calculation
-      const whereCondition: FindOptionsWhere<TbEstimateAcadyear> = {
-        scId: plnBudget.scId,
-        syId: plnBudget.acadYear,
-        del: 0,
-      };
-      if (plnBudget.budgetYear) {
-        whereCondition.budgetYear = plnBudget.budgetYear;
-      }
-      const estimate = await this.tbEstimateAcadyearRepository.findOne({
-        where: whereCondition,
-      });
-
-      if (estimate && estimate.eaBudget > 0) {
-        plnBudget.percents = (total * 100) / estimate.eaBudget;
+      // สัดส่วน % คิดจากยอดประมาณการสด (การคำนวณรายหัว) ให้ฐานตรงกับหน้า 1.5/1.7
+      const estimateTotal = await this.studentService.getPerheadTotal(
+        plnBudget.scId,
+        plnBudget.acadYear,
+      );
+      if (estimateTotal > 0) {
+        plnBudget.percents = (total * 100) / estimateTotal;
       }
 
       await this.plnBudgetCategoryRepository.save(plnBudget);
@@ -840,9 +802,13 @@ export class BudgetService {
       // Update total in pln_budget_category
       plnBudget.total = payload.real_budget;
 
-      // Calculate percent
-      if (estimate.eaBudget > 0) {
-        plnBudget.percents = (payload.real_budget * 100) / estimate.eaBudget;
+      // สัดส่วน % คิดจากยอดประมาณการสด (การคำนวณรายหัว) ให้ฐานตรงกับหน้า 1.5/1.7
+      const estimateTotal = await this.studentService.getPerheadTotal(
+        payload.sc_id,
+        payload.sy_id,
+      );
+      if (estimateTotal > 0) {
+        plnBudget.percents = (payload.real_budget * 100) / estimateTotal;
       } else {
         plnBudget.percents = 0;
       }

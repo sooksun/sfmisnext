@@ -6,6 +6,10 @@ import {
   AddOpeningBalanceDto,
   UpdateOpeningBalanceDto,
 } from './dto/opening-balance.dto';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Injectable()
 export class OpeningBalanceService {
@@ -40,7 +44,10 @@ export class OpeningBalanceService {
     return { flag: true, ms: 'บันทึกยอดยกมาสำเร็จ' };
   }
 
-  async updateOpeningBalance(dto: UpdateOpeningBalanceDto) {
+  async updateOpeningBalance(dto: UpdateOpeningBalanceDto, user: JwtUser) {
+    const ob = await this.repo.findOne({ where: { obId: dto.ob_id, del: 0 } });
+    if (!ob) return { flag: false, ms: 'ไม่พบยอดยกมา' };
+    assertSameSchool(user, ob.scId);
     await this.repo.update(
       { obId: dto.ob_id },
       {
@@ -53,7 +60,10 @@ export class OpeningBalanceService {
     return { flag: true, ms: 'แก้ไขยอดยกมาสำเร็จ' };
   }
 
-  async deleteOpeningBalance(obId: number, upBy: number) {
+  async deleteOpeningBalance(obId: number, upBy: number, user: JwtUser) {
+    const ob = await this.repo.findOne({ where: { obId, del: 0 } });
+    if (!ob) return { flag: false, ms: 'ไม่พบยอดยกมา' };
+    assertSameSchool(user, ob.scId);
     await this.repo.update({ obId }, { del: 1, upBy });
     return { flag: true, ms: 'ลบสำเร็จ' };
   }

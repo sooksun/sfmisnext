@@ -12,6 +12,8 @@ import { CheckReceiveCommittee } from './entities/check-receive-committee.entity
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 import { WithholdingCertificate } from '../registration-certificate/entities/withholding-certificate.entity';
 import { SupInspection } from '../supplie/entities/sup-inspection.entity';
+import { TravelReimbursement } from '../travel-reimbursement/entities/travel-reimbursement.entity';
+import { LoanAgreement } from '../loan-agreement/entities/loan-agreement.entity';
 import { calcWithholding } from '../../common/utils/withholding.util';
 import { FinancialAuditService } from '../financial-audit/financial-audit.service';
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
@@ -28,6 +30,13 @@ function mapCheckChannel(typeOfferCheck: number | null | undefined): number {
   if (typeOfferCheck === 1) return 1; // เบิกเงินสด
   if (typeOfferCheck === 2) return 2; // เบิกจ่ายผ่านเช็ค
   return 2;
+}
+
+const LOAN_DUE_DAYS: Record<number, number> = { 1: 15, 2: 30, 3: 30, 4: 30 };
+function addDaysStr(dateStr: string, days: number): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().substring(0, 10);
 }
 
 @Injectable()
@@ -480,6 +489,35 @@ export class CheckService {
             };
           }
         }
+
+        // ── guard: ห้ามจ่ายเงินสดจนยอด "เงินสด" ของประเภทเงินติดลบ ──────────
+        // ต้องมีเงินสด(เช็คในมือ)เพียงพอก่อนสั่งจ่ายทุกครั้ง — หากไม่พอต้องเบิก
+        // เงินสดจากธนาคารก่อน (เปิด/ปิดด้วย finance.block_cash_negative)
+        // ใช้ช่องทางตาม type_offer_check ที่กำลังจะบันทึก (1=เบิกเงินสด)
+        const payChannel = mapCheckChannel(
+          dto.type_offer_check ?? check.typeOfferCheck,
+        );
+        if (payChannel === 1) {
+          const blockCashNeg = await this.regulatoryConfig.getThreshold(
+            scId,
+            'finance.block_cash_negative',
+          );
+          if (blockCashNeg >= 1) {
+            const amount = Number(check.amount ?? 0);
+            const cashAvail = await this.fundBalance.availableCashInTx(
+              em,
+              scId,
+              check.syId ?? 0,
+              check.bgTypeId ?? 0,
+            );
+            if (amount - cashAvail > 0.005) {
+              return {
+                flag: false,
+                ms: `จ่ายเงินสดไม่ได้ — เงินสดคงเหลือของประเภทเงินนี้ ${cashAvail.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท ไม่พอจ่าย ${amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท (เงินสดห้ามติดลบ — หากจะจ่ายต้องเบิกเงินสดจากธนาคารก่อน)`,
+              };
+            }
+          }
+        }
       }
 
       const prevStatus = check.status;
@@ -540,12 +578,76 @@ export class CheckService {
         }
         // ── อัตโนมัติ: หักภาษี ณ ที่จ่าย + ออกหนังสือรับรอง + ลงทะเบียนภาษี ──
         await this.autoWithholding(em, check, dto.up_by ?? 0);
+
+        // ── ปิด loop: sync เอกสารต้นเรื่องที่เชื่อมไว้ (จ่ายเงินแล้ว) ──────────
+        const offerStr = (check.offerCheckDate ?? new Date())
+          .toISOString()
+          .substring(0, 10);
+        const ftRow = await ftRepo.findOne({
+          where: { rwId: check.rwId, type: -1, del: 0 },
+        });
+
+        // ใบขอเบิกค่าเดินทาง (8708) → จ่ายแล้ว
+        if (check.trId && check.trId > 0) {
+          const trRepo = em.getRepository(TravelReimbursement);
+          const tr = await trRepo.findOne({ where: { trId: check.trId, del: 0 } });
+          if (tr && tr.status === 12) {
+            tr.status = 2; // จ่ายแล้ว
+            tr.bcNo = check.noDoc ?? tr.bcNo;
+            tr.receiptDate = offerStr;
+            tr.typeOfferCheck = mapCheckChannel(check.typeOfferCheck);
+            tr.ftPayId = ftRow?.ftId ?? null;
+            tr.upBy = dto.up_by ?? 0;
+            await trRepo.save(tr);
+          }
+        }
+
+        // ใบยืมเงิน (สัญญายืมเงิน) → รับเงินแล้ว (ค้างชำระ) + คำนวณกำหนดส่งใช้
+        if (check.laId && check.laId > 0) {
+          const laRepo = em.getRepository(LoanAgreement);
+          const loan = await laRepo.findOne({ where: { laId: check.laId, del: 0 } });
+          if (loan && loan.status === 12) {
+            const dueDays =
+              loan.dueDays && loan.dueDays > 0
+                ? loan.dueDays
+                : (LOAN_DUE_DAYS[loan.loanCategory] ?? 30);
+            loan.status = 1; // ค้างชำระ (รับเงินแล้ว)
+            loan.receiptDate = offerStr;
+            loan.dueDate = addDaysStr(offerStr, dueDays);
+            loan.ftBorrowId = ftRow?.ftId ?? null;
+            loan.upBy = dto.up_by ?? 0;
+            await laRepo.save(loan);
+          }
+        }
       } else if (prevStatus === 202 && check.status !== 202) {
         // ยกเลิกออกเช็ค → soft-delete ft
         await ftRepo.update(
           { rwId: check.rwId, type: -1, del: 0 },
           { del: 1, updateDate: new Date() },
         );
+        // ย้อนสถานะเอกสารต้นเรื่องกลับเป็น "รอจ่าย" (12)
+        if (check.trId && check.trId > 0) {
+          const trRepo = em.getRepository(TravelReimbursement);
+          const tr = await trRepo.findOne({ where: { trId: check.trId, del: 0 } });
+          if (tr && tr.status === 2) {
+            tr.status = 12;
+            tr.bcNo = null;
+            tr.receiptDate = null;
+            tr.ftPayId = null;
+            await trRepo.save(tr);
+          }
+        }
+        if (check.laId && check.laId > 0) {
+          const laRepo = em.getRepository(LoanAgreement);
+          const loan = await laRepo.findOne({ where: { laId: check.laId, del: 0 } });
+          if (loan && loan.status === 1) {
+            loan.status = 12;
+            loan.receiptDate = null;
+            loan.dueDate = null;
+            loan.ftBorrowId = null;
+            await laRepo.save(loan);
+          }
+        }
       }
 
       return { flag: true };

@@ -79,6 +79,30 @@ export class FinancialTransactions {
   @Column({ name: 'ba_id', type: 'int', nullable: true })
   baId: number | null;
 
+  /**
+   * ชนิดรายการพิเศษสำหรับทะเบียนคุมเงินยืม (null = รายการปกติ)
+   *  lend          = จ่ายเงินยืม → ลงช่อง "ลูกหนี้"
+   *  clear_voucher = ส่งใช้ด้วยใบสำคัญ (ลูกหนี้− / ใบสำคัญ+ ; type=0 ไม่กระทบยอดเงิน)
+   *  return_cash   = คืนเงินสด (รับ+ / ลูกหนี้− ; เงินสดในมือ+)
+   *  deposit       = นำเงินสดฝากธนาคาร (เงินสด− / เงินฝากธนาคาร+)
+   */
+  @Column({
+    name: 'register_kind',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+    comment: 'lend|clear_voucher|return_cash|deposit (null=ปกติ)',
+  })
+  registerKind: string | null;
+
+  /** FK → loan_agreement.la_id (รายการที่มาจากเงินยืม) */
+  @Column({ name: 'la_id', type: 'int', default: 0 })
+  laId: number;
+
+  /** เลขที่เอกสารของรายการที่ไม่มี pln_receive/request_withdraw (บร. คืนเงินสด, Pay-in นำฝาก) */
+  @Column({ name: 'ref_no', type: 'varchar', length: 50, nullable: true })
+  refNo: string | null;
+
   @Column({ name: 'up_by', type: 'int', default: 0 })
   upBy: number;
 

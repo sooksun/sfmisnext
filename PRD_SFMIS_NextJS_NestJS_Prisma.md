@@ -4,13 +4,28 @@
 
 ---
 
-**Document Version**: 1.0  
-**Date**: December 16, 2025  
+**Document Version**: 1.1 (Implementation alignment)  
+**Date**: December 16, 2025 — **อัปเดตสถานะ implement:** พฤษภาคม 2026  
 **Prepared For**: Development Team - SFMIS System Redesign  
-**Technology Stack**:
-- **Frontend**: Next.js 15.1.6 + React 19 + TypeScript + TailwindCSS
-- **Backend**: NestJS 11 + Prisma 6 + MySQL 8
-- **Runtime**: Node.js 15.5.6 (Note: This seems like a typo - should likely be 18.x or 20.x LTS)
+
+### สถานะการ implement จริง (repo ปัจจุบัน)
+
+| หัวข้อ PRD เดิม | สถานะจริง |
+|-----------------|-----------|
+| Next.js 15 | **Next.js 16.2** + React 19 (`frontend/`) |
+| Prisma 6 | **ยังไม่ migrate** — ใช้ **TypeORM 0.3** + MySQL 8 (`backend/`) |
+| Angular phase-out | ✅ พัฒนาหลักที่ Next.js |
+| 21 โมดูล backend | ✅ ครบ + ขยายเป็น **68 โมดูล** (AI, reconciliation, loan-agreement, travel-reimbursement, regulatory-config ฯลฯ) |
+| Dashboard charts (Recharts) | ✅ หน้า `/dashboard` เรียก `Dashboard/*` API |
+| Password reset (P1) | ✅ `POST B_admin/changePassword` + UI เมนูผู้ใช้ |
+| Playwright E2E | ⚠️ smoke test พื้นฐานใน `frontend/e2e/` |
+| Test coverage 80% | ❌ ยังไม่ถึงเป้า — ขยาย unit test ต่อเนื่อง |
+| Prisma migration | 📋 **Phase แยก** — ไม่บล็อกการใช้งาน production ปัจจุบัน |
+
+**Technology Stack (ที่ deploy จริง)**:
+- **Frontend**: Next.js 16.2 + React 19 + TypeScript + TailwindCSS 4
+- **Backend**: NestJS 11 + TypeORM 0.3 + MySQL 8
+- **Runtime**: Node.js 20 LTS
 
 ---
 
@@ -878,7 +893,7 @@ export class BudgetController {
 |-----------------|---------|-----|----------|
 | **Authentication** |
 | Login/Logout | ✅ | ✅ | P0 |
-| Password Reset | ❌ | ✅ | P1 |
+| Password Reset | ❌ | ✅ (change password ในระบบ) | P1 |
 | 2FA | ❌ | ✅ | P2 |
 | SSO | ❌ | 🔜 | P3 |
 | **Dashboard** |

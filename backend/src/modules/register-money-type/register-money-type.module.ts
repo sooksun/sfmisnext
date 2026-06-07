@@ -8,6 +8,7 @@ import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
+import { CashKeepingModule } from '../cash-keeping/cash-keeping.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { OpeningBalance } from '../opening-balance/entities/opening-balance.enti
       RequestWithdraw,
       OpeningBalance,
     ]),
+    CashKeepingModule,
   ],
   controllers: [RegisterMoneyTypeController],
   providers: [RegisterMoneyTypeService],

@@ -8,6 +8,7 @@ import { MasterBudgetCategory } from './entities/master-budget-category.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { PlnRealBudget } from '../policy/entities/pln-real-budget.entity';
 import { TbExpenses } from './entities/tb-expenses.entity';
+import { StudentService } from '../student/student.service';
 
 describe('BudgetService', () => {
   let service: BudgetService;
@@ -18,6 +19,7 @@ describe('BudgetService', () => {
   let bgTypeRepo: jest.Mocked<any>;
   let plnRealBudgetRepo: jest.Mocked<any>;
   let expensesRepo: jest.Mocked<any>;
+  let studentSvc: jest.Mocked<any>;
 
   beforeEach(async () => {
     plnRepo = {
@@ -41,10 +43,13 @@ describe('BudgetService', () => {
       }),
     };
     expensesRepo = { find: jest.fn() };
+    // ยอดประมาณการมาจากการคำนวณรายหัว (StudentService) — default 0
+    studentSvc = { getPerheadTotal: jest.fn().mockResolvedValue(0) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BudgetService,
+        { provide: StudentService, useValue: studentSvc },
         { provide: getRepositoryToken(PlnBudgetCategory), useValue: plnRepo },
         {
           provide: getRepositoryToken(PlnBudgetCategoryDetail),
@@ -129,16 +134,14 @@ describe('BudgetService', () => {
       expect(result.totalrealbudget).toBe(50000);
     });
 
-    it('totalsumbudget รวม ea_budget ทุก row', async () => {
+    it('totalsumbudget รวมยอดประมาณการ (จากการคำนวณรายหัว) ทุก row', async () => {
       masterRepo.find.mockResolvedValue([
         { bgCateId: 1, budgetCate: 'A' },
         { bgCateId: 2, budgetCate: 'B' },
       ]);
-      estimateRepo.findOne.mockResolvedValue({
-        eaId: 1,
-        eaBudget: 200000,
-        eaStatus: 1,
-      });
+      estimateRepo.findOne.mockResolvedValue({ eaId: 1, eaStatus: 1 });
+      // ยอดประมาณการดึงสดจากการคำนวณรายหัว
+      studentSvc.getPerheadTotal.mockResolvedValue(200000);
       plnRepo.find.mockResolvedValue([]);
       plnDetailRepo.find.mockResolvedValue([]);
       expensesRepo.find.mockResolvedValue([]);
@@ -146,6 +149,7 @@ describe('BudgetService', () => {
       const result = await service.loadEstimateAcadyearGroup(1, 2568, 1);
       // 2 categories × 200000 = 400000
       expect(result.totalsumbudget).toBe(400000);
+      expect(studentSvc.getPerheadTotal).toHaveBeenCalledWith(1, 1);
     });
   });
 
@@ -200,9 +204,9 @@ describe('BudgetService', () => {
       expect(plnRepo.save).toHaveBeenCalled();
     });
 
-    it('คืน budget จาก estimate ถูกต้อง', async () => {
+    it('คืน budget จากการคำนวณรายหัว (สด) ถูกต้อง', async () => {
       plnRepo.count.mockResolvedValue(1);
-      estimateRepo.findOne.mockResolvedValue({ eaBudget: 75000 });
+      studentSvc.getPerheadTotal.mockResolvedValue(75000);
 
       const result = await service.checkBudgetCategoryOnYear({
         sc_id: 1,
@@ -211,6 +215,7 @@ describe('BudgetService', () => {
         up_by: 1,
       });
       expect(result).toMatchObject({ valid: true, budget: 75000 });
+      expect(studentSvc.getPerheadTotal).toHaveBeenCalledWith(1, 1);
     });
   });
 
@@ -246,7 +251,7 @@ describe('BudgetService', () => {
         { budget: 30000 },
         { budget: 20000 },
       ]); // total = 50000
-      estimateRepo.findOne.mockResolvedValue({ eaBudget: 100000 });
+      studentSvc.getPerheadTotal.mockResolvedValue(100000);
 
       const result = await service.checkBudgetCategoryOnYears({
         pbc_id: 1,
@@ -329,7 +334,9 @@ describe('BudgetService', () => {
         percents: 0,
       };
       plnRepo.findOne.mockResolvedValue(plnBudget);
-      estimateRepo.findOne.mockResolvedValue({ eaBudget: 200000 });
+      // ยังต้องมี estimate record ผ่าน guard, แต่ฐาน % มาจากการคำนวณรายหัว
+      estimateRepo.findOne.mockResolvedValue({ eaId: 1, eaStatus: 0 });
+      studentSvc.getPerheadTotal.mockResolvedValue(200000);
       plnRepo.save.mockResolvedValue(plnBudget);
 
       await service.updateRealBudget({

@@ -148,6 +148,27 @@ export default function MoneyTypePage() {
           </Select>
         </div>
 
+        {selectedBgTypeId > 0 && data && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-lg border bg-white p-3">
+              <div className="text-xs text-gray-500">ยอดยกมา</div>
+              <div className="text-lg font-semibold">{fmt(data.carry_forward ?? 0)}</div>
+            </div>
+            <div className="rounded-lg border bg-white p-3">
+              <div className="text-xs text-gray-500">รวมรับ</div>
+              <div className="text-lg font-semibold text-green-600">{fmt(data.revenue ?? 0)}</div>
+            </div>
+            <div className="rounded-lg border bg-white p-3">
+              <div className="text-xs text-gray-500">รวมจ่าย</div>
+              <div className="text-lg font-semibold text-red-500">{fmt(data.expenses ?? 0)}</div>
+            </div>
+            <div className="rounded-lg border bg-white p-3">
+              <div className="text-xs text-gray-500">คงเหลือ</div>
+              <div className="text-lg font-semibold">{fmt(data.total ?? 0)}</div>
+            </div>
+          </div>
+        )}
+
         <DataTable
           columns={columns}
           data={rows}

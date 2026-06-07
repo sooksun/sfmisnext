@@ -89,6 +89,7 @@ export default function ProcurementPlanPage() {
   const [editingItem, setEditingItem] = useState<ItemRow | null>(null)
   const [deleteItemTarget, setDeleteItemTarget] = useState<ItemRow | null>(null)
   const [showProgress, setShowProgress] = useState(false)
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null)
 
   const { data: resp, isLoading } = useQuery({
     queryKey: ['procurement-plan', scId, budgetYear],
@@ -108,8 +109,30 @@ export default function ProcurementPlanPage() {
   })
   const items = detailResp?.data?.items ?? []
 
+  // โครงการที่ผ่านการอนุมัติแล้ว (สถานะ ≥ 5 = ผอ.อนุมัติ) — เลือกมาเติมในแผนจัดซื้อ
+  interface ApprovedOrder {
+    order_id: number
+    details: string
+    budgets: number
+    order_status: number
+    ppi_id: number | null
+  }
+  const { data: approvedResp } = useQuery({
+    queryKey: ['approved-orders', scId, budgetYear],
+    queryFn: () =>
+      apiGet<{ data: ApprovedOrder[] }>(
+        `Project_approve/loadProjectApprove/${scId}/${budgetYear}/0/200`,
+      ),
+    enabled: scId > 0 && budgetYear > 0,
+  })
+  // โครงการที่อยู่ใน workflow และยังไม่ผูกแผน — ใช้สำหรับเลือกมาทำแผนจัดซื้อ
+  // (พ.ร.บ. ม.11 กำหนดให้ประกาศแผนก่อนหัวหน้าพัสดุอนุมัติ จึงรับตั้งแต่สถานะ 1)
+  const approvedOrders = (approvedResp?.data ?? []).filter(
+    (o) => o.order_status >= 1 && o.order_status < 9 && !o.ppi_id,
+  )
+
   const {
-    register, handleSubmit, reset, formState: { errors },
+    register, handleSubmit, reset, setValue, formState: { errors },
   } = useForm<PlanForm>({
     resolver: zodResolver(planSchema),
     defaultValues: { pp_no: '', pp_title: '', pp_total_budget: 0, remark: '' },
@@ -125,13 +148,18 @@ export default function ProcurementPlanPage() {
       const payload = { ...form, sc_id: scId, acad_year: budgetYear, up_by: adminId }
       return editing
         ? apiPost('Procurement_plan/updatePlan', { ...payload, pp_id: editing.ppId })
-        : apiPost('Procurement_plan/addPlan', payload)
+        : apiPost('Procurement_plan/addPlan', {
+            ...payload,
+            order_id: selectedOrderId ?? undefined,
+          })
     },
     onSuccess: (res: any) => {
       if (res?.flag) {
         toast.success('บันทึกเรียบร้อยแล้ว')
         qc.invalidateQueries({ queryKey: ['procurement-plan'] })
-        setDialogOpen(false); reset()
+        qc.invalidateQueries({ queryKey: ['approved-orders'] })
+        qc.invalidateQueries({ queryKey: ['proj-approve'] })
+        setDialogOpen(false); reset(); setSelectedOrderId(null)
       } else toast.error(res?.ms || 'มีปัญหา')
     },
     onError: (e: any) => toast.error(e?.message || 'เกิดข้อผิดพลาด'),
@@ -193,6 +221,7 @@ export default function ProcurementPlanPage() {
 
   function openAdd() {
     setEditing(null)
+    setSelectedOrderId(null)
     reset({ pp_no: '', pp_title: '', pp_total_budget: 0, remark: '' })
     setDialogOpen(true)
   }
@@ -492,6 +521,36 @@ export default function ProcurementPlanPage() {
         loading={savePlan.isPending}
       >
         <div className="space-y-3">
+          {!editing && (
+            <div>
+              <Label>เลือกจากโครงการที่อนุมัติแล้ว</Label>
+              <select
+                className="w-full border rounded-md h-9 px-2 text-sm"
+                value={selectedOrderId ?? ''}
+                onChange={(e) => {
+                  const id = e.target.value ? Number(e.target.value) : null
+                  setSelectedOrderId(id)
+                  const o = id ? approvedOrders.find((x) => x.order_id === id) : null
+                  if (o) {
+                    setValue('pp_title', o.details || '', { shouldValidate: true })
+                    setValue('pp_total_budget', Number(o.budgets || 0), { shouldValidate: true })
+                  }
+                }}
+              >
+                <option value="">— ไม่เลือก (กรอกเอง) —</option>
+                {approvedOrders.map((o) => (
+                  <option key={o.order_id} value={o.order_id}>
+                    #{o.order_id} · {o.details} · {fmt(o.budgets)} บาท
+                  </option>
+                ))}
+              </select>
+              {approvedOrders.length === 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  ยังไม่มีโครงการในระบบ — ไปสร้างที่ 1.2 ก่อน
+                </p>
+              )}
+            </div>
+          )}
           <div><Label>เลขที่แผน</Label><Input {...register('pp_no')} /></div>
           <div>
             <Label>ชื่อแผน *</Label>

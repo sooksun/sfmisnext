@@ -15,9 +15,10 @@ import { useAppContext } from '@/hooks/use-app-context'
 interface SupplieOrder {
   order_id: number
   sc_id: number
-  project_name: string
-  order_type: string
-  order_name: string
+  project_name?: string
+  order_type?: string
+  order_name?: string
+  details?: string
   budgets: number
   admin_id: number
   order_status: number
@@ -26,16 +27,18 @@ interface SupplieOrder {
   up_date: string
 }
 
+// สถานะตาม parcel_order: 5=ผ่าน ผอ., 6=ตั้งกรรมการ, 7=จัดซื้อ, 9=ยกเลิก
 const statusLabel: Record<number, { label: string; color: string }> = {
-  1: { label: 'รออนุมัติ', color: 'text-yellow-600' },
-  5: { label: 'ไม่อนุมัติ', color: 'text-red-500' },
-  7: { label: 'อนุมัติแล้ว', color: 'text-green-600' },
+  5: { label: 'รอเริ่มจัดซื้อ', color: 'text-yellow-600' },
+  6: { label: 'ตั้งกรรมการ', color: 'text-indigo-600' },
+  7: { label: 'จัดซื้อแล้ว', color: 'text-green-600' },
+  9: { label: 'ยกเลิก', color: 'text-red-500' },
 }
 
 export default function WithdrawConfirmPage() {
-  const { scId, budgetYear: budgetYearRaw } = useAppContext()
-  const budgetYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
-  const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
+  const { scId, budgetYear } = useAppContext()
+  // parcel_order.acad_year เก็บเหมือนกับที่หน้า 1.3 ส่ง (BE เช่น 2569) — ส่งตรงไม่ต้องแปลง
+  const yearKey = String(budgetYear || '')
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
   const pageSize = 25
@@ -43,9 +46,9 @@ export default function WithdrawConfirmPage() {
   const [denyTarget, setDenyTarget] = useState<SupplieOrder | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['supplie-order-confirm', scId, apiYear],
-    queryFn: () => apiGet<SupplieOrder[]>(`Supplie/loadSupplieOrder/${scId}/${apiYear}`),
-    enabled: scId > 0 && apiYear !== '',
+    queryKey: ['supplie-order-confirm', scId, yearKey],
+    queryFn: () => apiGet<SupplieOrder[]>(`Supplie/loadSupplieOrder/${scId}/${yearKey}`),
+    enabled: scId > 0 && budgetYear > 0,
   })
 
   const updateMutation = useMutation({
@@ -74,14 +77,14 @@ export default function WithdrawConfirmPage() {
     {
       header: 'จัดการ',
       render: (item: SupplieOrder) =>
-        item.order_status === 1 ? (
+        item.order_status === 5 || item.order_status === 6 ? (
           <div className="flex gap-1">
             <Button
               size="sm"
               variant="outline"
               className="text-green-600"
               onClick={() => setApproveTarget(item)}
-              title="อนุมัติ"
+              title="เริ่มจัดซื้อ"
             >
               <CheckCircle className="h-3 w-3" />
             </Button>
@@ -90,7 +93,7 @@ export default function WithdrawConfirmPage() {
               variant="outline"
               className="text-red-500"
               onClick={() => setDenyTarget(item)}
-              title="ปฏิเสธ"
+              title="ยกเลิก"
             >
               <XCircle className="h-3 w-3" />
             </Button>
@@ -98,9 +101,9 @@ export default function WithdrawConfirmPage() {
         ) : null,
       headerClassName: 'w-20',
     },
-    { header: 'โครงการ', key: 'project_name' as keyof SupplieOrder },
-    { header: 'รายการ', key: 'order_name' as keyof SupplieOrder },
-    { header: 'ประเภท', key: 'order_type' as keyof SupplieOrder },
+    { header: 'โครงการ', render: (it: SupplieOrder) => it.project_name ?? it.details ?? '-' },
+    { header: 'รายการ', render: (it: SupplieOrder) => it.order_name ?? it.details ?? '-' },
+    { header: 'ประเภท', render: (it: SupplieOrder) => it.order_type ?? '-' },
     {
       header: 'งบประมาณ',
       render: (item: SupplieOrder) => (
@@ -146,19 +149,19 @@ export default function WithdrawConfirmPage() {
         open={!!approveTarget}
         onConfirm={() => approveTarget && updateMutation.mutate({ item: approveTarget, status: 7 })}
         onCancel={() => setApproveTarget(null)}
-        title="ยืนยันการอนุมัติ"
-        description={`อนุมัติรายการ "${approveTarget?.order_name}" หรือไม่?`}
-        confirmLabel="อนุมัติ"
+        title="ยืนยันการเริ่มจัดซื้อ"
+        description={`เริ่มจัดซื้อรายการ "${approveTarget?.order_name ?? approveTarget?.details ?? ''}" หรือไม่?`}
+        confirmLabel="เริ่มจัดซื้อ"
         variant="default"
       />
 
       <ConfirmDialog
         open={!!denyTarget}
-        onConfirm={() => denyTarget && updateMutation.mutate({ item: denyTarget, status: 5 })}
+        onConfirm={() => denyTarget && updateMutation.mutate({ item: denyTarget, status: 9 })}
         onCancel={() => setDenyTarget(null)}
-        title="ยืนยันการปฏิเสธ"
-        description={`ปฏิเสธรายการ "${denyTarget?.order_name}" หรือไม่?`}
-        confirmLabel="ปฏิเสธ"
+        title="ยืนยันการยกเลิก"
+        description={`ยกเลิกรายการ "${denyTarget?.order_name ?? denyTarget?.details ?? ''}" หรือไม่?`}
+        confirmLabel="ยกเลิก"
         variant="destructive"
       />
     </div>

@@ -13,6 +13,8 @@ import { FinancialAuditService } from '../financial-audit/financial-audit.servic
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 import { DocCounterService } from '../doc-counter/doc-counter.service';
 import { FundBalanceService } from '../fund-balance/fund-balance.service';
+import { TravelReimbursement } from '../travel-reimbursement/entities/travel-reimbursement.entity';
+import { LoanAgreement } from '../loan-agreement/entities/loan-agreement.entity';
 
 // ─── QueryBuilder mock factory ─────────────────────────────────────────────────
 function makeQb(result?: unknown) {
@@ -30,10 +32,14 @@ function makeTransactionEm({
   check = null,
   committee = null,
   ftExists = 0,
+  travel = null,
+  loan = null,
 }: {
   check?: any;
   committee?: any;
   ftExists?: number;
+  travel?: any;
+  loan?: any;
 } = {}) {
   const checkRepo = {
     findOne: jest.fn().mockResolvedValue(check),
@@ -45,6 +51,15 @@ function makeTransactionEm({
     create: jest.fn().mockReturnValue({}),
     save: jest.fn().mockResolvedValue({}),
     update: jest.fn().mockResolvedValue({}),
+    findOne: jest.fn().mockResolvedValue({ ftId: 100 }),
+  };
+  const travelRepo = {
+    findOne: jest.fn().mockResolvedValue(travel),
+    save: jest.fn().mockImplementation((e) => Promise.resolve(e)),
+  };
+  const loanRepo = {
+    findOne: jest.fn().mockResolvedValue(loan),
+    save: jest.fn().mockImplementation((e) => Promise.resolve(e)),
   };
 
   const em = {
@@ -52,11 +67,13 @@ function makeTransactionEm({
       if (entity === RequestWithdraw) return checkRepo;
       if (entity === CheckReceiveCommittee) return committeeRepo;
       if (entity === FinancialTransactions) return ftRepo;
+      if (entity === TravelReimbursement) return travelRepo;
+      if (entity === LoanAgreement) return loanRepo;
       return {};
     }),
   };
 
-  return { em, checkRepo, committeeRepo, ftRepo };
+  return { em, checkRepo, committeeRepo, ftRepo, travelRepo, loanRepo };
 }
 
 describe('CheckService', () => {
@@ -74,11 +91,18 @@ describe('CheckService', () => {
     Pick<FinancialAuditService, 'isDateLocked'>
   >;
   let regulatoryConfig: { getThreshold: jest.Mock };
-  let fundBalance: { available: jest.Mock; availableInTx: jest.Mock };
+  let fundBalance: {
+    available: jest.Mock;
+    availableInTx: jest.Mock;
+    availableCash: jest.Mock;
+    availableCashInTx: jest.Mock;
+  };
   let fundAvailable: number;
+  let fundCashAvailable: number;
 
   beforeEach(async () => {
     fundAvailable = Number.MAX_SAFE_INTEGER;
+    fundCashAvailable = Number.MAX_SAFE_INTEGER;
     rwRepo = {
       createQueryBuilder: jest.fn(),
       find: jest.fn(),
@@ -111,6 +135,12 @@ describe('CheckService', () => {
       availableInTx: jest
         .fn()
         .mockImplementation(() => Promise.resolve(fundAvailable)),
+      availableCash: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(fundCashAvailable)),
+      availableCashInTx: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(fundCashAvailable)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -408,6 +438,89 @@ describe('CheckService', () => {
       await service.updateCheck({ rw_id: 1, status: 202 } as any, 1);
       expect(ftRepo.save).toHaveBeenCalled();
     });
+
+    it('จ่ายเงินสด (typeOfferCheck=1) เกินยอดเงินสดคงเหลือ → block (เงินสดห้ามติดลบ)', async () => {
+      fundCashAvailable = 500; // เงินสดคงเหลือ 500 แต่จะจ่าย 1,000
+      const check = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        amount: 1000,
+        status: 200,
+        bgTypeId: 1,
+        syId: 1,
+        typeOfferCheck: 1, // เบิกเงินสด
+        offerCheckDate: null,
+      };
+      const { em, ftRepo } = makeTransactionEm({ check, ftExists: 0 });
+      dataSource.transaction.mockImplementation((cb: any) => cb(em));
+
+      const result = await service.updateCheck(
+        { rw_id: 1, status: 202 } as any,
+        1,
+      );
+      expect(result.flag).toBe(false);
+      expect(result.ms).toContain('เงินสด');
+      expect(ftRepo.save).not.toHaveBeenCalled(); // ไม่สร้าง FT จ่าย
+    });
+
+    it('จ่ายผ่านเช็ค/ธนาคาร (typeOfferCheck=2) ไม่ติด cash guard แม้เงินสดน้อย', async () => {
+      fundCashAvailable = 0; // เงินสด 0 แต่จ่ายผ่านธนาคาร
+      const check = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        amount: 1000,
+        status: 200,
+        bgTypeId: 1,
+        syId: 1,
+        typeOfferCheck: 2, // จ่ายผ่านเช็ค (bank)
+        offerCheckDate: null,
+      };
+      const { em, ftRepo } = makeTransactionEm({ check, ftExists: 0 });
+      dataSource.transaction.mockImplementation((cb: any) => cb(em));
+
+      const result = await service.updateCheck(
+        { rw_id: 1, status: 202 } as any,
+        1,
+      );
+      expect(result).toEqual({ flag: true });
+      expect(ftRepo.save).toHaveBeenCalled();
+    });
+
+    it('ออกเช็คให้ใบขอเบิกค่าเดินทางที่เชื่อม (tr_id) → travel = จ่ายแล้ว (status 2) + bcNo', async () => {
+      const check = {
+        rwId: 1, scId: 1, del: 0, amount: 2420, status: 200,
+        bgTypeId: 5, syId: 1, typeOfferCheck: 1, offerCheckDate: null,
+        noDoc: 'บค.7/2569', trId: 9, laId: 0,
+      }
+      const travel = { trId: 9, status: 12 }
+      const { em, travelRepo } = makeTransactionEm({ check, ftExists: 0, travel })
+      dataSource.transaction.mockImplementation((cb: any) => cb(em))
+
+      await service.updateCheck({ rw_id: 1, status: 202 } as any, 1)
+      const saved = travelRepo.save.mock.calls[0][0]
+      expect(saved.status).toBe(2)
+      expect(saved.bcNo).toBeTruthy()
+      expect(saved.receiptDate).toBeTruthy()
+    })
+
+    it('ออกเช็คให้ใบยืมเงินที่เชื่อม (la_id) → loan = ค้างชำระ (status 1) + ผูก ft_borrow', async () => {
+      const check = {
+        rwId: 1, scId: 1, del: 0, amount: 3000, status: 200,
+        bgTypeId: 5, syId: 1, typeOfferCheck: 2, offerCheckDate: null,
+        noDoc: 'บจ.8/2569', trId: 0, laId: 50,
+      }
+      const loan = { laId: 50, status: 12, loanCategory: 1, dueDays: 0 }
+      const { em, loanRepo } = makeTransactionEm({ check, ftExists: 0, loan })
+      dataSource.transaction.mockImplementation((cb: any) => cb(em))
+
+      await service.updateCheck({ rw_id: 1, status: 202 } as any, 1)
+      const saved = loanRepo.save.mock.calls[0][0]
+      expect(saved.status).toBe(1)
+      expect(saved.ftBorrowId).toBe(100)
+      expect(saved.dueDate).toBeTruthy()
+    })
 
     it('ไม่ duplicate FT ถ้ามีอยู่แล้ว (ftExists > 0)', async () => {
       const check = {

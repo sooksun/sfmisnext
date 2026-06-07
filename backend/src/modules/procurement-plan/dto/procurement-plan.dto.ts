@@ -16,6 +16,8 @@ export class AddPlanDto {
   @IsOptional() @IsInt() pp_source?: number;
   @IsOptional() @IsString() remark?: string;
   @IsOptional() @IsInt() up_by?: number;
+  /** ผูกกับใบขอจัดซื้อ (parcel_order.order_id) — ถ้ามี ระบบจะสร้างรายการในแผนและผูก ppi_id กลับให้อัตโนมัติ */
+  @IsOptional() @IsInt() order_id?: number;
 }
 
 export class UpdatePlanDto extends AddPlanDto {

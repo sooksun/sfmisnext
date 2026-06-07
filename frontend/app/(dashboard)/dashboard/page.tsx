@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useAppContext } from '@/hooks/use-app-context'
 import { DashboardBudgetSection } from '@/components/dashboard/dashboard-budget-section'
 import { AlertsWidget } from '@/components/dashboard/alerts-widget'
+import { CashDepositModal } from '@/components/dashboard/cash-deposit-modal'
 import { WorkflowGuide } from '@/components/dashboard/workflow-guide'
 
 export default function DashboardPage() {
@@ -72,6 +73,9 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Popup เตือนนำเงินสดฝากธนาคารตามระเบียบ 2562 (เมื่อเลยกำหนด) */}
+      <CashDepositModal />
 
       {/* แจ้งเตือนการเงิน (ดอกเบี้ย/ภาษี/เงินยืม/เงินสดเกินวงเงิน) */}
       <AlertsWidget />

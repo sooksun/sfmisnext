@@ -36,6 +36,7 @@ import { HealthModule } from './modules/health/health.module';
 import { FinancialAuditModule } from './modules/financial-audit/financial-audit.module';
 import { GovRevenueModule } from './modules/gov-revenue/gov-revenue.module';
 import { LoanAgreementModule } from './modules/loan-agreement/loan-agreement.module';
+import { TravelReimbursementModule } from './modules/travel-reimbursement/travel-reimbursement.module';
 import { CashKeepingModule } from './modules/cash-keeping/cash-keeping.module';
 import { SmpDepositModule } from './modules/smp-deposit/smp-deposit.module';
 import { BankLedgerModule } from './modules/bank-ledger/bank-ledger.module';
@@ -59,7 +60,6 @@ import { ProjectFollowupModule } from './modules/project-followup/project-follow
 import { EgpAnnouncementModule } from './modules/egp-announcement/egp-announcement.module';
 import { InvoicePreAuditModule } from './modules/invoice-pre-audit/invoice-pre-audit.module';
 import { PlanTraceModule } from './modules/plan-trace/plan-trace.module';
-import { SarReportModule } from './modules/sar-report/sar-report.module';
 import { IntraBankTransferModule } from './modules/intra-bank-transfer/intra-bank-transfer.module';
 import { SupplieRequestModule } from './modules/supplie-request/supplie-request.module';
 import { RegulatoryConfigModule } from './modules/regulatory-config/regulatory-config.module';
@@ -128,6 +128,7 @@ import { FundBalanceModule } from './modules/fund-balance/fund-balance.module';
     FinancialAuditModule,
     GovRevenueModule,
     LoanAgreementModule,
+    TravelReimbursementModule,
     CashKeepingModule,
     SmpDepositModule,
     BankLedgerModule,
@@ -151,7 +152,6 @@ import { FundBalanceModule } from './modules/fund-balance/fund-balance.module';
     EgpAnnouncementModule,
     InvoicePreAuditModule,
     PlanTraceModule,
-    SarReportModule,
     IntraBankTransferModule,
     SupplieRequestModule,
     RegulatoryConfigModule,

@@ -123,15 +123,15 @@ export class BudgetController {
    * - acad_year ส่งเป็น CE (เช่น 2026)
    * - คืนเฉพาะประเภทที่มียอด > 0 — ใช้ในหน้า budget-category
    */
-  @Get('loadEstimatedIncomeByType/:sc_id/:acad_year')
+  @Get('loadEstimatedIncomeByType/:sc_id/:sy_id')
   @HttpCode(HttpStatus.OK)
   loadEstimatedIncomeByType(
     @Param('sc_id', ParseIntPipe) scId: number,
-    @Param('acad_year', ParseIntPipe) acadYear: number,
+    @Param('sy_id', ParseIntPipe) syId: number,
     @CurrentUser() user: JwtUser,
   ) {
     assertSameSchool(user, scId);
-    return this.budgetService.loadEstimatedIncomeByType(scId, acadYear);
+    return this.budgetService.loadEstimatedIncomeByType(scId, syId);
   }
 
   @Post('addPLNBudgetCategory')

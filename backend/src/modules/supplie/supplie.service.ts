@@ -250,16 +250,17 @@ export class SupplieService {
   }
 
   async loadSupplieOrder(scId: number, yearId: number) {
-    // Load parcel orders that need approval (status = 4 = พัสดุ)
-    const orders = await this.parcelOrderRepository.find({
-      where: {
-        scId,
-        acadYear: yearId,
-        del: 0,
-        orderStatus: 4,
-      },
-      order: { orderId: 'DESC' },
-    });
+    // โหลด parcel_order ที่กำลังอยู่ในกระบวนการจัดซื้อ
+    // — รวมทุกสถานะที่ "เกี่ยวกับงานพัสดุ" คือ ผ่าน ผอ.แล้ว (5), ตั้งกรรมการ (6), จัดซื้อ (7)
+    //   เพื่อให้ผู้ใช้เห็นรายการได้ทันทีหลังอนุมัติเสร็จ ไม่ตกหล่น
+    const orders = await this.parcelOrderRepository
+      .createQueryBuilder('o')
+      .where('o.sc_id = :scId', { scId })
+      .andWhere('o.acad_year = :yearId', { yearId })
+      .andWhere('o.del = 0')
+      .andWhere('o.order_status IN (:...statuses)', { statuses: [5, 6, 7] })
+      .orderBy('o.order_id', 'DESC')
+      .getMany();
 
     return orders.map((order) => ({
       order_id: order.orderId,

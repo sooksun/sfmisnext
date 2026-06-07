@@ -12,6 +12,7 @@ import { GovRevenueModule } from '../gov-revenue/gov-revenue.module';
 import { RegisterMoneyTypeModule } from '../register-money-type/register-money-type.module';
 import { LoanAgreementModule } from '../loan-agreement/loan-agreement.module';
 import { ReportDailyBalanceModule } from '../report-daily-balance/report-daily-balance.module';
+import { CashKeepingModule } from '../cash-keeping/cash-keeping.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ReportDailyBalanceModule } from '../report-daily-balance/report-daily-b
     RegisterMoneyTypeModule,
     LoanAgreementModule,
     ReportDailyBalanceModule,
+    CashKeepingModule,
   ],
   controllers: [DashboardController, DashboardTypoController],
   providers: [DashboardService],

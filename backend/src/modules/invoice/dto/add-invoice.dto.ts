@@ -35,9 +35,19 @@ export class AddInvoiceDto {
   @IsNumber()
   order_id?: number;
 
-  @IsNotEmpty()
+  // เชื่อมเอกสารต้นเรื่องที่ ผอ. อนุมัติแล้ว
+  @IsOptional()
   @IsNumber()
-  p_id: number;
+  tr_id?: number; // ใบขอเบิกค่าเดินทาง (travel_reimbursement)
+
+  @IsOptional()
+  @IsNumber()
+  la_id?: number; // ใบยืมเงิน (loan_agreement)
+
+  // ผู้รับเงิน (partner) — ไม่บังคับ กรณีจ่ายภายใน (ค่าเดินทาง/เงินยืม) ผู้รับเป็นบุคคล
+  @IsOptional()
+  @IsNumber()
+  p_id?: number;
 
   @IsNotEmpty()
   @IsString()

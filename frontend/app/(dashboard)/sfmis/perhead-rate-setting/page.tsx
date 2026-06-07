@@ -1,8 +1,9 @@
 'use client'
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Save } from 'lucide-react'
+import { Save, Settings2 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
@@ -87,10 +88,18 @@ export default function PerheadRateSettingPage() {
       <PageHeader
         title="ตั้งค่าเกณฑ์เงินต่อหัวนักเรียน"
         actions={
-          <Button onClick={() => saveMutation.mutate()} disabled={rates.length === 0 || saveMutation.isPending}>
-            <Save className="h-4 w-4" />
-            บันทึกทั้งหมด
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link href="/sfmis/perhead-rate-config">
+              <Button variant="outline">
+                <Settings2 className="h-4 w-4" />
+                ตั้งค่าประเภทเงิน
+              </Button>
+            </Link>
+            <Button onClick={() => saveMutation.mutate()} disabled={rates.length === 0 || saveMutation.isPending}>
+              <Save className="h-4 w-4" />
+              บันทึกทั้งหมด
+            </Button>
+          </div>
         }
       />
       <ProcessFlow flow="plan" />

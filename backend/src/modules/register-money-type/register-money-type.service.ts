@@ -1,12 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
+import { CashKeepingService } from '../cash-keeping/cash-keeping.service';
 
 export interface RegisterTransaction {
   ft_id: number;
@@ -40,7 +42,100 @@ export class RegisterMoneyTypeService {
     private readonly requestWithdrawRepository: Repository<RequestWithdraw>,
     @InjectRepository(OpeningBalance)
     private readonly openingBalanceRepository: Repository<OpeningBalance>,
+    private readonly dataSource: DataSource,
+    private readonly fundBalance: FundBalanceService,
+    private readonly cashKeeping: CashKeepingService,
   ) {}
+
+  /**
+   * นำเงินสด (คงมือ) ของประเภทเงินไปฝากธนาคาร — แถว "นำเงินฝากธนาคาร" ในทะเบียนคุม
+   *  สร้าง 2 รายการสุทธิ 0: เงินสดออก (type=−1 ช่อง1) + เงินฝากธนาคารเข้า (type=+1 ช่อง2)
+   *  → ยอดรวมประเภทเงินไม่เปลี่ยน แต่ย้ายจากเงินสดไปธนาคาร (กันนำฝากเกินเงินสดคงเหลือ)
+   */
+  async depositCash(dto: {
+    sc_id: number;
+    sy_id: number;
+    bg_type_id: number;
+    deposit_date: string;
+    amount: number;
+    doc_no?: string;
+    ba_id?: number;
+    up_by?: number;
+  }) {
+    const amount = Number(dto.amount);
+    if (!(amount > 0))
+      return { flag: false, ms: 'จำนวนเงินที่นำฝากต้องมากกว่า 0' };
+
+    const result = await this.dataSource.transaction(async (em) => {
+      const ftRepo = em.getRepository(FinancialTransactions);
+
+      // กันนำฝากเกิน "เงินสดคงเหลือ" ของประเภทเงินนี้
+      const cash = await this.fundBalance.availableCashInTx(
+        em,
+        dto.sc_id,
+        dto.sy_id,
+        dto.bg_type_id,
+      );
+      if (amount - cash > 0.005) {
+        return {
+          flag: false,
+          ms: `นำฝากไม่ได้ — เงินสดคงเหลือ ${cash.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท ไม่พอนำฝาก ${amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท`,
+        };
+      }
+
+      const createDate = dto.deposit_date
+        ? new Date(dto.deposit_date)
+        : new Date();
+
+      // เงินสดออก (คงมือลดลง)
+      await ftRepo.save(
+        ftRepo.create({
+          type: -1,
+          bgTypeId: dto.bg_type_id,
+          amount,
+          scId: dto.sc_id,
+          syId: dto.sy_id,
+          moneyChannel: 1,
+          registerKind: 'deposit',
+          refNo: dto.doc_no ?? null,
+          upBy: dto.up_by ?? 0,
+          del: 0,
+          createDate,
+        }),
+      );
+      // เงินฝากธนาคารเข้า
+      await ftRepo.save(
+        ftRepo.create({
+          type: 1,
+          bgTypeId: dto.bg_type_id,
+          amount,
+          scId: dto.sc_id,
+          syId: dto.sy_id,
+          moneyChannel: 2,
+          baId: dto.ba_id ?? null,
+          registerKind: 'deposit',
+          refNo: dto.doc_no ?? null,
+          upBy: dto.up_by ?? 0,
+          del: 0,
+          createDate,
+        }),
+      );
+
+      return { flag: true, ms: 'นำเงินสดฝากธนาคารเรียบร้อยแล้ว' };
+    });
+
+    // ปิดบันทึกเก็บรักษาเงินสดที่นำฝากแล้ว (FIFO) — ให้ตัวเตือนนำฝากแม่นยำ
+    if (result.flag) {
+      await this.cashKeeping.markDepositedFifo(
+        dto.sc_id,
+        dto.sy_id,
+        amount,
+        dto.deposit_date ?? null,
+        dto.up_by ?? 0,
+      );
+    }
+    return result;
+  }
 
   /**
    * เตือนการนำส่งภาษีหัก ณ ที่จ่าย — ต้องนำส่งภายในวันที่ 7 ของเดือนถัดไป

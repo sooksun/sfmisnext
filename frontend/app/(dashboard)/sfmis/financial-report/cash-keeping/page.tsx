@@ -100,7 +100,7 @@ export default function CashKeepingPage() {
   const { data: adminListRaw } = useQuery({
     queryKey: ['admin-list', scId],
     queryFn: () =>
-      apiGet<{ data: AdminItem[]; count: number }>(`B_admin/load_user/${scId}/0/1000`),
+      apiGet<{ data: AdminItem[]; count: number }>(`B_admin/load_user_options/${scId}`),
     enabled: scId > 0,
   })
   const adminList: AdminItem[] = adminListRaw?.data ?? []

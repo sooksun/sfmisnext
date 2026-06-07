@@ -220,6 +220,30 @@ export class AdminService {
     };
   }
 
+  /**
+   * รายชื่อผู้ใช้ในโรงเรียน (เฉพาะ field ที่จำเป็นสำหรับ dropdown picker)
+   * — ใช้กับช่อง "ผู้ยืม / ผู้รับ / ผู้จ่าย" ที่ทุก role ต้องเลือกได้
+   * ไม่คืนข้อมูล sensitive (code_login, email, license, avata) เหมือน load_user
+   */
+  async loadUserOptions(scId: number) {
+    const items = await this.adminRepository.find({
+      where: { del: 0, scId },
+      order: { name: 'ASC' },
+      select: ['adminId', 'name', 'username', 'position', 'type'],
+    });
+
+    return {
+      data: items.map((a) => ({
+        admin_id: a.adminId,
+        name: a.name,
+        username: a.username,
+        position: a.position,
+        type: a.type,
+      })),
+      count: items.length,
+    };
+  }
+
   async addAdmin(payload: AddAdminDto) {
     const username =
       payload.username || payload.email?.split('@')[0] || `user_${Date.now()}`;

@@ -52,9 +52,27 @@ export class LoanAgreement {
     type: 'varchar',
     length: 200,
     nullable: true,
-    comment: 'snapshot ตำแหน่ง',
+    comment: 'ตำแหน่งผู้ยืม (ตามสัญญา ตัวอย่างที่ 34)',
   })
   borrowerPosition: string | null;
+
+  @Column({
+    name: 'affiliation',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    comment: 'สังกัด (โรงเรียน/สพป./เขต) ตามสัญญา',
+  })
+  affiliation: string | null;
+
+  @Column({
+    name: 'province',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+    comment: 'จังหวัด ตามสัญญา',
+  })
+  province: string | null;
 
   // ประเภทเงิน (budget_income_type.bg_type_id)
   @Column({ name: 'money_type_id', type: 'int', default: 0 })
@@ -68,8 +86,15 @@ export class LoanAgreement {
   })
   moneyTypeName: string | null;
 
-  @Column({ type: 'text', nullable: true, comment: 'วัตถุประสงค์การยืม' })
+  @Column({ type: 'text', nullable: true, comment: 'วัตถุประสงค์การยืม (เพื่อเป็นค่าใช้จ่ายในการ...)' })
   purpose: string | null;
+  @Column({
+    name: 'expense_detail',
+    type: 'text',
+    nullable: true,
+    comment: 'รายละเอียดการใช้เงิน (ดังรายละเอียดต่อไปนี้)',
+  })
+  expenseDetail: string | null;
   @Column({ type: 'float', default: 0 }) amount: number;
   @Column({ name: 'borrow_date', type: 'date', nullable: true }) borrowDate:
     | string
@@ -91,12 +116,41 @@ export class LoanAgreement {
   loanCategory: number;
 
   @Column({
+    name: 'due_days',
+    type: 'int',
+    default: 0,
+    comment: 'จำนวนวันส่งใช้ (นับแต่วันรับเงิน) 0=ใช้ค่าตาม loan_category',
+  })
+  dueDays: number;
+
+  @Column({
     name: 'due_date',
     type: 'date',
     nullable: true,
-    comment: 'กำหนดส่งคืน (auto-calculated)',
+    comment: 'กำหนดส่งใช้ (คำนวณจากวันรับเงิน + due_days)',
   })
   dueDate: string | null;
+
+  // ── workflow อนุมัติ (ตามสัญญายืมเงิน ตัวอย่างที่ 34) ─────────────────────
+  // ผู้ยืม → ผู้ตรวจสอบ (เจ้าหน้าที่การเงิน) → ผู้อนุมัติ (ผอ.) → รับเงิน
+  @Column({ name: 'verify_by', type: 'int', nullable: true, comment: 'ผู้ตรวจสอบ admin_id' })
+  verifyBy: number | null;
+  @Column({ name: 'verify_name', type: 'varchar', length: 200, nullable: true, comment: 'snapshot ชื่อผู้ตรวจสอบ' })
+  verifyName: string | null;
+  @Column({ name: 'verify_date', type: 'date', nullable: true, comment: 'วันที่ตรวจสอบ' })
+  verifyDate: string | null;
+
+  @Column({ name: 'approve_by', type: 'int', nullable: true, comment: 'ผู้อนุมัติ admin_id' })
+  approveBy: number | null;
+  @Column({ name: 'approve_name', type: 'varchar', length: 200, nullable: true, comment: 'snapshot ชื่อผู้อนุมัติ (ผอ.)' })
+  approveName: string | null;
+  @Column({ name: 'approve_date', type: 'date', nullable: true, comment: 'วันที่อนุมัติ' })
+  approveDate: string | null;
+  @Column({ name: 'approve_amount', type: 'float', nullable: true, comment: 'จำนวนเงินที่อนุมัติให้ยืม' })
+  approveAmount: number | null;
+
+  @Column({ name: 'receipt_date', type: 'date', nullable: true, comment: 'วันที่ผู้ยืมรับเงิน' })
+  receiptDate: string | null;
 
   // การส่งคืน
   @Column({ name: 'returned_date', type: 'date', nullable: true })
@@ -140,9 +194,19 @@ export class LoanAgreement {
   ftReturnId: number | null;
 
   /**
-   * สถานะ: 1=ยังค้างชำระ 2=คืนแล้ว 3=ยกเลิก
+   * สถานะ (workflow สัญญายืมเงิน ตัวอย่างที่ 34):
+   *  10 = รอตรวจสอบ (สร้างสัญญาแล้ว ยังไม่ตัดยอดเงิน)
+   *  11 = รออนุมัติ (ตรวจสอบแล้ว)
+   *  12 = รอรับเงิน (อนุมัติแล้ว)
+   *   1 = ค้างชำระ (รับเงินแล้ว ตัดยอดเงินจากประเภท)
+   *   2 = คืนแล้ว (ส่งใช้ครบ)
+   *   3 = ยกเลิก
    */
-  @Column({ type: 'int', default: 1, comment: '1=ค้างชำระ|2=คืนแล้ว|3=ยกเลิก' })
+  @Column({
+    type: 'int',
+    default: 10,
+    comment: '10=รอตรวจสอบ|11=รออนุมัติ|12=รอรับเงิน|1=ค้างชำระ|2=คืนแล้ว|3=ยกเลิก',
+  })
   status: number;
 
   @Column({ type: 'text', nullable: true }) note: string | null;

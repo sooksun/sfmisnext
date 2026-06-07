@@ -102,6 +102,14 @@ export class ProjectApproveController {
     );
   }
 
+  @Get('loadOrderForPrint/:order_id')
+  async loadOrderForPrint(
+    @Param('order_id', ParseIntPipe) orderId: number,
+    @CurrentUser('sc_id') scId: number,
+  ) {
+    return await this.projectApproveService.loadOrderForPrint(orderId, scId);
+  }
+
   @Get('loadBudgetBalance/:order_id/:project_id/:sc_id/:year')
   async loadBudgetBalance(
     @Param('order_id', ParseIntPipe) orderId: number,
@@ -180,6 +188,42 @@ export class ProjectApproveController {
     @CurrentUser('sc_id') scId: number,
   ) {
     return await this.projectApproveService.removeParcelOrder(dto, scId);
+  }
+
+  @Post('updateParcelOrder')
+  @HttpCode(HttpStatus.OK)
+  async updateParcelOrder(
+    @Body()
+    dto: {
+      order_id: number;
+      project_type?: number;
+      method_type?: number;
+      method_reason?: string;
+      details?: string;
+      budgets?: number;
+      up_by?: number;
+    },
+    @CurrentUser('sc_id') scId: number,
+  ) {
+    return await this.projectApproveService.updateParcelOrder(dto, scId);
+  }
+
+  @Post('addParcelDetail')
+  @HttpCode(HttpStatus.OK)
+  async addParcelDetail(
+    @Body() dto: { order_id: number; supp_id: number; pc_total: number },
+    @CurrentUser('sc_id') scId: number,
+  ) {
+    return await this.projectApproveService.addParcelDetail(dto, scId);
+  }
+
+  @Post('removeParcelDetail')
+  @HttpCode(HttpStatus.OK)
+  async removeParcelDetail(
+    @Body() dto: { pc_id: number },
+    @CurrentUser('sc_id') scId: number,
+  ) {
+    return await this.projectApproveService.removeParcelDetail(dto, scId);
   }
 
   @Post('cancelParcelOrder')

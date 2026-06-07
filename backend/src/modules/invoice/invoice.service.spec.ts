@@ -447,6 +447,87 @@ describe('InvoiceService', () => {
     });
   });
 
+  // ─── validatePayableLimit (ผ่าน addInvoice / updateInvoice) ──────────────────
+  describe('ตรวจมูลหนี้ก่อนเบิก (พัสดุ/ค่าเดินทาง/เงินยืม)', () => {
+    // qb ที่ผูก getRawOne สำหรับยอดเบิกสะสมของ order
+    function qbWithWithdrawn(total: number) {
+      const qb: Record<string, jest.Mock> = {};
+      ['select', 'where', 'andWhere'].forEach(
+        (m) => (qb[m] = jest.fn().mockReturnValue(qb)),
+      );
+      qb['getRawOne'] = jest
+        .fn()
+        .mockResolvedValue({ totalWithdrawn: String(total) });
+      return qb;
+    }
+
+    beforeEach(() => {
+      poRepo.findOne = jest.fn();
+      rwRepo.manager = { query: jest.fn().mockResolvedValue([]) };
+      rwRepo.create.mockReturnValue({ rwId: 1 } as RequestWithdraw);
+      rwRepo.save.mockResolvedValue({ rwId: 1 } as RequestWithdraw);
+      rwRepo.findOne.mockResolvedValue(null);
+    });
+
+    it('addInvoice: เบิกพัสดุเกินงบคงเหลือ → block', async () => {
+      poRepo.findOne.mockResolvedValue({ orderId: 7, budgets: 5000, del: 0 });
+      rwRepo.createQueryBuilder.mockReturnValue(qbWithWithdrawn(4000)); // เบิกไปแล้ว 4000
+      const result = await service.addInvoice(
+        baseDto({ order_id: 7, amount: 2000 }), // คงเหลือ 1000 < 2000
+      );
+      expect(result.flag).toBe(false);
+      expect(result.ms).toContain('งบคงเหลือไม่เพียงพอ');
+      expect(rwRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('addInvoice: เบิกพัสดุพอดีงบคงเหลือ → ผ่าน', async () => {
+      poRepo.findOne.mockResolvedValue({ orderId: 7, budgets: 5000, del: 0 });
+      rwRepo.createQueryBuilder.mockReturnValue(qbWithWithdrawn(4000));
+      const result = await service.addInvoice(
+        baseDto({ order_id: 7, amount: 1000 }), // คงเหลือ 1000 = 1000
+      );
+      expect(result).toEqual({ flag: true });
+    });
+
+    it('addInvoice: เบิกค่าเดินทางเกิน grand_total → block', async () => {
+      rwRepo.manager.query.mockResolvedValue([{ grand_total: 1500 }]);
+      const result = await service.addInvoice(
+        baseDto({ tr_id: 3, amount: 2000, p_id: 0 }),
+      );
+      expect(result.flag).toBe(false);
+      expect(result.ms).toContain('ค่าเดินทาง');
+      expect(rwRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('addInvoice: เบิกเงินยืมเกินวงเงินอนุมัติ → block', async () => {
+      rwRepo.manager.query.mockResolvedValue([{ amt: 10000 }]);
+      const result = await service.addInvoice(
+        baseDto({ la_id: 9, amount: 12000, rw_type: 1, user_request: 5, p_id: 0 }),
+      );
+      expect(result.flag).toBe(false);
+      expect(result.ms).toContain('วงเงินยืม');
+    });
+
+    it('updateInvoice: แก้ยอดให้เกินงบ order ภายหลัง → block (ปิดช่องโหว่เดิม)', async () => {
+      const existing = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        orderId: 7,
+        amount: 500,
+      } as RequestWithdraw;
+      rwRepo.findOne.mockResolvedValue(existing);
+      poRepo.findOne.mockResolvedValue({ orderId: 7, budgets: 5000, del: 0 });
+      rwRepo.createQueryBuilder.mockReturnValue(qbWithWithdrawn(4800)); // ไม่นับตัวเอง คงเหลือ 200
+      const result = await service.updateInvoice(
+        baseDto({ rw_id: 1, order_id: 7, amount: 9999 }),
+      );
+      expect(result.flag).toBe(false);
+      expect(result.ms).toContain('งบคงเหลือไม่เพียงพอ');
+      expect(rwRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
   // ─── loadLoanStatus ─────────────────────────────────────────────────────────
   describe('loadLoanStatus', () => {
     function makeLoanRow(overrides: Record<string, unknown>) {

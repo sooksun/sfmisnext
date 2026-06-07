@@ -59,8 +59,8 @@ export interface PrintOpts {
   body: string
   /** auto-trigger print dialog (default: true) */
   autoPrint?: boolean
-  /** ขนาดกระดาษ (default: A4) */
-  paper?: 'A4' | 'A5'
+  /** ขนาด/แนวกระดาษ (default: A4) — landscape = แนวนอน */
+  paper?: 'A4' | 'A5' | 'A4 landscape' | 'A5 landscape'
 }
 
 const BASE_CSS = `

@@ -20,6 +20,14 @@ export class BudgetIncomeTypeSchool {
   @Column({ name: 'bg_type_id', type: 'int', nullable: true })
   bgTypeId: number | null;
 
+  @Column({
+    name: 'perhead',
+    type: 'tinyint',
+    default: 1,
+    comment: '1 = กำหนดเงินต่อหัวได้ | 0 = ห้ามกำหนดรายหัว',
+  })
+  perhead: number;
+
   @Column({ name: 'up_by', type: 'int', nullable: true })
   upBy: number | null;
 

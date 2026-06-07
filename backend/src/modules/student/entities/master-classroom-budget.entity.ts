@@ -11,6 +11,14 @@ export class MasterClassroomBudget {
   @PrimaryGeneratedColumn({ name: 'crb_id' })
   crbId: number;
 
+  @Column({
+    name: 'sy_id',
+    type: 'int',
+    default: 0,
+    comment: 'ปีงบประมาณ (school_year.sy_id) — อัตราเงินต่อหัวแยกตามปี',
+  })
+  syId: number;
+
   @Column({ name: 'class_id', type: 'int' })
   classId: number;
 

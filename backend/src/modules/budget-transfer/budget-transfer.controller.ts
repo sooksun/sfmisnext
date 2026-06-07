@@ -43,23 +43,23 @@ export class BudgetTransferController {
     return this.svc.add(dto);
   }
 
-  // TODO: approve/reject/cancel รับแค่ bt_id — service ต้อง findOne({ btId, scId: user.sc_id })
-  // เพื่อ assertSameSchool ก่อน update (DTO ไม่มี sc_id)
+  // approve/reject/cancel รับแค่ bt_id — service โหลด record แล้ว assertSameSchool(user, bt.scId)
+  // กัน cross-tenant (DTO ไม่มี sc_id)
   @Post('approve')
   @HttpCode(HttpStatus.OK)
-  approve(@Body() dto: ApproveBudgetTransferDto) {
-    return this.svc.approve(dto);
+  approve(@Body() dto: ApproveBudgetTransferDto, @CurrentUser() user: JwtUser) {
+    return this.svc.approve(dto, user);
   }
 
   @Post('reject')
   @HttpCode(HttpStatus.OK)
-  reject(@Body() dto: RejectBudgetTransferDto) {
-    return this.svc.reject(dto);
+  reject(@Body() dto: RejectBudgetTransferDto, @CurrentUser() user: JwtUser) {
+    return this.svc.reject(dto, user);
   }
 
   @Post('cancel')
   @HttpCode(HttpStatus.OK)
-  cancel(@Body() dto: CancelBudgetTransferDto) {
-    return this.svc.cancel(dto.bt_id, dto.up_by);
+  cancel(@Body() dto: CancelBudgetTransferDto, @CurrentUser() user: JwtUser) {
+    return this.svc.cancel(dto.bt_id, dto.up_by, user);
   }
 }

@@ -53,8 +53,12 @@ export interface DailyBalanceFormRow {
   smp: number
   total: number
   note?: string
-  /** true = แถวหัวข้อกลุ่ม (ตัวหนา ไม่มีตัวเลข) */
+  /** true = แถวหัวข้อกลุ่ม/หมวด (ตัวหนา ไม่มีตัวเลข) */
   group?: boolean
+  /** true = ย่อหน้า (รายการย่อยใต้หมวด) */
+  indent?: boolean
+  /** true = ชื่อรายการตัวหนา (เช่น ภาษีหัก ณ ที่จ่าย / ประกันสัญญา) */
+  strong?: boolean
 }
 
 export interface DailyBalanceFormOpts {
@@ -83,8 +87,10 @@ export function officialDailyBalanceForm(o: DailyBalanceFormOpts): string {
       if (r.group) {
         return `<tr><td colspan="6"><b>${esc(r.name)}</b></td></tr>`
       }
+      const nameCell = r.strong ? `<b>${esc(r.name)}</b>` : esc(r.name)
+      const pad = r.indent ? ' style="padding-left:9mm"' : ''
       return `<tr>
-        <td>${esc(r.name)}</td>
+        <td${pad}>${nameCell}</td>
         <td class="num">${r.cash ? fmtBaht(r.cash) : ''}</td>
         <td class="num">${r.bank ? fmtBaht(r.bank) : ''}</td>
         <td class="num">${r.smp ? fmtBaht(r.smp) : ''}</td>
@@ -120,38 +126,52 @@ export function officialDailyBalanceForm(o: DailyBalanceFormOpts): string {
     : ['', '', '']
   ).slice(0, 3)
 
-  const signatures = `<div class="of-sign-wrap">
-    <div style="text-align:right; margin-right:20mm;">
+  const signatures = `<div class="db-sign">
+    <div class="db-prep">
       <div>ลงชื่อ${nm(o.preparerName)} ผู้จัดทำรายงาน</div>
       <div>(${o.preparerName ? esc(o.preparerName) : DOTS})</div>
       <div>ตำแหน่ง ${nm(o.preparerPosition)}</div>
     </div>
-    <div style="margin-top:6mm;">
+    <div class="db-p">
       กรรมการเก็บรักษาเงินได้ตรวจสอบนับเงินสดคงเหลือประจำวันถูกต้อง ตามรายการข้างต้นแล้ว
       และได้นำเงินสดเก็บรักษาไว้ในตู้นิรภัยเป็นที่เรียบร้อยแล้ว
     </div>
-    <div class="of-sign-3">
+    <div class="db-3col">
       ${committee
         .map(
           (c) => `<div class="b"><div>${c ? esc(c) : LONGDOTS}</div><div>กรรมการ</div></div>`,
         )
         .join('')}
     </div>
-    <div class="of-sign-c">
+    <div class="db-c">
       <div>ลงชื่อ${nm(o.directorName)} หัวหน้าหน่วยงานย่อย</div>
       <div>(${o.directorName ? esc(o.directorName) : DOTS})</div>
       <div>ตำแหน่ง ${DOTS}</div>
     </div>
-    <div style="margin-top:8mm;">
+    <div class="db-p">
       ข้าพเจ้าผู้รับมอบหมายได้รับเงินสดตามรายการข้างต้นแล้ว เมื่อวันที่ ${DOTS} เดือน ${DOTS} พ.ศ. ${DOTS}
     </div>
-    <div class="of-sign-c" style="margin-top:6mm;">
-      <div>ลงชื่อ${DOTS} ผู้รับเงิน</div>
-      <div>ลงชื่อ${DOTS} หัวหน้าหน่วยงานย่อย</div>
+    <div class="db-c db-2sign">
+      <span>ลงชื่อ${DOTS} ผู้รับเงิน</span>
+      <span style="margin-left:14mm">ลงชื่อ${DOTS} หัวหน้าหน่วยงานย่อย</span>
     </div>
   </div>`
 
-  return FORM_CSS + header + table + signatures
+  const tightCSS = `<style>
+    .db-tight .of-title { margin-bottom:2mm; }
+    .db-tight .of-title .of-h1 { font-size:16pt; }
+    .db-tight .of-title .of-line { font-size:13pt; margin:0; }
+    .db-tight table.of th, .db-tight table.of td { padding:1pt 4pt; font-size:11.5pt; line-height:1.3; }
+    .db-tight .db-sign { font-size:12pt; line-height:1.5; margin-top:2mm; }
+    .db-tight .db-prep { text-align:right; margin-right:16mm; }
+    .db-tight .db-p { margin-top:2mm; }
+    .db-tight .db-c { text-align:center; margin-top:2mm; }
+    .db-tight .db-3col { display:flex; justify-content:space-around; margin:2mm 0; }
+    .db-tight .db-3col .b { text-align:center; min-width:40mm; }
+    .db-tight .db-2sign { display:flex; justify-content:center; gap:2mm; }
+  </style>`
+
+  return FORM_CSS + tightCSS + `<div class="db-tight">${header}${table}${signatures}</div>`
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -253,8 +273,16 @@ export interface RegisterTxnRow {
   outTeacher?: number | null // ค่าจ้างครู
   outOperate?: number | null // ค่าตอบแทน ใช้สอย และวัสดุ
   outUtility?: number | null // ค่าสาธารณูปโภค
-  /** ช่องที่ยอดคงเหลือเปลี่ยน (running balance) — default 'bank' */
+  /** ช่องที่ยอดคงเหลือเปลี่ยน (running balance) — default 'bank' (ใช้กับ school_revenue) */
   storage?: 'cash' | 'bank' | 'smp'
+  /**
+   * ยอดคงเหลือหลังรายการนี้ (running) — ถ้าส่งมา ฟอร์มจะแสดงค่านี้ตรง ๆ
+   * (variant 'standard' : backend คำนวณให้ ; รองรับเงินยืม/contra/นำฝาก)
+   */
+  cash?: number | null
+  bank?: number | null
+  smp?: number | null
+  debtor?: number | null // ลูกหนี้คงค้างหลังรายการนี้
   note?: string | null
 }
 
@@ -263,8 +291,8 @@ export interface RegisterFormOpts {
   fundTypeName?: string
   budgetYear?: string | number
   variant?: 'standard' | 'school_revenue'
-  /** ยอดยกมาต้นปี แยกตามที่เก็บเงิน */
-  opening?: { cash?: number; bank?: number; smp?: number }
+  /** ยอดยกมาต้นปี แยกตามที่เก็บเงิน (debtor = ลูกหนี้ยกมา) */
+  opening?: { cash?: number; bank?: number; smp?: number; debtor?: number }
   rows: RegisterTxnRow[]
 }
 
@@ -276,14 +304,18 @@ export function officialNonBudgetRegisterForm(o: RegisterFormOpts): string {
   ])
 
   const n = (v: number) => (v ? fmtBaht(v) : '')
+  // ลูกหนี้: ค่าติดลบ = contra (ส่งใช้/คืน) แสดงในวงเล็บ ตามคู่มือ
+  const nDebtor = (v: number) =>
+    v ? (v < 0 ? `(${fmtBaht(-v)})` : fmtBaht(v)) : ''
   const colCount = isSR ? 15 : 10
 
   // running balance แยกที่เก็บเงิน + ยอดสะสมแต่ต้นปี
   let rCash = Number(o.opening?.cash || 0)
   let rBank = Number(o.opening?.bank || 0)
   let rSmp = Number(o.opening?.smp || 0)
+  let rDebtor = Number(o.opening?.debtor || 0) // ลูกหนี้คงค้าง (running)
   const openTotal = rCash + rBank + rSmp
-  let cRcv = 0, cDebtor = 0, cVoucher = 0 // standard cumulative
+  let cRcv = 0, cVoucher = 0 // standard cumulative
   let cLgo = 0, cDon = 0, cOther = 0, cTea = 0, cOpe = 0, cUti = 0 // SR cumulative
 
   const balCells = () =>
@@ -300,7 +332,7 @@ export function officialNonBudgetRegisterForm(o: RegisterFormOpts): string {
     return `<tr>
       <td class="ctr">${esc(date)}</td><td class="ctr">${esc(docNo)}</td>
       <td>${b(esc(detail))}</td>
-      <td class="num">${b(n(rcv))}</td><td class="num">${b(n(debtor))}</td><td class="num">${b(n(voucher))}</td>
+      <td class="num">${b(n(rcv))}</td><td class="num">${b(nDebtor(debtor))}</td><td class="num">${b(n(voucher))}</td>
       ${bal}<td>${esc(note)}</td>
     </tr>`
   }
@@ -337,8 +369,8 @@ export function officialNonBudgetRegisterForm(o: RegisterFormOpts): string {
     // ยอดยกมา (คงเหลือ ณ ต้นเดือน = running balance ปัจจุบัน)
     parts.push(isSR
       ? srRow('', '', 'ยอดยกมา', 0, 0, 0, 0, 0, 0, balCells())
-      : stdRow('', '', 'ยอดยกมา', 0, 0, 0, balCells()))
-    let mRcv = 0, mDebtor = 0, mVoucher = 0
+      : stdRow('', '', 'ยอดยกมา', 0, rDebtor, 0, balCells()))
+    let mRcv = 0, mVoucher = 0
     let mLgo = 0, mDon = 0, mOther = 0, mTea = 0, mOpe = 0, mUti = 0
     for (const r of g.rows) {
       const date = r.date ? thaiFullDate(r.date) : ''
@@ -353,10 +385,19 @@ export function officialNonBudgetRegisterForm(o: RegisterFormOpts): string {
         parts.push(srRow(date, r.docNo || '', r.detail || '', lgo, don, other, tea, ope, uti, balCells(), r.note || ''))
       } else {
         const rcv = Number(r.receive || 0), debtor = Number(r.payDebtor || 0), voucher = Number(r.payVoucher || 0)
-        const net = rcv - debtor - voucher
-        if (store === 'cash') rCash += net; else if (store === 'smp') rSmp += net; else rBank += net
-        mRcv += rcv; mDebtor += debtor; mVoucher += voucher
-        cRcv += rcv; cDebtor += debtor; cVoucher += voucher
+        // ใช้ยอดคงเหลือที่ backend คำนวณมา (รองรับเงินยืม/contra/นำฝาก)
+        // fallback: ถ้าไม่ส่งมา ใช้สูตร net (รายการปกติ) ลงช่องตาม storage
+        if (r.cash != null || r.bank != null || r.smp != null || r.debtor != null) {
+          rCash = Number(r.cash ?? rCash)
+          rBank = Number(r.bank ?? rBank)
+          rSmp = Number(r.smp ?? rSmp)
+          rDebtor = Number(r.debtor ?? rDebtor)
+        } else {
+          const net = rcv - debtor - voucher
+          if (store === 'cash') rCash += net; else if (store === 'smp') rSmp += net; else rBank += net
+        }
+        mRcv += rcv; mVoucher += voucher
+        cRcv += rcv; cVoucher += voucher
         parts.push(stdRow(date, r.docNo || '', r.detail || '', rcv, debtor, voucher, balCells(), r.note || ''))
       }
     }
@@ -365,8 +406,9 @@ export function officialNonBudgetRegisterForm(o: RegisterFormOpts): string {
       parts.push(srRow('', '', 'รวมเดือนนี้', mLgo, mDon, mOther, mTea, mOpe, mUti, emptyBal, '', true))
       parts.push(srRow('', '', 'รวมแต่ต้นปี', cLgo, cDon, cOther + openTotal, cTea, cOpe, cUti, balCells(), '', true))
     } else {
-      parts.push(stdRow('', '', 'รวมเดือนนี้', mRcv, mDebtor, mVoucher, emptyBal, '', true))
-      parts.push(stdRow('', '', 'รวมแต่ต้นปี', openTotal + cRcv, cDebtor, cVoucher, balCells(), '', true))
+      // คอลัมน์ "ลูกหนี้" ไม่รวมยอด (จ่าย/ส่งใช้หักล้างกัน) — แสดงว่าง ตามคู่มือ
+      parts.push(stdRow('', '', 'รวมเดือนนี้', mRcv, 0, mVoucher, emptyBal, '', true))
+      parts.push(stdRow('', '', 'รวมแต่ต้นปี', openTotal + cRcv, 0, cVoucher, balCells(), '', true))
     }
   }
 
@@ -374,7 +416,7 @@ export function officialNonBudgetRegisterForm(o: RegisterFormOpts): string {
     ? `<th>โครงการจาก อปท.</th><th>เงินบริจาค</th><th>รายได้อื่น ๆ</th><th>รวม</th>
        <th>ค่าจ้างครู</th><th>ค่าตอบแทน ใช้สอย และวัสดุ</th><th>ค่าสาธารณูปโภค</th><th>รวม</th>
        <th>เงินสด</th><th>เงินฝากธนาคาร</th><th>เงินฝากส่วนราชการผู้เบิก</th>`
-    : `<th>จำนวนเงิน</th><th>ลูกหนี้</th><th>ใบสำคัญ</th>
+    : `<th>ลูกหนี้</th><th>ใบสำคัญ</th>
        <th>เงินสด</th><th>เงินฝากธนาคาร</th><th>เงินฝากส่วนราชการผู้เบิก</th>`
   const headRow1 = isSR
     ? `<th colspan="4">รายรับ</th><th colspan="4">รายจ่าย</th><th colspan="3">คงเหลือ</th>`
@@ -796,15 +838,15 @@ export interface LoanAgreementFormOpts {
 
 /** CSS เฉพาะสัญญายืมเงิน (กรอบ + ช่องลงนาม) */
 const LOAN_CSS = `<style>
-  .la-frame { border:1.5px solid #000; padding:5mm 6mm; }
-  .la-corner { text-align:right; font-size:12pt; margin-bottom:1mm; }
-  .la-title { text-align:center; font-size:17pt; font-weight:bold; margin:1mm 0 4mm; }
-  .la-row { font-size:13.5pt; line-height:1.9; }
+  .la-frame { border:1.5px solid #000; padding:3mm 6mm; }
+  .la-corner { text-align:right; font-size:11pt; margin-bottom:0.5mm; }
+  .la-title { text-align:center; font-size:16pt; font-weight:bold; margin:0 0 2mm; }
+  .la-row { font-size:12.5pt; line-height:1.4; }
   .la-fill { border-bottom:1px dotted #000; padding:0 3mm; }
-  .la-amount-box { border:1px solid #000; padding:1mm 3mm; font-weight:bold; white-space:nowrap; }
-  .la-sec { border-top:1px solid #000; margin-top:4mm; padding-top:3mm; font-size:13pt; }
+  .la-amount-box { border:1px solid #000; padding:0.5mm 3mm; font-weight:bold; white-space:nowrap; }
+  .la-sec { border-top:1px solid #000; margin-top:2mm; padding-top:1.5mm; font-size:12pt; }
   .la-sec-h { font-weight:bold; }
-  .la-sign { margin-top:7mm; text-align:center; font-size:13pt; }
+  .la-sign { margin-top:7mm; text-align:center; font-size:12pt; }
   .la-pagebreak { page-break-before: always; }
 </style>`
 
@@ -826,18 +868,18 @@ function loanAgreementFront(o: LoanAgreementFormOpts): string {
   </div>
   <div class="la-row">ยื่นต่อ เจ้าหน้าที่การเงินโรงเรียน${laFill(o.scName, '60mm')}</div>`
 
-  const body = `<div class="la-row" style="margin-top:3mm">
+  const body = `<div class="la-row" style="margin-top:1.5mm">
     ข้าพเจ้า ${laFill(o.borrowerName, '55mm')} ตำแหน่ง ${laFill(o.borrowerPosition, '45mm')}<br/>
     สังกัด ${laFill(o.affiliation || (o.scName ? `โรงเรียน${o.scName}` : ''), '90mm')} จังหวัด ${laFill(o.province, '40mm')}<br/>
     มีความประสงค์ขอยืมเงินจาก ${laFill(o.moneyTypeName, '90mm')}<br/>
     เพื่อเป็นค่าใช้จ่ายในการ ${laFill(o.purpose, '90mm')} ดังรายละเอียดต่อไปนี้<br/>
-    <span style="display:inline-block;min-height:14mm;width:100%" class="la-fill">${o.expenseDetail ? esc(o.expenseDetail) : ''}</span>
+    <span style="display:inline-block;min-height:8mm;width:100%" class="la-fill">${o.expenseDetail ? esc(o.expenseDetail) : ''}</span>
   </div>
-  <div class="la-row" style="display:flex;justify-content:space-between;align-items:center;margin-top:3mm">
+  <div class="la-row" style="display:flex;justify-content:space-between;align-items:center;margin-top:1.5mm">
     <span>ตัวอักษร (<b>${esc(numberToThaiBaht(amount))}</b>)</span>
     <span>รวมเงิน <span class="la-amount-box">${fmtBaht(amount)}</span> บาท</span>
   </div>
-  <div class="la-row" style="margin-top:3mm;text-indent:12mm">
+  <div class="la-row" style="margin-top:1.5mm;text-indent:10mm">
     ข้าพเจ้าสัญญาว่าจะปฏิบัติตามระเบียบของทางราชการทุกประการ และจะนำใบสำคัญคู่จ่ายที่ถูกต้อง
     พร้อมทั้งเงินเหลือจ่าย (ถ้ามี) ส่งใช้ภายใน ${dueDays ? `<b>${dueDays}</b>` : laFill('', '15mm')} วัน นับแต่วันที่ได้รับเงิน
     ถ้าข้าพเจ้าไม่ส่งตามกำหนด ข้าพเจ้ายินยอมให้หักเงินเดือน ค่าจ้าง เบี้ยหวัด บำเหน็จ บำนาญ
@@ -992,115 +1034,184 @@ export interface Travel8708Opts {
 }
 
 const TRAVEL_CSS = `<style>
-  .tv-corner { text-align:right; font-size:12pt; }
-  .tv-title { text-align:center; font-size:16pt; font-weight:bold; margin:1mm 0 3mm; }
-  .tv-row { font-size:13.5pt; line-height:1.95; }
-  .tv-fill { border-bottom:1px dotted #000; padding:0 2mm; }
-  .tv-2col { display:flex; gap:6mm; margin-top:4mm; }
-  .tv-2col > div { flex:1; border:1px solid #000; padding:3mm; font-size:12.5pt; min-height:30mm; }
-  .tv-sign { text-align:center; font-size:12.5pt; margin-top:6mm; }
-  .tv-amount-box { border:1px solid #000; padding:1mm 3mm; font-weight:bold; white-space:nowrap; }
+  .tv-corner { position:absolute; top:0; right:0; font-size:13pt; line-height:1.3; text-align:right; }
+  .tv-page { position:relative; padding-top:10mm; }
+  .tv-title { text-align:center; font-size:15pt; font-weight:bold; margin:1mm 0 2mm; }
+  .tv-row { font-size:13pt; line-height:1.55; }
+  .tv-fill { display:inline-block; text-align:center; padding:0 1mm; letter-spacing:0.5px; }
+  .tv-fill.l { text-align:left; }
+  .tv-rt { text-align:right; padding-right:4mm; }
+  .tv-indent { text-indent:14mm; }
   .tv-pagebreak { page-break-before: always; }
+  .tv-2box { width:100%; border-collapse:collapse; margin-top:1mm; }
+  .tv-2box td { border:1px solid #000; padding:2mm 3mm; vertical-align:top; width:50%; font-size:13pt; line-height:1.55; }
+  .tv-sign-2col { display:flex; gap:8mm; margin-top:3mm; }
+  .tv-sign-2col > div { flex:1; font-size:13pt; line-height:1.55; }
+  .tv-hr { border:0; border-top:1px solid #000; margin:3mm 0 1mm; }
+  .tv-note .head { font-weight:bold; text-decoration:underline; font-size:13pt; }
+  .tv-note ol { margin:1mm 0 0; padding-left:6mm; font-size:12pt; line-height:1.45; }
+  .tv-page2-head { text-align:center; font-size:13pt; margin-bottom:1mm; }
+  .tv-p2-title { text-align:center; font-size:14pt; font-weight:bold; margin:0 0 2mm; }
+  table.tv-p2 { width:100%; border-collapse:collapse; font-size:11pt; }
+  table.tv-p2 th, table.tv-p2 td { border:1px solid #000; padding:2pt 4pt; vertical-align:middle; }
+  table.tv-p2 th { text-align:center; font-weight:bold; }
+  table.tv-p2 td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  table.tv-p2 td.ctr { text-align:center; }
 </style>`
 
-function tvFill(v?: string | null, min = '35mm'): string {
-  return `<span class="tv-fill" style="min-width:${min}">${v ? esc(v) : ''}</span>`
+function tvDots(min: string): string {
+  const mm = parseFloat(min) || 35
+  return '.'.repeat(Math.max(6, Math.round(mm / 1.5)))
+}
+function tvFill(v?: string | null, min = '35mm', align: 'c' | 'l' = 'c'): string {
+  const content = v ? esc(v) : tvDots(min)
+  return `<span class="tv-fill${align === 'l' ? ' l' : ''}" style="min-width:${min}">${content}</span>`
 }
 function tvRadio(label: string, on: boolean): string {
-  return `<span style="white-space:nowrap">${on ? '☑' : '☐'} ${esc(label)}</span>`
+  return `<span style="white-space:nowrap">${on ? '☑' : '◯'} ${esc(label)}</span>`
+}
+function tvDay(d?: string | null): string {
+  if (!d) return ''
+  const dt = new Date(String(d).replace(' ', 'T'))
+  return isNaN(dt.getTime()) ? '' : String(dt.getDate())
+}
+function tvMonth(d?: string | null): string {
+  if (!d) return ''
+  const dt = new Date(String(d).replace(' ', 'T'))
+  if (isNaN(dt.getTime())) return ''
+  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+  return months[dt.getMonth()]
+}
+function tvYearBE(d?: string | null): string {
+  if (!d) return ''
+  const dt = new Date(String(d).replace(' ', 'T'))
+  return isNaN(dt.getTime()) ? '' : String(dt.getFullYear() + 543)
 }
 
 function travel8708Part1(o: Travel8708Opts): string {
   const amount = Number(o.grandTotal || 0)
-  const head = `<div class="tv-corner">ส่วนที่ 1 แบบ 8708</div>
-  <div class="tv-title">ใบเบิกค่าใช้จ่ายในการเดินทางไปราชการ</div>
-  <div class="tv-row">
-    สัญญาเงินยืมเลขที่ ${tvFill(o.loanNo, '30mm')} วันที่ ${tvFill(o.loanDate ? thaiFullDate(o.loanDate) : '', '35mm')}<br/>
-    ชื่อผู้ยืม ${tvFill(o.loanNo ? o.requesterName : '', '45mm')} จำนวนเงิน ${tvFill(o.loanAmount != null ? fmtBaht(o.loanAmount) : '', '30mm')} บาท
-  </div>
-  <div class="tv-row" style="text-align:center">
-    ที่ทำการ ${tvFill(o.atOffice || (o.scName ? `โรงเรียน${o.scName}` : ''), '70mm')}<br/>
-    วันที่ ${tvFill(o.docDate ? thaiFullDate(o.docDate) : '', '55mm')}
-  </div>`
-
   const departFrom = Number(o.departFrom ?? 2)
-  const body = `<div class="tv-row" style="margin-top:2mm">
-    เรื่อง&nbsp;&nbsp;ขออนุมัติเบิกค่าใช้จ่ายในการเดินทางไปราชการ<br/>
-    เรียน&nbsp;&nbsp;${tvFill(o.to || (o.scName ? `ผู้อำนวยการโรงเรียน${o.scName}` : ''), '80mm')}
+
+  const head = `<div class="tv-corner">ส่วนที่ 1<br/>แบบ 8708</div>
+  <div class="tv-row">
+    สัญญาเงินยืมเลขที่ ${tvFill(o.loanNo, '50mm')} วันที่ ${tvFill(o.loanDate ? thaiFullDate(o.loanDate) : '', '55mm')}<br/>
+    ชื่อผู้ยืม ${tvFill(o.loanNo ? o.requesterName : '', '70mm')} จำนวนเงิน ${tvFill(o.loanAmount != null ? fmtBaht(o.loanAmount) : '', '40mm')} บาท
   </div>
-  <div class="tv-row" style="margin-top:1mm;text-indent:12mm">
-    ตามคำสั่ง/บันทึก ที่ ${tvFill(o.orderRef, '35mm')} ลงวันที่ ${tvFill(o.orderDate ? thaiFullDate(o.orderDate) : '', '35mm')} ได้อนุมัติให้<br/>
-    ข้าพเจ้า ${tvFill(o.requesterName, '50mm')} ตำแหน่ง ${tvFill(o.requesterPosition, '40mm')}<br/>
-    สังกัด ${tvFill(o.affiliation || (o.scName ? `โรงเรียน${o.scName}` : ''), '70mm')} จังหวัด ${tvFill(o.province, '30mm')}<br/>
-    พร้อมด้วย ${tvFill(o.companions, '120mm')}<br/>
-    เดินทางไปปฏิบัติราชการ ${tvFill(o.purpose, '110mm')}<br/>
-    โดยออกเดินทางจาก ${tvRadio('บ้านพัก', departFrom === 1)} ${tvRadio('สำนักงาน', departFrom === 2)} ${tvRadio('ประเทศไทย', departFrom === 3)}
-    ตั้งแต่วันที่ ${tvFill(o.departDate ? thaiFullDate(o.departDate) : '', '35mm')} เวลา ${tvFill(o.departTime, '15mm')} น.<br/>
-    และกลับถึง ${tvRadio('บ้านพัก', departFrom === 1)} ${tvRadio('สำนักงาน', departFrom === 2)} ${tvRadio('ประเทศไทย', departFrom === 3)}
-    วันที่ ${tvFill(o.returnDate ? thaiFullDate(o.returnDate) : '', '35mm')} เวลา ${tvFill(o.returnTime, '15mm')} น.<br/>
-    รวมเวลาไปราชการครั้งนี้ ${tvFill(o.totalDays != null ? String(o.totalDays) : '', '20mm')} วัน ${tvFill(o.totalHours != null ? String(o.totalHours) : '', '20mm')} ชั่วโมง
-  </div>
-  <div class="tv-row" style="margin-top:2mm;text-indent:12mm">ข้าพเจ้าขอเบิกค่าใช้จ่ายในการเดินทางไปราชการ ดังนี้</div>
-  <table class="of" style="margin-top:2mm">
-    <tbody>
-      <tr><td>ค่าเบี้ยเลี้ยงเดินทาง</td><td class="num" style="width:40mm">${o.allowanceTotal ? fmtBaht(o.allowanceTotal) : '-'}</td><td style="width:15mm">บาท</td></tr>
-      <tr><td>ค่าเช่าที่พัก</td><td class="num">${o.lodgingTotal ? fmtBaht(o.lodgingTotal) : '-'}</td><td>บาท</td></tr>
-      <tr><td>ค่าพาหนะ</td><td class="num">${o.transportTotal ? fmtBaht(o.transportTotal) : '-'}</td><td>บาท</td></tr>
-      <tr><td>ค่าใช้จ่ายอื่น</td><td class="num">${o.otherTotal ? fmtBaht(o.otherTotal) : '-'}</td><td>บาท</td></tr>
-      <tr><td class="ctr"><b>รวมทั้งสิ้น</b></td><td class="num"><b>${fmtBaht(amount)}</b></td><td><b>บาท</b></td></tr>
-    </tbody>
-  </table>
-  <div class="tv-row" style="margin-top:2mm">จำนวนเงิน (ตัวอักษร) (<b>${esc(numberToThaiBaht(amount))}</b>)</div>
-  <div class="tv-row" style="text-indent:12mm">ข้าพเจ้าขอรับรองว่ารายการที่กล่าวมาข้างต้นเป็นความจริง และหลักฐานการจ่ายที่ส่งมาด้วย
-    จำนวน ${tvFill(o.evidenceCount != null ? String(o.evidenceCount) : '', '15mm')} ฉบับ รวมทั้งจำนวนเงินที่ขอเบิกถูกต้องตามกฎหมายทุกประการ</div>
-  <div class="tv-sign">
-    ลงชื่อ ${tvFill(o.requesterName, '45mm')} ผู้ขอรับเงิน<br/>
-    ตำแหน่ง ${tvFill(o.requesterPosition, '45mm')}
+  <div class="tv-title">ใบเบิกค่าใช้จ่ายในการเดินทางไปราชการ</div>
+  <div class="tv-row tv-rt">
+    ที่ทำการ ${tvFill(o.atOffice || (o.scName ? `โรงเรียน${o.scName}` : ''), '80mm')}<br/>
+    วันที่ ${tvFill(o.docDate ? thaiFullDate(o.docDate) : '', '70mm')}
   </div>`
 
-  const approvals = `<div class="tv-2col">
-    <div>
-      ได้ตรวจสอบหลักฐานการเบิกจ่ายเงินที่แนบถูกต้องแล้ว เห็นควรอนุมัติให้เบิกจ่ายได้
-      <div class="tv-sign">
-        ลงชื่อ ${tvFill(o.verifyName, '35mm')}<br/>
-        (เจ้าหน้าที่การเงิน)<br/>
-        วันที่ ${tvFill(o.verifyDate ? thaiFullDate(o.verifyDate) : '', '35mm')}
-      </div>
-    </div>
-    <div>
-      อนุมัติให้จ่ายได้
-      <div class="tv-sign">
-        ลงชื่อ ${tvFill(o.approveName, '35mm')}<br/>
-        ผู้อำนวยการโรงเรียน${o.scName ? esc(o.scName) : ''}<br/>
-        วันที่ ${tvFill(o.approveDate ? thaiFullDate(o.approveDate) : '', '35mm')}
-      </div>
-    </div>
+  const body = `<div class="tv-row" style="margin-top:1mm">
+    เรื่อง&nbsp;&nbsp;ขออนุมัติเบิกค่าใช้จ่ายในการเดินทางไปราชการ<br/>
+    เรียน&nbsp;&nbsp;<b>ผู้อำนวยการโรงเรียน</b> ${tvFill(o.to || o.scName || '', '80mm')}
   </div>
-  <div class="tv-row" style="margin-top:4mm;text-align:center">
-    ได้รับเงินค่าใช้จ่ายในการเดินทางไปราชการ จำนวน ${fmtBaht(amount)} บาท
-    (<b>${esc(numberToThaiBaht(amount))}</b>) ไว้เป็นการถูกต้องแล้ว
+  <div class="tv-row tv-indent">
+    ตามคำสั่ง/บันทึกที่ ${tvFill(o.orderRef, '45mm')} ลงวันที่ ${tvFill(o.orderDate ? thaiFullDate(o.orderDate) : '', '45mm')} ได้อนุมัติให้
   </div>
-  <div class="tv-2col" style="border:0">
-    <div style="border:0;text-align:center">
-      ลงชื่อ ${tvFill(o.requesterName, '30mm')} ผู้รับเงิน<br/>
-      วันที่ ${tvFill(o.receiptDate ? thaiFullDate(o.receiptDate) : '', '30mm')}
-    </div>
-    <div style="border:0;text-align:center">
-      ลงชื่อ ${tvFill(o.payerName, '30mm')} ผู้จ่ายเงิน<br/>
-      วันที่ ${tvFill(o.receiptDate ? thaiFullDate(o.receiptDate) : '', '30mm')}
-    </div>
+  <div class="tv-row">
+    ข้าพเจ้า ${tvFill(o.requesterName, '65mm')} ตำแหน่ง ${tvFill(o.requesterPosition, '60mm')}<br/>
+    สังกัด ${tvFill(o.affiliation || (o.scName ? `โรงเรียน${o.scName}` : ''), '70mm')} พร้อมด้วย ${tvFill(o.companions, '60mm')}<br/>
+    เดินทางไปปฏิบัติราชการ ${tvFill(o.purpose, '130mm')}<br/>
+    <b>ณ</b> ${tvFill('', '70mm')} <b>ระหว่าง วันที่</b> ${tvFill(o.departDate && o.returnDate ? `${thaiFullDate(o.departDate)} ถึง ${thaiFullDate(o.returnDate)}` : '', '60mm')} <b>โดยออกเดินทางจาก</b><br/>
+    ${tvRadio('บ้านพัก', departFrom === 1)} ${tvRadio('สำนักงาน', departFrom === 2)} ${tvRadio('ประเทศไทย', departFrom === 3)}
+    ตั้งแต่วันที่ ${tvFill(tvDay(o.departDate), '12mm')} เดือน ${tvFill(tvMonth(o.departDate), '22mm')} พ.ศ. ${tvFill(tvYearBE(o.departDate), '15mm')} เวลา ${tvFill(o.departTime, '15mm')} น.<br/>
+    และกลับถึง ${tvRadio('บ้านพัก', departFrom === 1)} ${tvRadio('สำนักงาน', departFrom === 2)} ${tvRadio('ประเทศไทย', departFrom === 3)}
+    วันที่ ${tvFill(tvDay(o.returnDate), '12mm')} เดือน ${tvFill(tvMonth(o.returnDate), '22mm')} พ.ศ. ${tvFill(tvYearBE(o.returnDate), '15mm')} เวลา ${tvFill(o.returnTime, '15mm')} น.<br/>
+    รวมเวลาไปราชการครั้งนี้ ${tvFill(o.totalDays != null ? String(o.totalDays) : '', '18mm')} วัน ${tvFill(o.totalHours != null ? String(o.totalHours) : '', '18mm')} ชั่วโมง
   </div>
-  <div class="tv-row">จากเงินยืมตามสัญญาเลขที่ ${tvFill(o.loanNo, '30mm')} วันที่ ${tvFill(o.loanDate ? thaiFullDate(o.loanDate) : '', '30mm')}
-    ${o.bcNo ? `&nbsp;&nbsp;ใบสำคัญจ่ายเลขที่ <b>${esc(o.bcNo)}</b>` : ''}</div>`
+  <div class="tv-row tv-indent">
+    ข้าพเจ้าขอเบิกค่าใช้จ่ายในการเดินทางไปราชการสำหรับ
+    ${tvRadio('ข้าพเจ้า', !(o.travelers && o.travelers.length > 1))}
+    ${tvRadio('คณะเดินทาง', !!(o.travelers && o.travelers.length > 1))} ดังนี้
+  </div>
+  <div class="tv-row">
+    ค่าเบี้ยเลี้ยงเดินทางประเภท ${tvFill('', '22mm')} จำนวน ${tvFill('', '12mm')} วัน รวม ${tvFill(o.allowanceTotal ? fmtBaht(o.allowanceTotal) : '', '28mm')} บาท<br/>
+    ค่าที่พักประเภท ${tvFill('', '36mm')} จำนวน ${tvFill('', '12mm')} วัน รวม ${tvFill(o.lodgingTotal ? fmtBaht(o.lodgingTotal) : '', '28mm')} บาท<br/>
+    ค่าพาหนะ ${tvFill('', '95mm')} รวม ${tvFill(o.transportTotal ? fmtBaht(o.transportTotal) : '', '28mm')} บาท<br/>
+    ค่าใช้จ่ายอื่น ๆ ${tvFill('', '90mm')} รวม ${tvFill(o.otherTotal ? fmtBaht(o.otherTotal) : '', '28mm')} บาท
+  </div>
+  <div class="tv-row tv-rt"><b>รวมเงินทั้งสิ้น</b> ${tvFill(fmtBaht(amount), '36mm')} <b>บาท</b></div>
+  <div class="tv-row">จำนวนเงิน (ตัวอักษร) ${tvFill(numberToThaiBaht(amount), '130mm', 'l')}</div>
+  <div class="tv-row tv-indent" style="margin-top:1mm">
+    ข้าพเจ้าขอรับรองว่ารายการที่กล่าวมาข้างต้นเป็นความจริงและหลักฐานการจ่ายที่ส่งมาด้วย<br/>
+    จำนวน ${tvFill(o.evidenceCount != null ? String(o.evidenceCount) : '', '18mm')} ฉบับ รวมทั้งจำนวนเงินที่ขอเบิกถูกต้องตามกฎหมายทุกประการ
+  </div>
+  <div class="tv-row tv-rt" style="margin-top:5mm">
+    ลงชื่อ ${tvFill('', '55mm')} ผู้ขอรับเงิน<br/>
+    (${tvFill(o.requesterName, '45mm')})<br/>
+    ตำแหน่ง ${tvFill(o.requesterPosition, '55mm')}
+  </div>`
 
-  return `<div>${head}${body}${approvals}</div>`
+  return `<div class="tv-page">${head}${body}</div>`
+}
+
+function travel8708Part1Page2(o: Travel8708Opts): string {
+  const amount = Number(o.grandTotal || 0)
+  const approvals = `<div class="tv-page2-head">-2-</div>
+  <table class="tv-2box">
+    <tr>
+      <td>
+        ได้ตรวจสอบหลักฐานการเบิกจ่ายเงินที่แนบถูกต้องแล้ว<br/>
+        เห็นควรอนุมัติให้เบิกจ่ายได้<br/>
+        <div style="margin-top:6mm">
+          ลงชื่อ ${tvFill('', '50mm')}<br/>
+          (${tvFill(o.verifyName, '45mm')})<br/>
+          ตำแหน่ง ${tvFill('เจ้าหน้าที่การเงิน', '50mm')}<br/>
+          วันที่ ${tvFill(o.verifyDate ? thaiFullDate(o.verifyDate) : '', '50mm')}
+        </div>
+      </td>
+      <td>
+        อนุมัติให้จ่ายได้<br/>
+        <div style="margin-top:11mm">
+          ลงชื่อ ${tvFill('', '50mm')}<br/>
+          (${tvFill(o.approveName, '45mm')})<br/>
+          ตำแหน่ง ${tvFill(`ผู้อำนวยการโรงเรียน${o.scName ?? ''}`, '50mm')}<br/>
+          วันที่ ${tvFill(o.approveDate ? thaiFullDate(o.approveDate) : '', '50mm')}
+        </div>
+      </td>
+    </tr>
+  </table>
+  <div class="tv-row tv-indent" style="margin-top:4mm">
+    ได้รับเงินค่าใช้จ่ายในการเดินทางไปราชการจำนวน ${tvFill(fmtBaht(amount), '36mm')} บาท<br/>
+    (${tvFill(numberToThaiBaht(amount), '110mm')}) ไว้เป็นการถูกต้องแล้ว
+  </div>
+  <div class="tv-sign-2col" style="margin-top:4mm">
+    <div>
+      ลงชื่อ ${tvFill('', '45mm')} ผู้รับเงิน<br/>
+      (${tvFill(o.requesterName, '40mm')})<br/>
+      ตำแหน่ง ${tvFill(o.requesterPosition, '45mm')}<br/>
+      วันที่ ${tvFill(o.receiptDate ? thaiFullDate(o.receiptDate) : '', '45mm')}
+    </div>
+    <div>
+      ลงชื่อ ${tvFill('', '45mm')} ผู้จ่ายเงิน<br/>
+      (${tvFill(o.payerName, '40mm')})<br/>
+      ตำแหน่ง ${tvFill('เจ้าหน้าที่การเงิน', '45mm')}<br/>
+      วันที่ ${tvFill(o.receiptDate ? thaiFullDate(o.receiptDate) : '', '45mm')}
+    </div>
+  </div>
+  <div class="tv-row" style="margin-top:1mm">จากเงินยืมตามสัญญาเลขที่ ${tvFill(o.loanNo, '45mm')} วันที่ ${tvFill(o.loanDate ? thaiFullDate(o.loanDate) : '', '45mm')}
+    ${o.bcNo ? `&nbsp;&nbsp;ใบสำคัญจ่ายเลขที่ <b>${esc(o.bcNo)}</b>` : ''}</div>
+  <div class="tv-row" style="margin-top:2mm">หมายเหตุ ${tvFill('', '155mm', 'l')}</div>
+  <div class="tv-row">${tvFill('', '180mm', 'l')}</div>
+  <div class="tv-row">${tvFill('', '180mm', 'l')}</div>
+  <div class="tv-note" style="margin-top:4mm">
+    <div class="head">คำชี้แจง</div>
+    <ol>
+      <li>กรณีเดินทางเป็นหมู่คณะและจัดทำใบเบิกค่าใช้จ่ายรวมฉบับเดียวกัน หากระยะเวลาในการเริ่มต้นและสิ้นสุดการเดินทางของแต่ละบุคคลแตกต่างกัน ให้แสดงรายละเอียดของวันเวลาแตกต่างกันของบุคคลนั้นในช่องหมายเหตุ</li>
+      <li>กรณียื่นขอเบิกค่าใช้จ่ายรายบุคคล ให้ผู้ขอรับเงินเป็นผู้ลงลายมือชื่อผู้รับเงินและวันเดือนปีที่รับเงิน กรณีที่มีการยืมเงิน ให้ระบุวันที่ที่ได้รับเงินยืม เลขที่สัญญายืม และวันที่อนุมัติเงินยืมด้วย</li>
+      <li>กรณีที่ยื่นขอเบิกค่าใช้จ่ายรวมเป็นหมู่คณะ ผู้ขอรับเงินมิต้องลงลายมือชื่อในช่องผู้รับเงิน ทั้งนี้ให้ผู้มีสิทธิแต่ละคนลงลายมือชื่อผู้รับเงินในหลักฐานการจ่ายเงิน (ส่วนที่ 2)</li>
+    </ol>
+  </div>`
+  return `<div class="tv-pagebreak tv-page">${approvals}</div>`
 }
 
 function travel8708Part2(o: Travel8708Opts): string {
   const rows = o.travelers ?? []
   const body = rows
     .map(
-      (t, i) => `<tr>
+      (t, i) => `<tr style="height:11mm">
       <td class="ctr">${t.seq ?? i + 1}</td>
       <td>${t.name ? esc(t.name) : ''}</td>
       <td>${t.position ? esc(t.position) : ''}</td>
@@ -1109,33 +1220,33 @@ function travel8708Part2(o: Travel8708Opts): string {
       <td class="num">${t.transport ? fmtBaht(t.transport) : ''}</td>
       <td class="num">${t.other ? fmtBaht(t.other) : ''}</td>
       <td class="num">${t.total ? fmtBaht(t.total) : ''}</td>
-      <td></td><td class="ctr"></td><td></td>
+      <td></td><td class="ctr"></td><td>${t.note ? esc(t.note) : ''}</td>
     </tr>`,
     )
     .join('')
   const pad = Math.max(0, 6 - rows.length)
   const padRows = Array.from({ length: pad })
-    .map(() => `<tr>${'<td>&nbsp;</td>'}${'<td></td>'.repeat(10)}</tr>`)
+    .map(() => `<tr style="height:11mm"><td>&nbsp;</td>${'<td></td>'.repeat(10)}</tr>`)
     .join('')
   const amount = Number(o.grandTotal || 0)
 
-  const table = `<table class="of" style="font-size:11pt">
+  const table = `<table class="tv-p2">
     <thead>
       <tr>
-        <th rowspan="2" style="width:10mm">ลำดับ</th>
-        <th rowspan="2">ชื่อ</th>
-        <th rowspan="2">ตำแหน่ง</th>
+        <th rowspan="2" style="width:11mm">ลำดับ<br/>ที่</th>
+        <th rowspan="2" style="width:30mm">ชื่อ</th>
+        <th rowspan="2" style="width:28mm">ตำแหน่ง</th>
         <th colspan="4">ค่าใช้จ่าย</th>
-        <th rowspan="2" style="width:22mm">รวม</th>
-        <th rowspan="2" style="width:25mm">ลายมือชื่อผู้รับเงิน</th>
-        <th rowspan="2" style="width:20mm">วันที่รับเงิน</th>
+        <th rowspan="2" style="width:20mm">รวม</th>
+        <th rowspan="2" style="width:25mm">ลายมือชื่อ<br/>ผู้รับเงิน</th>
+        <th rowspan="2" style="width:20mm">วัน เดือน ปี<br/>ที่รับเงิน</th>
         <th rowspan="2" style="width:18mm">หมายเหตุ</th>
       </tr>
       <tr>
-        <th style="width:18mm">ค่าเบี้ยเลี้ยง</th>
-        <th style="width:18mm">ค่าเช่าที่พัก</th>
-        <th style="width:18mm">ค่าพาหนะ</th>
-        <th style="width:18mm">ค่าใช้จ่ายอื่น</th>
+        <th style="width:17mm">ค่าเบี้ยเลี้ยง</th>
+        <th style="width:17mm">ค่าเช่าที่พัก</th>
+        <th style="width:17mm">ค่าพาหนะ</th>
+        <th style="width:17mm">ค่าใช้จ่ายอื่น</th>
       </tr>
     </thead>
     <tbody>${body}${padRows}
@@ -1146,23 +1257,44 @@ function travel8708Part2(o: Travel8708Opts): string {
         <td class="num">${o.transportTotal ? fmtBaht(o.transportTotal) : ''}</td>
         <td class="num">${o.otherTotal ? fmtBaht(o.otherTotal) : ''}</td>
         <td class="num"><b>${fmtBaht(amount)}</b></td>
-        <td></td><td></td><td></td>
+        <td colspan="2" style="font-size:11pt">ตามสัญญาเงินยืมเลขที่ ${esc(o.loanNo ?? '')} วันที่ ${o.loanDate ? esc(thaiFullDate(o.loanDate)) : ''}</td>
+        <td></td>
       </tr>
     </tbody>
-  </table>
-  <div class="tv-row" style="margin-top:2mm">จำนวนเงินรวมทั้งสิ้น (ตัวอักษร) (<b>${esc(numberToThaiBaht(amount))}</b>)</div>
-  <div class="tv-row">ตามสัญญาเงินยืมเลขที่ ${tvFill(o.loanNo, '30mm')} วันที่ ${tvFill(o.loanDate ? thaiFullDate(o.loanDate) : '', '30mm')}</div>
-  <div class="tv-sign" style="text-align:right;margin-right:10mm">
-    ลงชื่อ ${tvFill(o.payerName, '35mm')} ผู้จ่ายเงิน
+  </table>`
+
+  const footer = `<div style="display:flex;gap:6mm;margin-top:4mm">
+    <div style="flex:1;font-size:13pt;line-height:1.8">
+      จำนวนเงินทั้งสิ้น (ตัวอักษร) ${tvFill(numberToThaiBaht(amount), '110mm', 'l')}<br/>
+      <div style="font-size:11.5pt;line-height:1.5;margin-top:2mm">
+        <b>คำชี้แจง</b><br/>
+        1. ค่าเบี้ยเลี้ยงและค่าเช่าที่พักให้ระบุอัตราวันและจำนวนวันที่ขอเบิกของแต่ละบุคคลในช่องหมายเหตุ<br/>
+        2. ให้ผู้มีสิทธิแต่ละคนเป็นผู้ลงลายมือชื่อผู้รับเงินและวันเดือนปีที่ได้รับเงิน กรณีเป็นการรับจากเงินยืม ให้ระบุวันที่ที่ได้รับจากเงินยืม<br/>
+        3. ผู้จ่ายเงินหมายถึงผู้ที่ขอยืมเงินจากทางราชการและจ่ายเงินยืมนั้นให้แก่ผู้เดินทางแต่ละคนเป็นผู้ลงลายมือชื่อผู้จ่ายเงิน
+      </div>
+    </div>
+    <div style="width:75mm;font-size:13pt;line-height:1.9">
+      ลงชื่อ ${tvFill('', '45mm')} ผู้จ่ายเงิน<br/>
+      (${tvFill(o.payerName, '45mm')})<br/>
+      ตำแหน่ง ${tvFill('เจ้าหน้าที่การเงิน', '50mm')}<br/>
+      วันที่ ${tvFill(o.receiptDate ? thaiFullDate(o.receiptDate) : '', '50mm')}
+    </div>
   </div>`
 
-  return `<div class="tv-pagebreak"><div class="tv-corner">ส่วนที่ 2 แบบ 8708</div>
-    <div class="tv-title" style="font-size:14pt">หลักฐานการจ่ายเงินค่าใช้จ่ายในการเดินทางไปราชการ</div>
-    ${table}</div>`
+  return `<div class="tv-pagebreak tv-page">
+    <div class="tv-corner">ส่วนที่ 2<br/>แบบ 8708</div>
+    <div class="tv-p2-title">หลักฐานการจ่ายเงินค่าใช้จ่ายในการเดินทางไปราชการ</div>
+    <div class="tv-row" style="font-size:13pt;line-height:1.8">
+      ชื่อส่วนราชการ ${tvFill(o.scName ? `โรงเรียน${o.scName}` : '', '70mm')} จังหวัด ${tvFill(o.province, '40mm')}<br/>
+      ประกอบใบเบิกค่าใช้จ่ายในการเดินทางของ ${tvFill(o.requesterName, '60mm')} ลงวันที่ ${tvFill(o.docDate ? tvDay(o.docDate) : '', '15mm')} เดือน ${tvFill(o.docDate ? tvMonth(o.docDate) : '', '25mm')} พ.ศ. ${tvFill(o.docDate ? tvYearBE(o.docDate) : '', '18mm')}
+    </div>
+    ${table}
+    ${footer}
+  </div>`
 }
 
 export function officialTravel8708(o: Travel8708Opts): string {
-  return FORM_CSS + TRAVEL_CSS + travel8708Part1(o) + travel8708Part2(o)
+  return FORM_CSS + TRAVEL_CSS + travel8708Part1(o) + travel8708Part1Page2(o) + travel8708Part2(o)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

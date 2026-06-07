@@ -24,19 +24,44 @@ export const PLAN_FLOW: ProcessFlowDef = {
   title: 'งานเตรียมงบและโครงการ',
   automations: [
     'สร้างรายการชั้นเรียนของปีให้อัตโนมัติ',
-    'ใช้ข้อมูลเงินต่อหัวและการจัดสรรเป็นข้อมูลประกอบในขั้นเตรียมงบ',
+    'คำนวณงบจากรายหัวจากจำนวนนักเรียนที่ยืนยันแล้ว',
     'ส่งต่อโครงการที่อนุมัติแล้วไปทำแผนจัดซื้อจัดจ้าง',
   ],
   steps: [
     {
       label: 'เตรียมงบประมาณ',
       href: '/sfmis/student',
-      hint: 'เริ่มจากข้อมูลนักเรียน แล้วใช้ข้อมูลอัตรา/จัดสรรงบประกอบ',
+      hint: 'บันทึกและยืนยันจำนวนนักเรียนของปี',
+    },
+    {
+      label: 'กำหนดอัตราเงินต่อหัว',
+      href: '/sfmis/perhead-rate-setting',
+      hint: 'กำหนดอัตราเงินต่อหัวนักเรียน 1 คน แยกตามประเภทงบประมาณ',
+    },
+    {
+      label: 'คำนวณงบจากรายหัว',
+      href: '/sfmis/calculate-perhead',
+      hint: 'คำนวณงบประมาณจากจำนวนนักเรียน × อัตราต่อหัว',
+    },
+    {
+      label: 'งบประมาณรวมรายปี',
+      href: '/sfmis/estimate-acadyear',
+      hint: 'ดูสรุปงบประมาณที่ประมาณการ/ได้รับจริงทั้งปี',
+    },
+    {
+      label: 'กำหนดวงเงินงบประมาณ',
+      href: '/sfmis/budget-category',
+      hint: 'จัดสรรวงเงินงบประมาณตามหมวด',
     },
     {
       label: 'แผนงาน/โครงการ',
       href: '/sfmis/plan-menu/project',
       hint: 'ลงรายละเอียดโครงการและวงเงินที่ขอ',
+    },
+    {
+      label: 'บริหารโครงการ',
+      href: '/sfmis/plan-menu/manage-project',
+      hint: 'แตกโครงการเป็นรายการจัดซื้อ/จัดจ้าง + เลือกประเภทและพัสดุ',
     },
     {
       label: 'อนุมัติโครงการ',
@@ -90,9 +115,19 @@ export const PROCURE_FLOW: ProcessFlowDef = {
   ],
   steps: [
     {
+      label: 'แต่งตั้งกรรมการ',
+      href: '/sfmis/setting-committee',
+      hint: 'แต่งตั้งคณะกรรมการจัดซื้อ/ตรวจรับ',
+    },
+    {
       label: 'รับงานจัดซื้อ',
       href: '/sfmis/supplie-setting/withdraw-confirm',
       hint: 'อนุมัติคำขอจัดซื้อจัดจ้าง',
+    },
+    {
+      label: 'เอกสารจัดซื้อ/ตรวจรับ',
+      href: '/sfmis/supplie-setting/procurement-docs',
+      hint: 'พิมพ์ชุดเอกสารจัดซื้อ (รายงานขอซื้อ/ใบสั่งซื้อ/ใบตรวจรับ ฯลฯ) ต่อคำสั่งซื้อ',
     },
     {
       label: 'ทำสัญญา/ส่งมอบ',
@@ -100,9 +135,9 @@ export const PROCURE_FLOW: ProcessFlowDef = {
       hint: 'ทำสัญญา/ใบสั่งซื้อกับร้านค้า',
     },
     {
-      label: 'ตรวจรับ',
-      href: '/sfmis/supplie-setting/inspection',
-      hint: 'คณะกรรมการตรวจรับ',
+      label: 'รับพัสดุ',
+      href: '/sfmis/receive-parcel',
+      hint: 'บันทึกรับพัสดุเข้าคลัง',
     },
     {
       label: 'บัญชีวัสดุ',

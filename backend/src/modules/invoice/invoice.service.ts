@@ -80,6 +80,73 @@ export class InvoiceService {
     }));
   }
 
+  /**
+   * ใบขอเบิกค่าเดินทาง (แบบ 8708) ที่ ผอ. อนุมัติแล้ว (status=12 รอจ่าย)
+   * และยังไม่ถูกตั้งใบสำคัญจ่าย → ใช้เชื่อมตอนสร้างใบสำคัญจ่าย (ค่าเดินทาง)
+   */
+  async loadPayableTravel(scId: number, syId: number, budgetYear: string) {
+    const sql = `
+      SELECT tr.tr_id, tr.requester_id, tr.requester_name, tr.purpose,
+             tr.grand_total AS amount, tr.money_type_id, tr.money_type_name, tr.la_id
+      FROM travel_reimbursement tr
+      WHERE tr.sc_id = ? AND tr.sy_id = ? AND tr.budget_year = ?
+        AND tr.del = 0 AND tr.status = 12
+        AND (tr.la_id IS NULL OR tr.la_id = 0)
+        AND NOT EXISTS (
+          SELECT 1 FROM request_withdraw rw
+          WHERE rw.tr_id = tr.tr_id AND rw.del = 0 AND rw.status NOT IN (51, 201)
+        )
+      ORDER BY tr.tr_id DESC`;
+    const rows = (await this.requestWithdrawRepository.manager.query(sql, [
+      scId,
+      syId,
+      budgetYear,
+    ])) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      tr_id: Number(r.tr_id),
+      requester_id: r.requester_id == null ? 0 : Number(r.requester_id),
+      requester_name: (r.requester_name as string) ?? '',
+      purpose: (r.purpose as string) ?? '',
+      amount: r.amount == null ? 0 : Number(r.amount),
+      bg_type_id: r.money_type_id == null ? 0 : Number(r.money_type_id),
+      budget_type_name: (r.money_type_name as string) ?? '',
+      la_id: r.la_id == null ? 0 : Number(r.la_id),
+    }));
+  }
+
+  /**
+   * ใบยืมเงิน (สัญญายืมเงิน) ที่ ผอ. อนุมัติแล้ว (status=12 รอรับเงิน)
+   * และยังไม่ถูกตั้งใบสำคัญจ่าย → ใช้เชื่อมตอนสร้างใบสำคัญจ่าย (เงินยืม)
+   */
+  async loadPayableLoans(scId: number, syId: number, budgetYear: string) {
+    const sql = `
+      SELECT la.la_id, la.la_no, la.borrower_id, la.borrower_name, la.purpose,
+             la.amount, la.money_type_id, la.money_type_name
+      FROM loan_agreement la
+      WHERE la.sc_id = ? AND la.sy_id = ? AND la.budget_year = ?
+        AND la.del = 0 AND la.status = 12
+        AND NOT EXISTS (
+          SELECT 1 FROM request_withdraw rw
+          WHERE rw.la_id = la.la_id AND rw.del = 0 AND rw.status NOT IN (51, 201)
+        )
+      ORDER BY la.la_id DESC`;
+    const rows = (await this.requestWithdrawRepository.manager.query(sql, [
+      scId,
+      syId,
+      budgetYear,
+    ])) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      la_id: Number(r.la_id),
+      la_no: (r.la_no as string) ?? '',
+      borrower_id: r.borrower_id == null ? 0 : Number(r.borrower_id),
+      borrower_name: (r.borrower_name as string) ?? '',
+      purpose: (r.purpose as string) ?? '',
+      amount: r.amount == null ? 0 : Number(r.amount),
+      bg_type_id: r.money_type_id == null ? 0 : Number(r.money_type_id),
+      budget_type_name: (r.money_type_name as string) ?? '',
+    }));
+  }
+
   async loadInvoiceOrder(scId: number, yId: number) {
     const rows = await this.requestWithdrawRepository
       .createQueryBuilder('rw')
@@ -235,31 +302,89 @@ export class InvoiceService {
     }));
   }
 
-  async addInvoice(dto: AddInvoiceDto) {
-    // ── H4: ตรวจงบคงเหลือก่อนสร้างใบเบิก ──────────────────────────────────
-    if (dto.order_id && dto.order_id > 0 && dto.amount) {
+  /**
+   * ตรวจว่ายอดที่ขอเบิกไม่เกิน "มูลหนี้" ของเอกสารต้นเรื่องที่ผูกไว้
+   *   - order_id (พัสดุ): ห้ามเบิกเกินงบ order ที่ยังเหลือ (หักยอดที่เบิกไปแล้ว)
+   *   - tr_id (ค่าเดินทาง): ห้ามเบิกเกินยอดรวมในใบขอเบิก (grand_total)
+   *   - la_id (เงินยืม): ห้ามเบิกเกินวงเงินที่ ผอ. อนุมัติ (approve_amount หรือ amount)
+   * คืนข้อความ error ถ้าเกิน, คืน null ถ้าผ่าน. excludeRwId ใช้ตอน update เพื่อไม่นับตัวเอง
+   */
+  private async validatePayableLimit(params: {
+    scId: number;
+    orderId?: number | null;
+    trId?: number | null;
+    laId?: number | null;
+    amount?: number | null;
+    excludeRwId?: number;
+  }): Promise<string | null> {
+    const { scId, orderId, trId, laId, amount, excludeRwId } = params;
+    if (!amount || amount <= 0) return null;
+    const EPS = 0.005; // กันปัญหา float ปัดเศษสตางค์
+    const baht = (n: number) => n.toLocaleString('th-TH');
+
+    // ── พัสดุ (order_id) ──────────────────────────────────────────────────
+    if (orderId && orderId > 0) {
       const order = await this.parcelOrderRepository.findOne({
-        where: { orderId: dto.order_id, del: 0 },
+        where: { orderId, del: 0 },
       });
       if (order && order.budgets) {
-        const row = await this.requestWithdrawRepository
+        const qb = this.requestWithdrawRepository
           .createQueryBuilder('rw')
           .select('COALESCE(SUM(rw.amount),0)', 'totalWithdrawn')
-          .where('rw.order_id = :orderId', { orderId: dto.order_id })
+          .where('rw.order_id = :orderId', { orderId })
           .andWhere('rw.del = 0')
           .andWhere('rw.status NOT IN (:...cancelled)', {
             cancelled: [51, 201],
-          })
-          .getRawOne<{ totalWithdrawn: string }>();
+          });
+        if (excludeRwId)
+          qb.andWhere('rw.rw_id <> :excludeRwId', { excludeRwId });
+        const row = await qb.getRawOne<{ totalWithdrawn: string }>();
         const remaining =
           Number(order.budgets) - Number(row?.totalWithdrawn ?? 0);
-        if (dto.amount > remaining) {
-          return {
-            flag: false,
-            ms: `งบคงเหลือไม่เพียงพอ (คงเหลือ ${remaining.toLocaleString('th-TH')} บาท, ขอเบิก ${dto.amount.toLocaleString('th-TH')} บาท)`,
-          };
+        if (amount > remaining + EPS) {
+          return `งบคงเหลือไม่เพียงพอ (คงเหลือ ${baht(remaining)} บาท, ขอเบิก ${baht(amount)} บาท)`;
         }
       }
+    }
+
+    // ── ค่าเดินทาง (tr_id) ────────────────────────────────────────────────
+    if (trId && trId > 0) {
+      const rows = (await this.requestWithdrawRepository.manager.query(
+        'SELECT grand_total FROM travel_reimbursement WHERE tr_id = ? AND sc_id = ? AND del = 0 LIMIT 1',
+        [trId, scId],
+      )) as Array<{ grand_total: number | null }>;
+      const grand = rows?.[0]?.grand_total;
+      if (grand != null && amount > Number(grand) + EPS) {
+        return `ยอดเบิกเกินมูลหนี้ค่าเดินทาง (มูลหนี้ ${baht(Number(grand))} บาท, ขอเบิก ${baht(amount)} บาท)`;
+      }
+    }
+
+    // ── เงินยืม (la_id) ───────────────────────────────────────────────────
+    if (laId && laId > 0) {
+      const rows = (await this.requestWithdrawRepository.manager.query(
+        'SELECT COALESCE(approve_amount, amount) AS amt FROM loan_agreement WHERE la_id = ? AND sc_id = ? AND del = 0 LIMIT 1',
+        [laId, scId],
+      )) as Array<{ amt: number | null }>;
+      const cap = rows?.[0]?.amt;
+      if (cap != null && amount > Number(cap) + EPS) {
+        return `ยอดเบิกเกินวงเงินยืมที่อนุมัติ (อนุมัติ ${baht(Number(cap))} บาท, ขอเบิก ${baht(amount)} บาท)`;
+      }
+    }
+
+    return null;
+  }
+
+  async addInvoice(dto: AddInvoiceDto) {
+    // ── ตรวจมูลหนี้ก่อนสร้างใบเบิก (พัสดุ/ค่าเดินทาง/เงินยืม) ──────────────
+    const limitError = await this.validatePayableLimit({
+      scId: dto.sc_id,
+      orderId: dto.order_id,
+      trId: dto.tr_id,
+      laId: dto.la_id,
+      amount: dto.amount,
+    });
+    if (limitError) {
+      return { flag: false, ms: limitError };
     }
 
     // ── ตรวจสอบเงินยืมค้างชำระ ─────────────────────────────────────────────
@@ -299,7 +424,9 @@ export class InvoiceService {
       bgTypeId: dto.bg_type_id,
       rwType: dto.rw_type,
       orderId: dto.order_id ?? 0,
-      pId: dto.p_id,
+      trId: dto.tr_id ?? 0,
+      laId: dto.la_id ?? 0,
+      pId: dto.p_id ?? 0,
       detail: dto.detail,
       amount: dto.amount,
       certificatePayment: dto.certificate_payment ?? 1,
@@ -351,6 +478,8 @@ export class InvoiceService {
     if (dto.bg_type_id !== undefined) invoice.bgTypeId = dto.bg_type_id;
     if (dto.rw_type !== undefined) invoice.rwType = dto.rw_type;
     if (dto.order_id !== undefined) invoice.orderId = dto.order_id;
+    if (dto.tr_id !== undefined) invoice.trId = dto.tr_id;
+    if (dto.la_id !== undefined) invoice.laId = dto.la_id;
     if (dto.p_id !== undefined) invoice.pId = dto.p_id;
     if (dto.detail !== undefined) invoice.detail = dto.detail;
     if (dto.amount !== undefined) invoice.amount = dto.amount;
@@ -389,6 +518,19 @@ export class InvoiceService {
       invoice.loanReturnCash = dto.loan_return_cash;
     if (dto.loan_return_voucher_amount !== undefined)
       invoice.loanReturnVoucherAmount = dto.loan_return_voucher_amount;
+
+    // ── ตรวจมูลหนี้ของ "สถานะหลังแก้ไข" — กันแก้ยอดให้เกินมูลหนี้ภายหลัง ──
+    const limitError = await this.validatePayableLimit({
+      scId: invoice.scId,
+      orderId: invoice.orderId,
+      trId: invoice.trId,
+      laId: invoice.laId,
+      amount: invoice.amount,
+      excludeRwId: invoice.rwId,
+    });
+    if (limitError) {
+      return { flag: false, ms: limitError };
+    }
 
     await this.requestWithdrawRepository.save(invoice);
 

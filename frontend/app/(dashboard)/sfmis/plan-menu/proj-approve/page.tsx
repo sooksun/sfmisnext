@@ -126,7 +126,7 @@ export default function ProjApprovePage() {
       }
       setActionTarget(null)
     },
-    onError: () => toast.error('เกิดข้อผิดพลาด'),
+    onError: (e: any) => toast.error(e?.message || 'เกิดข้อผิดพลาด'),
   })
 
   // Reject (ต้องกรอก remark)
@@ -150,7 +150,7 @@ export default function ProjApprovePage() {
       setActionTarget(null)
       reset()
     },
-    onError: () => toast.error('เกิดข้อผิดพลาด'),
+    onError: (e: any) => toast.error(e?.message || 'เกิดข้อผิดพลาด'),
   })
 
   const cancelMutation = useMutation({
@@ -166,7 +166,7 @@ export default function ProjApprovePage() {
         toast.error(res.ms || 'มีปัญหาในการยกเลิก')
       }
     },
-    onError: () => toast.error('เกิดข้อผิดพลาด'),
+    onError: (e: any) => toast.error(e?.message || 'เกิดข้อผิดพลาด'),
   })
 
   const urgentMutation = useMutation({
@@ -186,7 +186,7 @@ export default function ProjApprovePage() {
         toast.error(res.ms || 'มีปัญหา')
       }
     },
-    onError: () => toast.error('เกิดข้อผิดพลาด'),
+    onError: (e: any) => toast.error(e?.message || 'เกิดข้อผิดพลาด'),
   })
 
   function openApprove(item: ParcelOrder, stage: ApprovalStage) {

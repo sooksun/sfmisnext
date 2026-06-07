@@ -45,6 +45,7 @@ import { PlnReceiveDetail } from '../receive/entities/pln-receive-detail.entity'
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 import { Receipt } from '../receipt/entities/receipt.entity';
+import { LoanAgreement } from '../loan-agreement/entities/loan-agreement.entity';
 
 /** จัดรูปเลขที่ใบเสร็จรับเงินเป็น "บร.{เล่มที่}/{เลขที่}" เช่น "บร.253ก/22" */
 function formatReceiptNo(
@@ -66,6 +67,14 @@ export interface UnifiedSummaryItem {
   entry_count: number;
 }
 
+/** ชนิดแถวในทะเบียนคุม (ขับเคลื่อนการอัปเดตยอดคงเหลือ) */
+export type RegisterRowKind =
+  | 'normal'
+  | 'lend'
+  | 'clear_voucher'
+  | 'return_cash'
+  | 'deposit';
+
 export interface UnifiedTransactionRow {
   ft_id: number;
   type: number;
@@ -73,8 +82,25 @@ export interface UnifiedTransactionRow {
   create_date: Date | null;
   doc_no: string | null;
   detail: string | null;
-  balance: number;
+  balance: number; // คงเหลือรวม (เงินสด+ธนาคาร+สพป. ไม่รวมลูกหนี้)
   receive_money_type: number | null;
+  // ── ทะเบียนคุมเงินยืม ──
+  kind: RegisterRowKind;
+  receive: number; // ช่อง "รับ"
+  pay_debtor: number; // ช่อง จ่าย:"ลูกหนี้" (ติดลบ = contra ส่งใช้/คืน)
+  pay_voucher: number; // ช่อง จ่าย:"ใบสำคัญ"
+  cash: number; // คงเหลือเงินสด (running)
+  bank: number; // คงเหลือเงินฝากธนาคาร (running)
+  smp: number; // คงเหลือเงินฝากส่วนราชการผู้เบิก (running)
+  debtor: number; // ลูกหนี้คงค้าง (running)
+}
+
+/** ยอดยกมาต้นปีแยกตามที่เก็บเงิน (storage_type 1/2/3/4) */
+export interface OpeningSplit {
+  cash: number; // 1
+  bank: number; // 2
+  smp: number; // 3
+  debtor: number; // 4 = ลูกหนี้ยกมา
 }
 
 @Injectable()
@@ -94,9 +120,11 @@ export class UnifiedRegisterService {
     private readonly openingBalanceRepository: Repository<OpeningBalance>,
     @InjectRepository(Receipt)
     private readonly receiptRepository: Repository<Receipt>,
+    @InjectRepository(LoanAgreement)
+    private readonly loanAgreementRepository: Repository<LoanAgreement>,
   ) {}
 
-  /** ยอดยกมาต้นปี รวมต่อ money_type (กรองตาม sy_id ถ้ามี) */
+  /** ยอดยกมาต้นปี รวมต่อ money_type (กรองตาม sy_id ถ้ามี) — ไม่รวมลูกหนี้ยกมา (storage 4) */
   private async loadOpeningByType(
     scId: number,
     syId: number,
@@ -106,12 +134,45 @@ export class UnifiedRegisterService {
     });
     const map = new Map<number, number>();
     for (const ob of rows) {
+      // storage_type 4 = ลูกหนี้ยกมา → ไม่นับรวมเป็นยอดเงินคงเหลือ
+      if (ob.storageType === 4) continue;
       map.set(
         ob.moneyTypeId,
         (map.get(ob.moneyTypeId) ?? 0) + (Number(ob.amount) || 0),
       );
     }
     return map;
+  }
+
+  /** ยอดยกมาต้นปีของประเภทเงิน แยกตามที่เก็บ (เงินสด/ธนาคาร/สพป./ลูกหนี้) */
+  private async loadOpeningSplit(
+    scId: number,
+    syId: number,
+    bgTypeId: number,
+  ): Promise<OpeningSplit> {
+    const rows = await this.openingBalanceRepository.find({
+      where: syId
+        ? { scId, syId, moneyTypeId: bgTypeId, del: 0 }
+        : { scId, moneyTypeId: bgTypeId, del: 0 },
+    });
+    const split: OpeningSplit = { cash: 0, bank: 0, smp: 0, debtor: 0 };
+    for (const ob of rows) {
+      const amt = Number(ob.amount) || 0;
+      switch (ob.storageType) {
+        case 1:
+          split.cash += amt;
+          break;
+        case 3:
+          split.smp += amt;
+          break;
+        case 4:
+          split.debtor += amt;
+          break;
+        default:
+          split.bank += amt; // 2 = ธนาคาร (และ legacy)
+      }
+    }
+    return split;
   }
 
   async getSummary(
@@ -139,6 +200,8 @@ export class UnifiedRegisterService {
         // กรองตามปีงบ (sy_id) กัน transaction ข้ามปีปนกัน
         .andWhere(syId ? 'ft.sy_id = :syId' : '1=1', { syId })
         .andWhere('ft.bg_type_id = :bgTypeId', { bgTypeId: bt.bgTypeId })
+        // กัน "นำฝาก" (transfer ภายใน) ปนยอดรับ/จ่าย
+        .andWhere("(ft.register_kind IS NULL OR ft.register_kind <> 'deposit')")
         .groupBy('ft.type')
         .getRawMany<{ type: number; total: string; cnt: string }>();
 
@@ -187,6 +250,7 @@ export class UnifiedRegisterService {
     bg_type_id: number;
     budget_type: string;
     carry_forward: number;
+    opening: OpeningSplit;
     revenue: number;
     expenses: number;
     balance: number;
@@ -196,9 +260,9 @@ export class UnifiedRegisterService {
       where: { bgTypeId },
     });
 
-    // ยอดยกมาต้นปีของประเภทนี้ (ไม่ขึ้นกับ fromDate — เป็นยอดตั้งต้น)
-    const openingByType = await this.loadOpeningByType(scId, syId);
-    const carryForward = openingByType.get(bgTypeId) ?? 0;
+    // ยอดยกมาต้นปีของประเภทนี้ แยกตามที่เก็บ (ไม่ขึ้นกับ fromDate — เป็นยอดตั้งต้น)
+    const opening = await this.loadOpeningSplit(scId, syId, bgTypeId);
+    const carryForward = opening.cash + opening.bank + opening.smp;
 
     const qb = this.financialTransactionsRepository
       .createQueryBuilder('ft')
@@ -222,63 +286,149 @@ export class UnifiedRegisterService {
 
     const transactions = await qb.getMany();
 
-    let balance = carryForward; // เริ่มจากยอดยกมาต้นปี
+    // batch-load สัญญายืม (ใช้ประกอบรายละเอียดแถวเงินยืม)
+    const laIds = [
+      ...new Set(transactions.filter((t) => t.laId > 0).map((t) => t.laId)),
+    ];
+    const loanById = new Map<number, LoanAgreement>();
+    if (laIds.length) {
+      const loans = await this.loanAgreementRepository.find({
+        where: { laId: In(laIds) },
+      });
+      for (const l of loans) loanById.set(l.laId, l);
+    }
+
+    // running ledgers แยกที่เก็บ + ลูกหนี้คงค้าง
+    let cash = opening.cash;
+    let bank = opening.bank;
+    const smp = opening.smp;
+    let debtor = opening.debtor;
     let revenue = 0;
     let expenses = 0;
     const processed: UnifiedTransactionRow[] = [];
 
     for (const trans of transactions) {
-      let docNo: string | null = null;
+      const kind = (trans.registerKind ?? 'normal') as RegisterRowKind;
+      const amt = Number(trans.amount) || 0;
+
+      // ข้าม FT คู่ "เงินฝากธนาคารเข้า" ของการนำฝาก (type=+1) — รวมเป็นแถวเดียวกับ cash-out
+      if (kind === 'deposit' && trans.type === 1) continue;
+
+      let docNo: string | null = trans.refNo ?? null;
       let detail: string | null = null;
       let receiveMoneyType: number | null = null;
+      let receive = 0;
+      let payDebtor = 0;
+      let payVoucher = 0;
+      const loan = trans.laId > 0 ? loanById.get(trans.laId) : undefined;
 
-      if (trans.type === 1 && trans.prId > 0) {
-        const receive = await this.plnReceiveRepository.findOne({
-          where: { prId: trans.prId },
-        });
-        if (receive) {
-          receiveMoneyType = receive.receiveMoneyType;
-          // เลขที่ใบเสร็จรับเงินแบบ "บร.{เล่มที่}/{เลขที่}" จากตาราง receipt
-          const receipt = await this.receiptRepository.findOne({
-            where: { prId: String(trans.prId), status: '1' },
-            order: { rId: 'DESC' },
-          });
-          docNo =
-            formatReceiptNo(receipt?.bookNo, receipt?.receiptNo) ??
-            receive.prNo;
-          const receiveDetails = await this.plnReceiveDetailRepository.find({
-            where: { prId: trans.prId, del: 0 },
-          });
-          detail =
-            receiveDetails.length > 0 ? receiveDetails[0].prdDetail : null;
+      switch (kind) {
+        case 'lend': {
+          // จ่ายเงินยืม → ลูกหนี้+ , ธนาคาร−
+          payDebtor = amt;
+          bank -= amt;
+          debtor += amt;
+          expenses += amt;
+          docNo = docNo ?? loan?.laNo ?? null;
+          detail = loan
+            ? `${loan.borrowerName ?? ''} ยืมเงิน${loan.purpose ? `เพื่อ${loan.purpose}` : ''}`.trim()
+            : 'จ่ายเงินยืม';
+          break;
         }
-      } else if (trans.type === -1 && trans.rwId > 0) {
-        const rw = await this.requestWithdrawRepository.findOne({
-          where: { rwId: trans.rwId },
-        });
-        if (rw) {
-          docNo = rw.noDoc ?? rw.checkNoDoc;
-          detail = rw.detail;
+        case 'clear_voucher': {
+          // ส่งใช้ด้วยใบสำคัญ → ลูกหนี้− / ใบสำคัญ+ ; เงินฝากไม่เปลี่ยน
+          payDebtor = -amt;
+          payVoucher = amt;
+          debtor -= amt;
+          detail = loan
+            ? `${loan.borrowerName ?? ''} ส่งใช้หลักฐานเงินยืม`.trim()
+            : 'ส่งใช้ใบสำคัญเงินยืม';
+          break;
+        }
+        case 'return_cash': {
+          // คืนเงินสด → รับ+ / ลูกหนี้− ; เงินสดในมือ+
+          receive = amt;
+          payDebtor = -amt;
+          cash += amt;
+          debtor -= amt;
+          revenue += amt;
+          detail = loan
+            ? `${loan.borrowerName ?? ''} ส่งใช้เงินสดล้างหนี้เงินยืม`.trim()
+            : 'ส่งคืนเงินสดเงินยืม';
+          break;
+        }
+        case 'deposit': {
+          // นำเงินสดฝากธนาคาร → เงินสด− / ธนาคาร+ (ลงช่องใบสำคัญตามคู่มือ)
+          payVoucher = amt;
+          cash -= amt;
+          bank += amt;
+          detail = 'นำเงินฝากธนาคาร';
+          break;
+        }
+        default: {
+          // รายการปกติ (รับเงิน / จ่ายใบสำคัญ)
+          if (trans.type === 1 && trans.prId > 0) {
+            const recv = await this.plnReceiveRepository.findOne({
+              where: { prId: trans.prId },
+            });
+            if (recv) {
+              receiveMoneyType = recv.receiveMoneyType;
+              const receipt = await this.receiptRepository.findOne({
+                where: { prId: String(trans.prId), status: '1' },
+                order: { rId: 'DESC' },
+              });
+              docNo =
+                formatReceiptNo(receipt?.bookNo, receipt?.receiptNo) ??
+                recv.prNo;
+              const rds = await this.plnReceiveDetailRepository.find({
+                where: { prId: trans.prId, del: 0 },
+              });
+              detail = rds.length > 0 ? rds[0].prdDetail : null;
+            }
+          } else if (trans.type === -1 && trans.rwId > 0) {
+            const rw = await this.requestWithdrawRepository.findOne({
+              where: { rwId: trans.rwId },
+            });
+            if (rw) {
+              docNo = rw.noDoc ?? rw.checkNoDoc;
+              detail = rw.detail;
+            }
+          }
+
+          if (trans.type === 1) {
+            receive = amt;
+            revenue += amt;
+            // รับเข้าเงินสดเฉพาะใบเสร็จเงินสด (receive_money_type=2) ; อื่น ๆ เข้าธนาคาร
+            if (receiveMoneyType === 2) cash += amt;
+            else bank += amt;
+          } else if (trans.type === -1) {
+            // ใบสำคัญ (จ่าย) ตัดจากเงินฝากธนาคารเสมอ ตามคู่มือ
+            // (ช่อง "เงินสด" สงวนไว้สำหรับวงจรยืม-คืน-นำฝากเท่านั้น — กันยอดติดลบ)
+            payVoucher = amt;
+            expenses += amt;
+            bank -= amt;
+          }
         }
       }
 
-      if (trans.type === 1) {
-        balance += trans.amount;
-        revenue += trans.amount;
-      } else if (trans.type === -1) {
-        balance -= trans.amount;
-        expenses += trans.amount;
-      }
-
+      const balance = cash + bank + smp;
       processed.push({
         ft_id: trans.ftId,
         type: trans.type,
-        amount: trans.amount,
+        amount: amt,
         create_date: trans.createDate,
         doc_no: docNo,
         detail,
         balance,
         receive_money_type: receiveMoneyType,
+        kind,
+        receive,
+        pay_debtor: payDebtor,
+        pay_voucher: payVoucher,
+        cash,
+        bank,
+        smp,
+        debtor,
       });
     }
 
@@ -286,9 +436,10 @@ export class UnifiedRegisterService {
       bg_type_id: bgTypeId,
       budget_type: budgetType?.budgetType ?? '',
       carry_forward: carryForward,
+      opening,
       revenue,
       expenses,
-      balance,
+      balance: cash + bank + smp,
       transactions: processed,
     };
   }
@@ -316,6 +467,8 @@ export class UnifiedRegisterService {
       .andWhere('ft.del = :del', { del: '0' })
       .andWhere(syId ? 'ft.sy_id = :syId' : '1=1', { syId })
       .andWhere('ft.bg_type_id = :bgTypeId', { bgTypeId })
+      // กัน "นำฝาก" (transfer ภายใน) ปนยอดรับ/จ่าย form-030
+      .andWhere("(ft.register_kind IS NULL OR ft.register_kind <> 'deposit')")
       .getMany();
 
     const income: Record<string, number> = {
@@ -341,10 +494,14 @@ export class UnifiedRegisterService {
 
     // batch-load รายละเอียดรายรับ + ประเภทรายจ่าย
     const prIds = [
-      ...new Set(fts.filter((f) => f.type === 1 && f.prId > 0).map((f) => f.prId)),
+      ...new Set(
+        fts.filter((f) => f.type === 1 && f.prId > 0).map((f) => f.prId),
+      ),
     ];
     const rwIds = [
-      ...new Set(fts.filter((f) => f.type === -1 && f.rwId > 0).map((f) => f.rwId)),
+      ...new Set(
+        fts.filter((f) => f.type === -1 && f.rwId > 0).map((f) => f.rwId),
+      ),
     ];
     const detailByPr = new Map<number, string>();
     if (prIds.length) {

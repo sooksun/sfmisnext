@@ -7,6 +7,10 @@
 
 ---
 
+> ⚠️ **หมายเหตุสถานะจริง (มิ.ย. 2569):** schema ในไฟล์นี้เขียนเป็น **Prisma** เพื่อการออกแบบ แต่ repo จริง **ใช้ TypeORM 0.3 (ไม่ใช่ Prisma)** — โครงสร้างตารางจริงอยู่ใน `@Entity()` ของแต่ละโมดูล (`backend/src/modules/**/entities/*.entity.ts`) และ migration ใน `backend/src/migrations/` (16 ไฟล์). ตารางจริงมีมากกว่าที่ลิสต์ไว้ (83+ entities เพิ่ม loan_agreement, travel_reimbursement, regulatory_threshold, document_counter ฯลฯ). ให้ยึด entity/migration เป็นหลัก ส่วน Prisma migration เป็น Phase แยกที่ยังไม่ทำ
+
+---
+
 ## Table of Contents
 
 1. [Schema Overview](#schema-overview)

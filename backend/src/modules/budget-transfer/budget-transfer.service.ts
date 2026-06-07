@@ -7,6 +7,10 @@ import {
   ApproveBudgetTransferDto,
   RejectBudgetTransferDto,
 } from './dto/budget-transfer.dto';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const STATUS_NAMES: Record<number, string> = {
   0: 'ร่าง',
@@ -90,11 +94,12 @@ export class BudgetTransferService {
     return { flag: true, ms: `สร้างคำขอโอนงบ ${btNo} เรียบร้อยแล้ว` };
   }
 
-  async approve(dto: ApproveBudgetTransferDto) {
+  async approve(dto: ApproveBudgetTransferDto, user: JwtUser) {
     const bt = await this.btRepo.findOne({
       where: { btId: dto.bt_id, del: 0 },
     });
     if (!bt) return { flag: false, ms: 'ไม่พบคำขอ' };
+    assertSameSchool(user, bt.scId);
     if (bt.status !== 1)
       return { flag: false, ms: 'สถานะปัจจุบันไม่สามารถอนุมัติได้' };
     bt.status = 2;
@@ -106,11 +111,12 @@ export class BudgetTransferService {
     return { flag: true, ms: 'อนุมัติการโอนงบเรียบร้อย' };
   }
 
-  async reject(dto: RejectBudgetTransferDto) {
+  async reject(dto: RejectBudgetTransferDto, user: JwtUser) {
     const bt = await this.btRepo.findOne({
       where: { btId: dto.bt_id, del: 0 },
     });
     if (!bt) return { flag: false, ms: 'ไม่พบคำขอ' };
+    assertSameSchool(user, bt.scId);
     bt.status = 3;
     bt.approvedBy = dto.approved_by;
     bt.note = dto.note;
@@ -119,9 +125,10 @@ export class BudgetTransferService {
     return { flag: true, ms: 'บันทึกการไม่อนุมัติเรียบร้อย' };
   }
 
-  async cancel(btId: number, upBy: number) {
+  async cancel(btId: number, upBy: number, user: JwtUser) {
     const bt = await this.btRepo.findOne({ where: { btId, del: 0 } });
     if (!bt) return { flag: false, ms: 'ไม่พบคำขอ' };
+    assertSameSchool(user, bt.scId);
     if (bt.status === 2) return { flag: false, ms: 'อนุมัติแล้ว ยกเลิกไม่ได้' };
     bt.status = 9;
     bt.upBy = upBy;

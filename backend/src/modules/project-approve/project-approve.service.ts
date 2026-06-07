@@ -16,6 +16,9 @@ import { Admin } from '../admin/entities/admin.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { PlnProcurementPlanItem } from '../procurement-plan/entities/pln-procurement-plan-item.entity';
 import { PlnProcurementPlan } from '../procurement-plan/entities/pln-procurement-plan.entity';
+import { Supplies } from '../supplie/entities/supplies.entity';
+import { Project } from '../project/entities/project.entity';
+import { School } from '../school/entities/school.entity';
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 import { checkMethodCompliance } from './procurement-rules.util';
 
@@ -41,6 +44,12 @@ export class ProjectApproveService {
     private readonly planItemRepository: Repository<PlnProcurementPlanItem>,
     @InjectRepository(PlnProcurementPlan)
     private readonly planRepository: Repository<PlnProcurementPlan>,
+    @InjectRepository(Supplies)
+    private readonly suppliesRepository: Repository<Supplies>,
+    @InjectRepository(Project)
+    private readonly projectRepository: Repository<Project>,
+    @InjectRepository(School)
+    private readonly schoolRepository: Repository<School>,
     private readonly regulatoryConfig: RegulatoryConfigService,
   ) {}
 
@@ -133,6 +142,8 @@ export class ProjectApproveService {
       urgent_reason: item.urgentReason ?? '',
       sc_id: item.scId,
       acad_year: item.acadYear,
+      project_id: item.projectId,
+      ppi_id: item.ppiId,
       del: item.del,
       create_date: item.createDate,
       update_date: item.updateDate,
@@ -200,6 +211,66 @@ export class ProjectApproveService {
       create_date: detail.createDate,
       update_date: detail.updateDate,
     }));
+  }
+
+  // รวมข้อมูลทั้งหมดของคำสั่งซื้อ 1 รายการ สำหรับพิมพ์เอกสารจัดซื้อ (pdf01–pdf16)
+  async loadOrderForPrint(orderId: number, scId: number) {
+    const order = await this.parcelOrderRepository.findOne({
+      where: { orderId, scId, del: 0 },
+    });
+    if (!order) return null;
+
+    // รายการพัสดุ + ชื่อพัสดุ
+    const details = await this.parcelDetailRepository.find({
+      where: { orderId, del: 0 },
+    });
+    const suppIds = details.map((d) => d.suppId).filter((x): x is number => !!x);
+    const supplies = suppIds.length
+      ? await this.suppliesRepository.find({ where: { suppId: In(suppIds) } })
+      : [];
+    const suppName = (id: number | null) =>
+      supplies.find((s) => s.suppId === id)?.suppName ?? '';
+    const items = details.map((d) => ({
+      pc_id: d.pcId,
+      supp_id: d.suppId,
+      supp_name: suppName(d.suppId),
+      pc_total: d.pcTotal ?? 0,
+    }));
+
+    // คณะกรรมการ (committee1-3 = admin_id) → ชื่อ
+    const committeeIds = [order.committee1, order.committee2, order.committee3]
+      .map((x) => Number(x))
+      .filter((x) => x > 0);
+    const admins = committeeIds.length
+      ? await this.adminRepository.find({ where: { adminId: In(committeeIds) } })
+      : [];
+    const committee = committeeIds.map(
+      (id) => admins.find((a) => a.adminId === id)?.name ?? '',
+    );
+
+    // ผู้ขาย/ผู้รับจ้าง (order.suppliers = p_id)
+    const partner = order.suppliers
+      ? await this.partnerRepository.findOne({
+          where: { pId: Number(order.suppliers), del: 0 },
+        })
+      : null;
+
+    // โครงการ + โรงเรียน
+    const project = order.projectId
+      ? await this.projectRepository.findOne({
+          where: { projId: order.projectId },
+        })
+      : null;
+    const school = await this.schoolRepository.findOne({ where: { scId } });
+
+    return {
+      order,
+      items,
+      committee,
+      partner: partner ? { p_id: partner.pId, p_name: partner.pName } : null,
+      project_name: project?.projName ?? order.details ?? '',
+      school_name: school?.scName ?? '',
+    };
   }
 
   async loadBudgetBalance(
@@ -573,6 +644,92 @@ export class ProjectApproveService {
     order.del = dto.del;
     await this.parcelOrderRepository.save(order);
 
+    return { flag: true };
+  }
+
+  // ── บริหารโครงการ: แก้ไขคำสั่งซื้อ + จัดการรายการพัสดุ ────────────────────
+  // แก้ไขได้เฉพาะก่อนเข้าสายอนุมัติ (สถานะ 0=ทบทวน, 1=ขอ) เท่านั้น
+  private static EDITABLE_STATUSES = [0, 1];
+
+  async updateParcelOrder(
+    dto: {
+      order_id: number;
+      project_type?: number;
+      method_type?: number;
+      method_reason?: string;
+      details?: string;
+      budgets?: number;
+      up_by?: number;
+    },
+    scId: number,
+  ) {
+    const order = await this.parcelOrderRepository.findOne({
+      where: { orderId: dto.order_id, scId, del: 0 },
+    });
+    if (!order) return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
+    if (!ProjectApproveService.EDITABLE_STATUSES.includes(order.orderStatus)) {
+      return {
+        flag: false,
+        ms: 'รายการนี้เข้าสู่ขั้นอนุมัติแล้ว ไม่สามารถแก้ไขได้',
+      };
+    }
+
+    if (dto.project_type !== undefined) order.projectType = dto.project_type;
+    if (dto.method_type !== undefined) order.methodType = dto.method_type;
+    if (dto.method_reason !== undefined) order.methodReason = dto.method_reason;
+    if (dto.details !== undefined) order.details = dto.details;
+    if (dto.budgets !== undefined) order.budgets = dto.budgets;
+    if (dto.up_by !== undefined) order.upBy = dto.up_by;
+
+    await this.parcelOrderRepository.save(order);
+    return { flag: true };
+  }
+
+  async addParcelDetail(
+    dto: { order_id: number; supp_id: number; pc_total: number },
+    scId: number,
+  ) {
+    const order = await this.parcelOrderRepository.findOne({
+      where: { orderId: dto.order_id, scId, del: 0 },
+    });
+    if (!order) return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
+    if (!ProjectApproveService.EDITABLE_STATUSES.includes(order.orderStatus)) {
+      return {
+        flag: false,
+        ms: 'รายการนี้เข้าสู่ขั้นอนุมัติแล้ว ไม่สามารถเพิ่มพัสดุได้',
+      };
+    }
+
+    const detail = this.parcelDetailRepository.create({
+      orderId: dto.order_id,
+      suppId: dto.supp_id,
+      pcTotal: dto.pc_total,
+      del: 0,
+    });
+    await this.parcelDetailRepository.save(detail);
+    return { flag: true };
+  }
+
+  async removeParcelDetail(dto: { pc_id: number }, scId: number) {
+    const detail = await this.parcelDetailRepository.findOne({
+      where: { pcId: dto.pc_id, del: 0 },
+    });
+    if (!detail) return { flag: false, ms: 'ไม่พบรายการพัสดุ' };
+
+    // ตรวจสิทธิ์ผ่านคำสั่งซื้อต้นทาง (กันข้ามโรงเรียน)
+    const order = await this.parcelOrderRepository.findOne({
+      where: { orderId: detail.orderId ?? 0, scId, del: 0 },
+    });
+    if (!order) return { flag: false, ms: 'ไม่พบคำสั่งซื้อของรายการนี้' };
+    if (!ProjectApproveService.EDITABLE_STATUSES.includes(order.orderStatus)) {
+      return {
+        flag: false,
+        ms: 'รายการนี้เข้าสู่ขั้นอนุมัติแล้ว ไม่สามารถลบพัสดุได้',
+      };
+    }
+
+    detail.del = 1;
+    await this.parcelDetailRepository.save(detail);
     return { flag: true };
   }
 

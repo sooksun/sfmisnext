@@ -6,9 +6,22 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, RotateCcw, Eye, AlertTriangle, Printer } from 'lucide-react'
-import { openPrintWindow, makeHeader, makeSignatures, fmtBaht, numberToThaiBaht, esc, thaiFullDate } from '@/lib/print-utils'
-import { officialLoanDebtorRegister } from '@/lib/official-forms'
+import {
+  Plus,
+  RotateCcw,
+  Eye,
+  AlertTriangle,
+  Printer,
+  ClipboardCheck,
+  Stamp,
+  Banknote,
+} from 'lucide-react'
+import { openPrintWindow } from '@/lib/print-utils'
+import {
+  officialLoanDebtorRegister,
+  officialLoanAgreement,
+  type LoanSettlementRow,
+} from '@/lib/official-forms'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/page-header'
@@ -39,18 +52,33 @@ interface LoanItem {
   la_seq: number
   borrower_id: number
   borrower_name: string | null
+  borrower_position: string | null
+  affiliation: string | null
+  province: string | null
+  money_type_id: number
   money_type_name: string | null
   loan_category: number
   loan_category_name: string
   purpose: string | null
+  expense_detail: string | null
   amount: number
+  due_days: number
   borrow_date: string | null
   due_date: string | null
+  // workflow
+  verify_name: string | null
+  verify_date: string | null
+  approve_name: string | null
+  approve_date: string | null
+  approve_amount: number | null
+  receipt_date: string | null
+  // ส่งใช้
   returned_date: string | null
   return_cash: number | null
   return_voucher_amount: number | null
   return_total: number
   status: number
+  status_name: string
   is_overdue: boolean
   note: string | null
   rw_id: number | null
@@ -94,16 +122,29 @@ function addDays(dateStr: string, days: number): string {
   return d.toISOString().substring(0, 10)
 }
 
-// getStorageData replaced by useAppContext hook
+// สถานะ workflow
+const ST = {
+  PENDING_VERIFY: 10,
+  PENDING_APPROVE: 11,
+  PENDING_DISBURSE: 12,
+  OUTSTANDING: 1,
+  RETURNED: 2,
+  CANCELLED: 3,
+} as const
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 
 const addSchema = z.object({
   borrower_id: z.number({ error: 'กรุณาเลือกผู้ยืม' }).min(1, 'กรุณาเลือกผู้ยืม'),
+  borrower_position: z.string().optional(),
+  affiliation: z.string().optional(),
+  province: z.string().optional(),
   money_type_id: z.number({ error: 'กรุณาเลือกประเภทเงิน' }).min(1, 'กรุณาเลือกประเภทเงิน'),
   loan_category: z.number({ error: 'กรุณาเลือกประเภทการยืม' }).min(1, 'กรุณาเลือกประเภทการยืม'),
   purpose: z.string().optional(),
+  expense_detail: z.string().optional(),
   amount: z.number({ error: 'กรุณาระบุจำนวนเงิน' }).min(0.01, 'จำนวนเงินต้องมากกว่า 0'),
+  due_days: z.number().int().min(0).optional(),
   borrow_date: z.string().min(1, 'กรุณาระบุวันที่ยืม'),
   note: z.string().optional(),
 })
@@ -111,7 +152,7 @@ const addSchema = z.object({
 type AddForm = z.infer<typeof addSchema>
 
 const returnSchema = z.object({
-  returned_date: z.string().min(1, 'กรุณาระบุวันที่คืน'),
+  returned_date: z.string().min(1, 'กรุณาระบุวันที่ส่งใช้'),
   return_cash: z.number().min(0, 'จำนวนเงินสดต้องไม่ติดลบ'),
   return_voucher_amount: z.number().min(0, 'จำนวนใบสำคัญต้องไม่ติดลบ'),
   evidence_no: z.string().optional(),
@@ -120,42 +161,71 @@ const returnSchema = z.object({
 
 type ReturnForm = z.infer<typeof returnSchema>
 
+const verifySchema = z.object({
+  verify_date: z.string().min(1, 'กรุณาระบุวันที่ตรวจสอบ'),
+  verify_name: z.string().optional(),
+})
+type VerifyForm = z.infer<typeof verifySchema>
+
+const approveSchema = z.object({
+  approve_date: z.string().min(1, 'กรุณาระบุวันที่อนุมัติ'),
+  approve_name: z.string().optional(),
+  approve_amount: z.number().min(0.01, 'จำนวนเงินอนุมัติต้องมากกว่า 0'),
+})
+type ApproveForm = z.infer<typeof approveSchema>
+
+const disburseSchema = z.object({
+  receipt_date: z.string().min(1, 'กรุณาระบุวันที่รับเงิน'),
+})
+type DisburseForm = z.infer<typeof disburseSchema>
+
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status, isOverdue }: { status: number; isOverdue: boolean }) {
-  if (status === 1 && isOverdue) {
+  const base = 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium'
+  if (status === ST.PENDING_VERIFY)
+    return <span className={`${base} bg-slate-100 text-slate-700`}>รอตรวจสอบ</span>
+  if (status === ST.PENDING_APPROVE)
+    return <span className={`${base} bg-indigo-100 text-indigo-700`}>รออนุมัติ</span>
+  if (status === ST.PENDING_DISBURSE)
+    return <span className={`${base} bg-sky-100 text-sky-700`}>รอรับเงิน</span>
+  if (status === ST.OUTSTANDING && isOverdue)
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+      <span className={`${base} bg-red-100 text-red-700`}>
         <AlertTriangle className="h-3 w-3" />
         เกินกำหนด
       </span>
     )
+  if (status === ST.OUTSTANDING)
+    return <span className={`${base} bg-amber-100 text-amber-700`}>ค้างชำระ</span>
+  if (status === ST.RETURNED)
+    return <span className={`${base} bg-green-100 text-green-700`}>คืนแล้ว</span>
+  return <span className={`${base} bg-gray-100 text-gray-600`}>ยกเลิก</span>
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** สร้างรายการส่งใช้ (ด้านหลังสัญญา) จากข้อมูลการคืนเงิน */
+function buildSettlements(item: LoanItem): LoanSettlementRow[] {
+  const rows: LoanSettlementRow[] = []
+  let outstanding = Number(item.amount)
+  const cash = Number(item.return_cash || 0)
+  const voucher = Number(item.return_voucher_amount || 0)
+  if (cash > 0) {
+    outstanding -= cash
+    rows.push({ date: item.returned_date, type: 'เงินสด', amount: cash, outstanding: Math.max(0, outstanding) })
   }
-  if (status === 1) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-        ค้างชำระ
-      </span>
-    )
+  if (voucher > 0) {
+    outstanding -= voucher
+    rows.push({ date: item.returned_date, type: 'ใบสำคัญ', amount: voucher, outstanding: Math.max(0, outstanding) })
   }
-  if (status === 2) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-        คืนแล้ว
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-      ยกเลิก
-    </span>
-  )
+  return rows
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function LoanAgreementPage() {
-  const { scId, syId, adminId, budgetYear: budgetYearRaw, scName } = useAppContext()
+  const { scId, syId, adminId, userName, budgetYear: budgetYearRaw, scName } = useAppContext()
   const budgetYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
   const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const queryClient = useQueryClient()
@@ -163,9 +233,14 @@ export default function LoanAgreementPage() {
   const [page, setPage] = useState(0)
   const PAGE_SIZE = 20
 
+  const todayISO = () => new Date().toISOString().substring(0, 10)
+
   // dialogs
   const [addOpen, setAddOpen] = useState(false)
   const [returnOpen, setReturnOpen] = useState(false)
+  const [verifyOpen, setVerifyOpen] = useState(false)
+  const [approveOpen, setApproveOpen] = useState(false)
+  const [disburseOpen, setDisburseOpen] = useState(false)
   const [selectedLoan, setSelectedLoan] = useState<LoanItem | null>(null)
   const [evidenceOpen, setEvidenceOpen] = useState(false)
   const [selectedLoanForEvidence, setSelectedLoanForEvidence] = useState<LoanItem | null>(null)
@@ -180,7 +255,7 @@ export default function LoanAgreementPage() {
 
   const { data: adminsData } = useQuery({
     queryKey: ['admins', scId],
-    queryFn: () => apiGet<{ data: AdminItem[] }>(`Admin/loadAdmin/${scId}`),
+    queryFn: () => apiGet<{ data: AdminItem[]; count: number }>(`B_admin/load_user_options/${scId}`),
     enabled: scId > 0,
   })
 
@@ -216,8 +291,8 @@ export default function LoanAgreementPage() {
         purpose: l.purpose,
         dueDate: l.due_date,
         returnDate: l.returned_date,
-        outstanding: l.status === 1 ? l.amount : 0,
-        note: l.is_overdue ? 'เกินกำหนด' : l.status === 2 ? 'คืนแล้ว' : '',
+        outstanding: l.status === ST.OUTSTANDING ? l.amount : 0,
+        note: l.is_overdue ? 'เกินกำหนด' : l.status_name,
       })),
     })
     openPrintWindow({ title: `ทะเบียนคุมลูกหนี้เงินยืม_${budgetYear}`, body })
@@ -234,24 +309,46 @@ export default function LoanAgreementPage() {
     resolver: zodResolver(addSchema),
     defaultValues: {
       borrower_id: 0,
+      borrower_position: '',
+      affiliation: '',
+      province: '',
       money_type_id: 0,
       loan_category: 2,
       purpose: '',
+      expense_detail: '',
       amount: 0,
+      due_days: 0,
       borrow_date: '',
       note: '',
     },
   })
 
-  const watchBorrowDate = addForm.watch('borrow_date')
   const watchLoanCategory = addForm.watch('loan_category')
+  const watchDueDays = addForm.watch('due_days')
 
-  const previewDueDate = useMemo(() => {
-    if (!watchBorrowDate) return null
+  const effectiveDueDays = useMemo(() => {
+    if (watchDueDays && watchDueDays > 0) return watchDueDays
     const cat = LOAN_CATEGORIES.find((c) => c.value === watchLoanCategory)
-    const days = cat?.days ?? 30
-    return addDays(watchBorrowDate, days)
-  }, [watchBorrowDate, watchLoanCategory])
+    return cat?.days ?? 30
+  }, [watchDueDays, watchLoanCategory])
+
+  function openAddDialog() {
+    addForm.reset({
+      borrower_id: 0,
+      borrower_position: '',
+      affiliation: scName ? `โรงเรียน${scName}` : '',
+      province: '',
+      money_type_id: 0,
+      loan_category: 2,
+      purpose: '',
+      expense_detail: '',
+      amount: 0,
+      due_days: 0,
+      borrow_date: todayISO(),
+      note: '',
+    })
+    setAddOpen(true)
+  }
 
   const addMutation = useMutation({
     mutationFn: (values: AddForm) =>
@@ -260,10 +357,15 @@ export default function LoanAgreementPage() {
         sy_id: syId,
         budget_year: apiYear,
         borrower_id: values.borrower_id,
+        borrower_position: values.borrower_position ?? '',
+        affiliation: values.affiliation ?? '',
+        province: values.province ?? '',
         money_type_id: values.money_type_id,
         loan_category: values.loan_category,
         purpose: values.purpose ?? '',
+        expense_detail: values.expense_detail ?? '',
         amount: values.amount,
+        due_days: values.due_days ?? 0,
         borrow_date: values.borrow_date,
         note: values.note ?? '',
         up_by: adminId,
@@ -277,6 +379,80 @@ export default function LoanAgreementPage() {
       } else {
         toast.error(res.ms)
       }
+    },
+    onError: () => toast.error('เกิดข้อผิดพลาด กรุณาลองใหม่'),
+  })
+
+  // ─── Verify / Approve / Disburse forms ──────────────────────────────────────
+
+  const verifyForm = useForm<VerifyForm>({
+    resolver: zodResolver(verifySchema),
+    defaultValues: { verify_date: '', verify_name: '' },
+  })
+  const approveForm = useForm<ApproveForm>({
+    resolver: zodResolver(approveSchema),
+    defaultValues: { approve_date: '', approve_name: '', approve_amount: 0 },
+  })
+  const disburseForm = useForm<DisburseForm>({
+    resolver: zodResolver(disburseSchema),
+    defaultValues: { receipt_date: '' },
+  })
+
+  const verifyMutation = useMutation({
+    mutationFn: (values: VerifyForm) =>
+      apiPost<{ flag: boolean; ms: string }>('LoanAgreement/verifyLoan', {
+        la_id: selectedLoan!.la_id,
+        verify_by: adminId,
+        verify_name: values.verify_name ?? '',
+        verify_date: values.verify_date,
+        up_by: adminId,
+      }),
+    onSuccess: (res) => {
+      if (res.flag) {
+        toast.success(res.ms)
+        queryClient.invalidateQueries({ queryKey: ['loan-agreements'] })
+        setVerifyOpen(false)
+        setSelectedLoan(null)
+      } else toast.error(res.ms)
+    },
+    onError: () => toast.error('เกิดข้อผิดพลาด กรุณาลองใหม่'),
+  })
+
+  const approveMutation = useMutation({
+    mutationFn: (values: ApproveForm) =>
+      apiPost<{ flag: boolean; ms: string }>('LoanAgreement/approveLoan', {
+        la_id: selectedLoan!.la_id,
+        approve_by: adminId,
+        approve_name: values.approve_name ?? '',
+        approve_date: values.approve_date,
+        approve_amount: values.approve_amount,
+        up_by: adminId,
+      }),
+    onSuccess: (res) => {
+      if (res.flag) {
+        toast.success(res.ms)
+        queryClient.invalidateQueries({ queryKey: ['loan-agreements'] })
+        setApproveOpen(false)
+        setSelectedLoan(null)
+      } else toast.error(res.ms)
+    },
+    onError: () => toast.error('เกิดข้อผิดพลาด กรุณาลองใหม่'),
+  })
+
+  const disburseMutation = useMutation({
+    mutationFn: (values: DisburseForm) =>
+      apiPost<{ flag: boolean; ms: string }>('LoanAgreement/disburseLoan', {
+        la_id: selectedLoan!.la_id,
+        receipt_date: values.receipt_date,
+        up_by: adminId,
+      }),
+    onSuccess: (res) => {
+      if (res.flag) {
+        toast.success(res.ms)
+        queryClient.invalidateQueries({ queryKey: ['loan-agreements'] })
+        setDisburseOpen(false)
+        setSelectedLoan(null)
+      } else toast.error(res.ms)
     },
     onError: () => toast.error('เกิดข้อผิดพลาด กรุณาลองใหม่'),
   })
@@ -343,38 +519,62 @@ export default function LoanAgreementPage() {
     onError: () => toast.error('เกิดข้อผิดพลาด กรุณาลองใหม่'),
   })
 
+  // ─── Actions ──────────────────────────────────────────────────────────────
+
   function printLoan(item: LoanItem) {
-    const header = makeHeader({
-      title: 'สัญญายืมเงิน (บย.)',
-      subtitle: 'ตามระเบียบกระทรวงการคลังว่าด้วยการเบิกเงินจากคลัง การรับเงิน การจ่ายเงิน การเก็บรักษาเงินและการนำเงินส่งคลัง',
-      docNo: item.la_no ?? undefined,
-      docDate: item.borrow_date ?? undefined,
+    const body = officialLoanAgreement({
+      laNo: item.la_no,
+      scName,
+      financeDate: item.verify_date ?? item.approve_date ?? null,
+      borrowerName: item.borrower_name,
+      borrowerPosition: item.borrower_position,
+      affiliation: item.affiliation,
+      province: item.province,
+      moneyTypeName: item.money_type_name,
+      purpose: item.purpose,
+      expenseDetail: item.expense_detail,
+      amount: Number(item.amount),
+      dueDays: item.due_days || effectiveDays(item),
+      borrowDate: item.borrow_date,
+      verifyName: item.verify_name,
+      verifyDate: item.verify_date,
+      approveName: item.approve_name,
+      approveDate: item.approve_date,
+      approveAmount: item.approve_amount,
+      receiptDate: item.receipt_date,
+      settlements: buildSettlements(item),
     })
-    const body = `
-<p>ข้าพเจ้า <b>${esc(item.borrower_name ?? '-')}</b> ขอทำสัญญายืมเงินจากราชการ
-ประเภทเงินยืม: ${esc(item.loan_category_name ?? '-')}${item.money_type_name ? ` (${esc(item.money_type_name)})` : ''}</p>
-<table>
-  <tr><th style="width:35%">รายการ</th><th>รายละเอียด</th></tr>
-  <tr><td>วัตถุประสงค์การยืม</td><td>${esc(item.purpose ?? '-')}</td></tr>
-  <tr><td>จำนวนเงินที่ยืม</td><td class="num">${fmtBaht(item.amount)} บาท</td></tr>
-  <tr><td>(ตัวอักษร)</td><td>${esc(numberToThaiBaht(Number(item.amount)))}</td></tr>
-  <tr><td>วันที่ยืม</td><td>${esc(thaiFullDate(item.borrow_date))}</td></tr>
-  <tr><td>กำหนดคืน</td><td>${esc(thaiFullDate(item.due_date))}</td></tr>
-</table>
-<p class="mt-6">ข้าพเจ้าสัญญาว่าจะใช้เงินยืมนี้เพื่อวัตถุประสงค์ดังกล่าวเท่านั้น
-และจะส่งใบสำคัญคู่จ่ายหรือคืนเงินยืมภายในวันที่กำหนด หากผิดสัญญา
-ข้าพเจ้ายินยอมให้หักเงินเดือนหรือเงินอื่นใดที่พึงได้จากทางราชการชำระคืนเงินยืมพร้อมดอกเบี้ยตามกฎหมาย</p>
-${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
-    openPrintWindow({
-      title: `สัญญายืมเงิน_${item.la_no || item.la_id}`,
-      body: header + body + makeSignatures(['ผู้ยืม', 'พยาน', 'ผู้อนุมัติ']),
-    })
+    openPrintWindow({ title: `สัญญายืมเงิน_${item.la_no || item.la_id}`, body })
+  }
+
+  function effectiveDays(item: LoanItem): number {
+    if (item.due_days && item.due_days > 0) return item.due_days
+    const cat = LOAN_CATEGORIES.find((c) => c.value === item.loan_category)
+    return cat?.days ?? 30
+  }
+
+  function handleOpenVerify(loan: LoanItem) {
+    setSelectedLoan(loan)
+    verifyForm.reset({ verify_date: todayISO(), verify_name: userName ?? '' })
+    setVerifyOpen(true)
+  }
+
+  function handleOpenApprove(loan: LoanItem) {
+    setSelectedLoan(loan)
+    approveForm.reset({ approve_date: todayISO(), approve_name: '', approve_amount: Number(loan.amount) })
+    setApproveOpen(true)
+  }
+
+  function handleOpenDisburse(loan: LoanItem) {
+    setSelectedLoan(loan)
+    disburseForm.reset({ receipt_date: todayISO() })
+    setDisburseOpen(true)
   }
 
   function handleOpenReturn(loan: LoanItem) {
     setSelectedLoan(loan)
     returnForm.reset({
-      returned_date: '',
+      returned_date: todayISO(),
       return_cash: 0,
       return_voucher_amount: 0,
       evidence_no: '',
@@ -395,12 +595,6 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
   }
 
   function handleExport() {
-    const statusLabel = (loan: LoanItem) => {
-      if (loan.status === 1 && loan.is_overdue) return 'เกินกำหนด'
-      if (loan.status === 1) return 'ค้างชำระ'
-      if (loan.status === 2) return 'คืนแล้ว'
-      return 'ยกเลิก'
-    }
     const exportRows = loans.map((l) => ({
       'เลขที่บย.': l.la_no ?? '-',
       'ผู้ยืม': l.borrower_name ?? '-',
@@ -408,14 +602,17 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
       'ประเภทการยืม': l.loan_category_name,
       'ยอดเงิน (บาท)': Number(l.amount),
       'วันยืม': fmtDateTH(l.borrow_date),
-      'วันครบกำหนด': fmtDateTH(l.due_date),
-      'วันคืนจริง': l.returned_date ? fmtDateTH(l.returned_date) : '-',
-      'สถานะ': statusLabel(l),
+      'วันรับเงิน': l.receipt_date ? fmtDateTH(l.receipt_date) : '-',
+      'วันครบกำหนด': l.due_date ? fmtDateTH(l.due_date) : '-',
+      'วันส่งใช้': l.returned_date ? fmtDateTH(l.returned_date) : '-',
+      'สถานะ': l.status_name,
     }))
     exportToXlsx(exportRows, 'สัญญายืมเงิน', `loan-agreement-${budgetYear}`)
   }
 
   // ─── Table columns ────────────────────────────────────────────────────────
+
+  const watchDueDaysPreview = disburseForm.watch('receipt_date')
 
   const columns = [
     {
@@ -434,10 +631,6 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
       render: (item: LoanItem) => <span className="text-gray-600">{item.money_type_name ?? '-'}</span>,
     },
     {
-      header: 'ประเภทการยืม',
-      render: (item: LoanItem) => <span>{item.loan_category_name}</span>,
-    },
-    {
       header: 'จำนวนเงิน (บาท)',
       render: (item: LoanItem) => (
         <span className="font-semibold">{item.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
@@ -450,16 +643,12 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
       render: (item: LoanItem) => <span>{fmtDateTH(item.borrow_date)}</span>,
     },
     {
-      header: 'กำหนดคืน',
+      header: 'กำหนดส่งใช้',
       render: (item: LoanItem) => (
         <span className={item.is_overdue ? 'text-red-600 font-medium' : ''}>
-          {fmtDateTH(item.due_date)}
+          {item.due_date ? fmtDateTH(item.due_date) : '-'}
         </span>
       ),
-    },
-    {
-      header: 'วันคืนจริง',
-      render: (item: LoanItem) => <span>{item.returned_date ? fmtDateTH(item.returned_date) : '-'}</span>,
     },
     {
       header: 'สถานะ',
@@ -468,29 +657,70 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
     {
       header: 'จัดการ',
       render: (item: LoanItem) => (
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           <Button
             variant="outline"
             size="sm"
             className="h-7 px-2 text-xs"
             onClick={() => printLoan(item)}
-            title="พิมพ์สัญญายืมเงิน"
+            title="พิมพ์สัญญายืมเงิน (ตัวอย่างที่ 34)"
           >
             <Printer className="h-3 w-3" />
           </Button>
-          {item.status === 1 && (
+
+          {item.status === ST.PENDING_VERIFY && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs text-indigo-600 hover:border-indigo-300"
+              onClick={() => handleOpenVerify(item)}
+              title="ตรวจสอบ"
+            >
+              <ClipboardCheck className="h-3 w-3 mr-1" />
+              ตรวจสอบ
+            </Button>
+          )}
+
+          {item.status === ST.PENDING_APPROVE && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs text-violet-600 hover:border-violet-300"
+              onClick={() => handleOpenApprove(item)}
+              title="อนุมัติ"
+            >
+              <Stamp className="h-3 w-3 mr-1" />
+              อนุมัติ
+            </Button>
+          )}
+
+          {item.status === ST.PENDING_DISBURSE && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs text-emerald-600 hover:border-emerald-300"
+              onClick={() => handleOpenDisburse(item)}
+              title="จ่าย/รับเงิน"
+            >
+              <Banknote className="h-3 w-3 mr-1" />
+              รับเงิน
+            </Button>
+          )}
+
+          {item.status === ST.OUTSTANDING && (
             <Button
               variant="outline"
               size="sm"
               className="h-7 px-2 text-xs"
               onClick={() => handleOpenReturn(item)}
-              title="บันทึกการคืนเงิน"
+              title="บันทึกการส่งใช้เงินยืม"
             >
               <RotateCcw className="h-3 w-3 mr-1" />
-              คืน
+              ส่งใช้
             </Button>
           )}
-          {item.status === 2 && (
+
+          {item.status === ST.RETURNED && (
             <Button
               variant="outline"
               size="sm"
@@ -502,7 +732,11 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
               ใบสำคัญ
             </Button>
           )}
-          {item.status === 1 && (
+
+          {(item.status === ST.PENDING_VERIFY ||
+            item.status === ST.PENDING_APPROVE ||
+            item.status === ST.PENDING_DISBURSE ||
+            item.status === ST.OUTSTANDING) && (
             <Button
               variant="outline"
               size="sm"
@@ -524,7 +758,7 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
     <div className="p-4 space-y-4">
       <PageHeader
         title="ทะเบียนคุมสัญญายืมเงิน (บย.)"
-        subtitle={budgetYear ? `ปีงบประมาณ ${budgetYear}` : undefined}
+        subtitle={budgetYear ? `ปีงบประมาณ ${budgetYear} — ขั้นตอน: ตรวจสอบ → อนุมัติ → รับเงิน → ส่งใช้` : undefined}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={handlePrintRegister} disabled={loans.length === 0}>
@@ -535,7 +769,7 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
               onExport={handleExport}
               loading={loans.length === 0}
             />
-            <Button onClick={() => { addForm.reset(); setAddOpen(true) }}>
+            <Button onClick={openAddDialog}>
               <Plus className="h-4 w-4 mr-1" />
               เพิ่มสัญญายืมเงิน
             </Button>
@@ -558,8 +792,8 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
       <FormDialog
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        title="เพิ่มสัญญายืมเงิน (บย.)"
-        size="md"
+        title="เพิ่มสัญญายืมเงิน (ตัวอย่างที่ 34)"
+        size="xl"
         submitLabel="สร้างสัญญา"
         loading={addMutation.isPending}
         onSubmit={addForm.handleSubmit((v) => addMutation.mutate(v))}
@@ -588,9 +822,27 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
             )}
           </div>
 
+          {/* ตำแหน่งผู้ยืม */}
+          <div className="space-y-1">
+            <Label>ตำแหน่งผู้ยืม</Label>
+            <Input {...addForm.register('borrower_position')} placeholder="เช่น ครู คศ.2" />
+          </div>
+
+          {/* สังกัด + จังหวัด */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>สังกัด</Label>
+              <Input {...addForm.register('affiliation')} placeholder="เช่น โรงเรียน... สพป.... เขต..." />
+            </div>
+            <div className="space-y-1">
+              <Label>จังหวัด</Label>
+              <Input {...addForm.register('province')} placeholder="จังหวัด" />
+            </div>
+          </div>
+
           {/* ประเภทเงิน */}
           <div className="space-y-1">
-            <Label>ประเภทเงิน <span className="text-red-500">*</span></Label>
+            <Label>ขอยืมเงินจาก (ประเภทเงิน) <span className="text-red-500">*</span></Label>
             <Select
               value={addForm.watch('money_type_id') ? String(addForm.watch('money_type_id')) : ''}
               onValueChange={(v) => addForm.setValue('money_type_id', Number(v), { shouldValidate: true })}
@@ -611,33 +863,54 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
             )}
           </div>
 
-          {/* ประเภทการยืม */}
-          <div className="space-y-1">
-            <Label>ประเภทการยืม <span className="text-red-500">*</span></Label>
-            <Select
-              value={String(addForm.watch('loan_category'))}
-              onValueChange={(v) => addForm.setValue('loan_category', Number(v), { shouldValidate: true })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="เลือกประเภทการยืม" />
-              </SelectTrigger>
-              <SelectContent>
-                {LOAN_CATEGORIES.map((c) => (
-                  <SelectItem key={c.value} value={String(c.value)}>
-                    {c.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {addForm.formState.errors.loan_category && (
-              <p className="text-xs text-red-500">{addForm.formState.errors.loan_category.message}</p>
-            )}
+          {/* ประเภทการยืม + จำนวนวันส่งใช้ */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>ประเภทการยืม <span className="text-red-500">*</span></Label>
+              <Select
+                value={String(addForm.watch('loan_category'))}
+                onValueChange={(v) => addForm.setValue('loan_category', Number(v), { shouldValidate: true })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="เลือกประเภทการยืม" />
+                </SelectTrigger>
+                <SelectContent>
+                  {LOAN_CATEGORIES.map((c) => (
+                    <SelectItem key={c.value} value={String(c.value)}>
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>จำนวนวันส่งใช้</Label>
+              <Input
+                type="number"
+                min={0}
+                {...addForm.register('due_days', {
+                  setValueAs: (v) => (v === '' || v == null ? 0 : Number(v)),
+                })}
+                placeholder="0 = ตามประเภท"
+              />
+            </div>
           </div>
 
           {/* วัตถุประสงค์ */}
           <div className="space-y-1">
-            <Label>วัตถุประสงค์การยืม</Label>
-            <Input {...addForm.register('purpose')} placeholder="ระบุวัตถุประสงค์..." />
+            <Label>เพื่อเป็นค่าใช้จ่ายในการ (วัตถุประสงค์)</Label>
+            <Input {...addForm.register('purpose')} placeholder="เช่น จัดค่ายกลางวัน" />
+          </div>
+
+          {/* รายละเอียดการใช้เงิน */}
+          <div className="space-y-1">
+            <Label>รายละเอียดการใช้เงิน</Label>
+            <textarea
+              {...addForm.register('expense_detail')}
+              rows={2}
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder="เช่น จัดทำค่ายกลางวันให้นักเรียน 215 คน วันละ 13 บาท จำนวน 5 วัน"
+            />
           </div>
 
           {/* จำนวนเงิน */}
@@ -655,21 +928,19 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
             )}
           </div>
 
-          {/* วันที่ยืม + preview กำหนดคืน */}
+          {/* วันที่ยืม */}
           <div className="space-y-1">
-            <Label>วันที่ยืม <span className="text-red-500">*</span></Label>
+            <Label>วันที่ทำสัญญายืม <span className="text-red-500">*</span></Label>
             <ThaiDatePicker
-              value={watchBorrowDate ?? ''}
+              value={addForm.watch('borrow_date') ?? ''}
               onChange={(v) => addForm.setValue('borrow_date', v, { shouldValidate: true })}
             />
             {addForm.formState.errors.borrow_date && (
               <p className="text-xs text-red-500">{addForm.formState.errors.borrow_date.message}</p>
             )}
-            {previewDueDate && (
-              <p className="text-xs text-blue-600 mt-1">
-                กำหนดส่งคืน: <span className="font-medium">{fmtDateTH(previewDueDate)}</span>
-              </p>
-            )}
+            <p className="text-xs text-blue-600 mt-1">
+              กำหนดส่งใช้ภายใน <span className="font-medium">{effectiveDueDays}</span> วัน นับแต่วันรับเงิน
+            </p>
           </div>
 
           {/* หมายเหตุ */}
@@ -680,13 +951,133 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
         </div>
       </FormDialog>
 
+      {/* ─── Verify Dialog ──────────────────────────────────────────────────── */}
+      <FormDialog
+        open={verifyOpen}
+        onClose={() => { setVerifyOpen(false); setSelectedLoan(null) }}
+        title={`ตรวจสอบสัญญายืมเงิน ${selectedLoan?.la_no ?? ''}`}
+        size="sm"
+        submitLabel="ยืนยันการตรวจสอบ"
+        loading={verifyMutation.isPending}
+        onSubmit={verifyForm.handleSubmit((v) => verifyMutation.mutate(v))}
+      >
+        {selectedLoan && (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-indigo-50 p-3 text-sm space-y-1">
+              <p><span className="text-gray-500">ผู้ยืม:</span> <span className="font-medium">{selectedLoan.borrower_name ?? '-'}</span></p>
+              <p><span className="text-gray-500">ยอดยืม:</span> <span className="font-semibold text-indigo-700">{selectedLoan.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท</span></p>
+            </div>
+            <div className="space-y-1">
+              <Label>ชื่อผู้ตรวจสอบ</Label>
+              <Input {...verifyForm.register('verify_name')} placeholder="ชื่อ-สกุล เจ้าหน้าที่การเงิน" />
+            </div>
+            <div className="space-y-1">
+              <Label>วันที่ตรวจสอบ <span className="text-red-500">*</span></Label>
+              <ThaiDatePicker
+                value={verifyForm.watch('verify_date') ?? ''}
+                onChange={(v) => verifyForm.setValue('verify_date', v, { shouldValidate: true })}
+              />
+              {verifyForm.formState.errors.verify_date && (
+                <p className="text-xs text-red-500">{verifyForm.formState.errors.verify_date.message}</p>
+              )}
+            </div>
+          </div>
+        )}
+      </FormDialog>
+
+      {/* ─── Approve Dialog ─────────────────────────────────────────────────── */}
+      <FormDialog
+        open={approveOpen}
+        onClose={() => { setApproveOpen(false); setSelectedLoan(null) }}
+        title={`อนุมัติสัญญายืมเงิน ${selectedLoan?.la_no ?? ''}`}
+        size="sm"
+        submitLabel="อนุมัติ"
+        loading={approveMutation.isPending}
+        onSubmit={approveForm.handleSubmit((v) => approveMutation.mutate(v))}
+      >
+        {selectedLoan && (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-violet-50 p-3 text-sm space-y-1">
+              <p><span className="text-gray-500">ผู้ยืม:</span> <span className="font-medium">{selectedLoan.borrower_name ?? '-'}</span></p>
+              <p><span className="text-gray-500">ยอดยืม:</span> <span className="font-semibold text-violet-700">{selectedLoan.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท</span></p>
+              {selectedLoan.verify_name && (
+                <p><span className="text-gray-500">ตรวจสอบโดย:</span> {selectedLoan.verify_name} ({fmtDateTH(selectedLoan.verify_date)})</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label>ชื่อผู้อนุมัติ (ผอ.)</Label>
+              <Input {...approveForm.register('approve_name')} placeholder="ชื่อ-สกุล ผู้อำนวยการ" />
+            </div>
+            <div className="space-y-1">
+              <Label>จำนวนเงินที่อนุมัติ (บาท) <span className="text-red-500">*</span></Label>
+              <Input
+                type="number"
+                min={0}
+                step={0.01}
+                {...approveForm.register('approve_amount', { valueAsNumber: true })}
+              />
+              {approveForm.formState.errors.approve_amount && (
+                <p className="text-xs text-red-500">{approveForm.formState.errors.approve_amount.message}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label>วันที่อนุมัติ <span className="text-red-500">*</span></Label>
+              <ThaiDatePicker
+                value={approveForm.watch('approve_date') ?? ''}
+                onChange={(v) => approveForm.setValue('approve_date', v, { shouldValidate: true })}
+              />
+              {approveForm.formState.errors.approve_date && (
+                <p className="text-xs text-red-500">{approveForm.formState.errors.approve_date.message}</p>
+              )}
+            </div>
+          </div>
+        )}
+      </FormDialog>
+
+      {/* ─── Disburse Dialog ────────────────────────────────────────────────── */}
+      <FormDialog
+        open={disburseOpen}
+        onClose={() => { setDisburseOpen(false); setSelectedLoan(null) }}
+        title={`รับเงิน / จ่ายเงินยืม ${selectedLoan?.la_no ?? ''}`}
+        size="sm"
+        submitLabel="ยืนยันการรับเงิน"
+        loading={disburseMutation.isPending}
+        onSubmit={disburseForm.handleSubmit((v) => disburseMutation.mutate(v))}
+      >
+        {selectedLoan && (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-emerald-50 p-3 text-sm space-y-1">
+              <p><span className="text-gray-500">ผู้ยืม:</span> <span className="font-medium">{selectedLoan.borrower_name ?? '-'}</span></p>
+              <p><span className="text-gray-500">ยอดยืม:</span> <span className="font-semibold text-emerald-700">{selectedLoan.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท</span></p>
+              <p className="text-xs text-gray-500">การกดยืนยันจะตัดยอดเงินออกจากประเภทเงินที่ยืม</p>
+            </div>
+            <div className="space-y-1">
+              <Label>วันที่รับเงิน <span className="text-red-500">*</span></Label>
+              <ThaiDatePicker
+                value={disburseForm.watch('receipt_date') ?? ''}
+                onChange={(v) => disburseForm.setValue('receipt_date', v, { shouldValidate: true })}
+              />
+              {disburseForm.formState.errors.receipt_date && (
+                <p className="text-xs text-red-500">{disburseForm.formState.errors.receipt_date.message}</p>
+              )}
+              {watchDueDaysPreview && (
+                <p className="text-xs text-emerald-700 mt-1">
+                  กำหนดส่งใช้: <span className="font-medium">{fmtDateTH(addDays(watchDueDaysPreview, effectiveDays(selectedLoan)))}</span>
+                  {' '}(ภายใน {effectiveDays(selectedLoan)} วัน)
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </FormDialog>
+
       {/* ─── Return Dialog ──────────────────────────────────────────────────── */}
       <FormDialog
         open={returnOpen}
         onClose={() => { setReturnOpen(false); setSelectedLoan(null) }}
-        title={`บันทึกการคืนเงิน ${selectedLoan?.la_no ?? ''}`}
+        title={`ส่งใช้เงินยืม ${selectedLoan?.la_no ?? ''}`}
         size="md"
-        submitLabel="บันทึกการคืนเงิน"
+        submitLabel="บันทึกการส่งใช้"
         loading={returnMutation.isPending}
         onSubmit={returnForm.handleSubmit((v) => returnMutation.mutate(v))}
       >
@@ -705,16 +1096,16 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
                 </span>
               </p>
               <p>
-                <span className="text-gray-500">กำหนดคืน:</span>{' '}
+                <span className="text-gray-500">กำหนดส่งใช้:</span>{' '}
                 <span className={selectedLoan.is_overdue ? 'text-red-600 font-medium' : ''}>
-                  {fmtDateTH(selectedLoan.due_date)}
+                  {selectedLoan.due_date ? fmtDateTH(selectedLoan.due_date) : '-'}
                 </span>
               </p>
             </div>
 
-            {/* วันที่คืน */}
+            {/* วันที่ส่งใช้ */}
             <div className="space-y-1">
-              <Label>วันที่คืนเงิน <span className="text-red-500">*</span></Label>
+              <Label>วันที่ส่งใช้ <span className="text-red-500">*</span></Label>
               <ThaiDatePicker
                 value={returnForm.watch('returned_date') ?? ''}
                 onChange={(v) => returnForm.setValue('returned_date', v, { shouldValidate: true })}
@@ -741,7 +1132,7 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
 
             {/* ใบสำคัญคืน */}
             <div className="space-y-1">
-              <Label>ใบสำคัญคืน (บาท)</Label>
+              <Label>ใบสำคัญ (บาท)</Label>
               <Input
                 type="number"
                 min={0}
@@ -754,10 +1145,10 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
               )}
             </div>
 
-            {/* รวมคืน */}
+            {/* รวมส่งใช้ */}
             <div className="rounded-lg bg-gray-50 p-3 text-sm">
               <div className="flex justify-between items-center">
-                <span className="text-gray-600">รวมคืน:</span>
+                <span className="text-gray-600">รวมส่งใช้:</span>
                 <span
                   className={`font-semibold text-base ${
                     returnTotal >= selectedLoan.amount ? 'text-green-600' : 'text-amber-600'
@@ -768,7 +1159,7 @@ ${item.note ? `<p><b>หมายเหตุ:</b> ${esc(item.note)}</p>` : ''}`
               </div>
               {returnTotal < selectedLoan.amount && returnTotal > 0 && (
                 <p className="text-xs text-amber-600 mt-1">
-                  ขาด {(selectedLoan.amount - returnTotal).toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท
+                  ขาด {(selectedLoan.amount - returnTotal).toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท (ต้องส่งใช้ครบยอดยืม)
                 </p>
               )}
             </div>

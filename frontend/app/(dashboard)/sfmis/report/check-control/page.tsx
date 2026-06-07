@@ -3,9 +3,13 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
+import { Button } from '@/components/ui/button'
+import { Printer } from 'lucide-react'
 import { apiGet } from '@/lib/api'
 import { fmtDateTH } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
+import { openPrintWindow } from '@/lib/print-utils'
+import { officialChequeRegister, officialPaymentVoucherRegister } from '@/lib/official-forms'
 
 interface CheckControl {
   rw_id: number
@@ -32,7 +36,8 @@ const statusLabel: Record<number, { label: string; color: string }> = {
 }
 
 export default function CheckControlPage() {
-  const { scId, syId } = useAppContext()
+  const { scId, syId, budgetYear: budgetYearRaw, scName } = useAppContext()
+  const beYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
   const [page, setPage] = useState(0)
   const pageSize = 25
 
@@ -44,6 +49,43 @@ export default function CheckControlPage() {
 
   const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })
   const rows = Array.isArray(data) ? data : []
+
+  // พิมพ์ "ทะเบียนคุมเช็ค" (คู่มือ ตย.6) — เฉพาะรายการที่ออกเช็คแล้ว (มีเลขที่เช็ค)
+  function handlePrintCheque() {
+    const cheques = rows.filter((r) => r.check_no_doc && r.status === 202)
+    if (cheques.length === 0) return
+    const body = officialChequeRegister({
+      scName, budgetYear: beYear,
+      rows: cheques.map((r) => ({
+        date: r.offer_check_date,
+        chequeNo: r.check_no_doc,
+        payee: r.partner_name || r.detail,
+        amount: Number(r.amount) || 0,
+      })),
+    })
+    openPrintWindow({ title: 'ทะเบียนคุมเช็ค', body })
+  }
+
+  // พิมพ์ "ทะเบียนคุมใบสำคัญคู่จ่าย" — แยก บค./บจ.
+  function handlePrintVoucher() {
+    const issued = rows.filter((r) => r.no_doc && r.status === 202)
+    if (issued.length === 0) return
+    const body = officialPaymentVoucherRegister({
+      scName, budgetYear: beYear,
+      rows: issued.map((r) => {
+        const doc = r.no_doc ?? ''
+        const isBc = /^บค/.test(doc)
+        return {
+          date: r.offer_check_date || r.date_request,
+          bcNo: isBc ? doc : '',
+          bjNo: isBc ? '' : doc,
+          detail: r.partner_name || r.detail,
+          amount: Number(r.amount) || 0,
+        }
+      }),
+    })
+    openPrintWindow({ title: 'ทะเบียนคุมใบสำคัญคู่จ่าย', body })
+  }
 
   const columns = [
     { header: 'เลขที่ใบสำคัญ', key: 'no_doc' as keyof CheckControl },
@@ -73,7 +115,19 @@ export default function CheckControlPage() {
 
   return (
     <div className="flex flex-col flex-auto min-w-0">
-      <PageHeader title="รายงานควบคุมเช็ค" />
+      <PageHeader
+        title="รายงานควบคุมเช็ค"
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handlePrintCheque} disabled={rows.length === 0}>
+              <Printer className="h-4 w-4 mr-1" /> ทะเบียนคุมเช็ค
+            </Button>
+            <Button variant="outline" onClick={handlePrintVoucher} disabled={rows.length === 0}>
+              <Printer className="h-4 w-4 mr-1" /> ใบสำคัญคู่จ่าย
+            </Button>
+          </div>
+        }
+      />
       <div className="p-4">
         <DataTable
           columns={columns}

@@ -151,6 +151,18 @@ export class AdminController {
 
   // ── Public data (ใช้ JWT ตรวจสิทธิ์แค่ว่า login แล้ว) ──────────
 
+  // รายชื่อผู้ใช้ในโรงเรียนสำหรับ dropdown (ผู้ยืม/ผู้รับ/ผู้จ่าย) — ทุก role
+  // ที่ login แล้วเรียกได้ แต่ดูได้เฉพาะโรงเรียนตัวเอง (assertSameSchool)
+  @Get('load_user_options/:scId')
+  @HttpCode(HttpStatus.OK)
+  loadUserOptions(
+    @Param('scId', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
+    return this.adminService.loadUserOptions(scId);
+  }
+
   @Get('loadPosition')
   @HttpCode(HttpStatus.OK)
   loadPositionGet() {

@@ -10,6 +10,9 @@ import { Admin } from '../admin/entities/admin.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { PlnProcurementPlanItem } from '../procurement-plan/entities/pln-procurement-plan-item.entity';
 import { PlnProcurementPlan } from '../procurement-plan/entities/pln-procurement-plan.entity';
+import { Supplies } from '../supplie/entities/supplies.entity';
+import { Project } from '../project/entities/project.entity';
+import { School } from '../school/entities/school.entity';
 
 @Module({
   imports: [
@@ -22,6 +25,9 @@ import { PlnProcurementPlan } from '../procurement-plan/entities/pln-procurement
       RequestWithdraw,
       PlnProcurementPlanItem,
       PlnProcurementPlan,
+      Supplies,
+      Project,
+      School,
     ]),
   ],
   controllers: [ProjectApproveController],

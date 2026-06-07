@@ -13,14 +13,17 @@ export class PlanTraceService {
   /** ติดตามเส้นทาง: แผน → โครงการ → ใบขอซื้อ → เช็ค/ใบสำคัญ — สำหรับ 1 โครงการ */
   async traceByProject(projectId: number) {
     const project = await this.ds.query(
-      `SELECT project_id, project_name, sc_id, budget_year, budget AS total_budget, status
-         FROM pln_project WHERE project_id = ? AND del = 0`,
+      `SELECT p.proj_id AS project_id, p.proj_name AS project_name, p.sc_id,
+              sy.budget_year, p.proj_budget AS total_budget, p.proj_status AS status
+         FROM pln_project p
+         LEFT JOIN school_year sy ON sy.sy_id = p.sy_id AND sy.del = 0
+        WHERE p.proj_id = ? AND p.del = 0`,
       [projectId],
     );
     if (!project.length) return { flag: false, ms: 'ไม่พบโครงการ' };
 
     const orders = await this.ds.query(
-      `SELECT order_id, order_no, order_date, project_id, order_total, order_status, method_type
+      `SELECT order_id, project_id, budgets AS order_total, order_status, method_type, order_date
          FROM parcel_order WHERE project_id = ? AND del = 0 ORDER BY order_id DESC`,
       [projectId],
     );
@@ -97,16 +100,19 @@ export class PlanTraceService {
 
   /** สรุปภาพรวมทั้งโรงเรียนในปีงบประมาณหนึ่ง */
   async overview(scId: number, budgetYear: number) {
+    // pln_project ไม่มี budget_year ตรง ๆ — JOIN school_year ด้วย sy_id
+    // และ parcel_order ใช้คอลัมน์ `budgets` ไม่ใช่ `order_total`
     const rows = await this.ds.query(
       `SELECT
-          p.project_id,
-          p.project_name,
-          p.budget AS total_budget,
-          COALESCE((SELECT SUM(order_total) FROM parcel_order WHERE project_id = p.project_id AND del = 0), 0) AS total_ordered,
-          COALESCE((SELECT COUNT(*) FROM parcel_order WHERE project_id = p.project_id AND del = 0), 0) AS order_count
+          p.proj_id   AS project_id,
+          p.proj_name AS project_name,
+          p.proj_budget AS total_budget,
+          COALESCE((SELECT SUM(budgets) FROM parcel_order WHERE project_id = p.proj_id AND del = 0), 0) AS total_ordered,
+          COALESCE((SELECT COUNT(*)   FROM parcel_order WHERE project_id = p.proj_id AND del = 0), 0) AS order_count
         FROM pln_project p
-       WHERE p.sc_id = ? AND p.budget_year = ? AND p.del = 0
-       ORDER BY p.project_id ASC`,
+        JOIN school_year sy ON sy.sy_id = p.sy_id AND sy.del = 0
+       WHERE p.sc_id = ? AND sy.budget_year = ? AND p.del = 0
+       ORDER BY p.proj_id ASC`,
       [scId, budgetYear],
     );
 

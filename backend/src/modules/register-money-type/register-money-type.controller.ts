@@ -1,6 +1,8 @@
 import {
   Controller,
   Get,
+  Post,
+  Body,
   Param,
   ParseIntPipe,
   HttpCode,
@@ -49,6 +51,24 @@ export class RegisterMoneyTypeController {
     @Param('year') year: string,
   ) {
     return this.registerMoneyTypeService.whtRemitReminder(scId, syId, year);
+  }
+
+  @Post('deposit_cash')
+  @HttpCode(HttpStatus.OK)
+  depositCash(
+    @Body()
+    dto: {
+      sc_id: number;
+      sy_id: number;
+      bg_type_id: number;
+      deposit_date: string;
+      amount: number;
+      doc_no?: string;
+      ba_id?: number;
+      up_by?: number;
+    },
+  ) {
+    return this.registerMoneyTypeService.depositCash(dto);
   }
 
   @Get('Testload_register_control_money_type/:bgTypeId/:scId/:syId/:year')

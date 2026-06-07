@@ -92,7 +92,39 @@ export class ProcurementPlanService {
       upBy: dto.up_by ?? 0,
     });
     await this.planRepo.save(row);
-    return { flag: true, ms: 'บันทึกสำเร็จ', pp_id: row.ppId };
+
+    // ผูกกับ parcel_order ถ้ามี — สร้างรายการในแผนพร้อมโยง ppi_id กลับเพื่อให้
+    // ผ่าน assertProcurementCompliant ในขั้นหัวหน้าพัสดุของ workflow อนุมัติ (1.3)
+    let ppiId: number | null = null;
+    if (dto.order_id) {
+      const order = await this.orderRepo.findOne({
+        where: { orderId: dto.order_id, del: 0 },
+      });
+      if (order) {
+        const orderBudget = Number(order.budgets ?? 0);
+        const item = this.itemRepo.create({
+          ppId: row.ppId,
+          projectId: order.projectId ?? null,
+          itemTitle: order.details ?? dto.pp_title ?? null,
+          itemBudget: orderBudget,
+          methodType: order.methodType ?? 3,
+          upBy: dto.up_by ?? 0,
+        });
+        await this.itemRepo.save(item);
+        ppiId = item.ppiId;
+        order.ppiId = item.ppiId;
+        order.upBy = dto.up_by ?? order.upBy;
+        await this.orderRepo.save(order);
+
+        // sync วงเงินแผนให้ครอบคลุมรายการเสมอ — กันยอดรวมเกินวงเงินตอนประกาศ
+        if (orderBudget > Number(row.ppTotalBudget)) {
+          row.ppTotalBudget = orderBudget;
+          await this.planRepo.save(row);
+        }
+      }
+    }
+
+    return { flag: true, ms: 'บันทึกสำเร็จ', pp_id: row.ppId, ppi_id: ppiId };
   }
 
   async updatePlan(dto: UpdatePlanDto, user: JwtUser) {

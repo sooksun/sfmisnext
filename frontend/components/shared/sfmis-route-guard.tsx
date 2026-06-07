@@ -19,6 +19,7 @@ const SUPER   = [1]
 const PATH_ROLES: Array<{ prefix: string; roles: number[] }> = [
   // งานนโยบายและแผน
   { prefix: '/sfmis/student',               roles: PLAN },
+  { prefix: '/sfmis/class-open-config',     roles: PLAN },
   { prefix: '/sfmis/perhead-rate-setting',  roles: PLAN },
   { prefix: '/sfmis/calculate-perhead',     roles: PLAN },
   { prefix: '/sfmis/budget-allocation',     roles: PLAN },
@@ -29,6 +30,8 @@ const PATH_ROLES: Array<{ prefix: string; roles: number[] }> = [
   { prefix: '/sfmis/plan-menu',             roles: [...PLAN, 4, 7] },
 
   // งานการเงิน
+  // ขอเบิกค่าเดินทางไปราชการ — ครูทุกคนยื่นเองได้ (เจ้าหน้าที่การเงิน/ผอ. อนุมัติในหน้าเดียวกัน)
+  { prefix: '/sfmis/pay-menu/travel-reimbursement', roles: ALL },
   { prefix: '/sfmis/receive-menu',          roles: FINANCE },
   { prefix: '/sfmis/pay-menu',              roles: FINANCE },
   { prefix: '/sfmis/confirm-invoice',       roles: FINANCE },
@@ -79,7 +82,9 @@ export function SfmisRouteGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter()
 
   const requiredRoles = getRequiredRoles(pathname)
-  const allowed = userType === 0 || !requiredRoles || requiredRoles.includes(userType)
+  // ผู้ดูแลพิเศษ (type=1) เข้าได้ทุกเส้นทาง — ตรงกับ backend RolesGuard
+  const allowed =
+    userType === 0 || userType === 1 || !requiredRoles || requiredRoles.includes(userType)
 
   useEffect(() => {
     if (userType !== 0 && !allowed) {

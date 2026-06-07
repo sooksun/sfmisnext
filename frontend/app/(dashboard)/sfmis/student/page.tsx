@@ -5,10 +5,11 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Plus, Pencil } from 'lucide-react'
+import { Plus, Pencil, Lock } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -74,6 +75,7 @@ export default function StudentPage() {
 
   const [addOpen, setAddOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<StudentRow | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   // ── Auto-init: สร้าง row ให้ทุก class หากยังไม่มีข้อมูลของปีนี้ ──────────────
   useEffect(() => {
@@ -168,6 +170,27 @@ export default function StudentPage() {
     editForm.reset({ st_count: item.st_count })
   }
 
+  // ── ยืนยันส่งจำนวนนักเรียน (ล็อกข้อมูล) ────────────────────────────────────
+  const confirmMutation = useMutation({
+    mutationFn: () =>
+      apiPost('Student/confirmSendRecord', {
+        sc_id: scId,
+        sy_id: syId,
+        year: Number(apiYear),
+        up_by: upBy,
+      }),
+    onSuccess: (res: any) => {
+      if (res?.flag) {
+        toast.success(res?.ms || 'ยืนยันจำนวนนักเรียนเรียบร้อยแล้ว')
+        qc.invalidateQueries({ queryKey: ['student'] })
+        setConfirmOpen(false)
+      } else {
+        toast.error(res?.ms || 'ยืนยันไม่สำเร็จ')
+      }
+    },
+    onError: () => toast.error('เกิดข้อผิดพลาด'),
+  })
+
   // ── Columns ───────────────────────────────────────────────────────────────
 
   const columns = useMemo(() => [
@@ -199,11 +222,21 @@ export default function StudentPage() {
         title="ข้อมูลนักเรียน"
         actions={
           canEdit ? (
-            <Button onClick={() => { addForm.reset({ class_id: 0, st_count: 0 }); setAddOpen(true) }}
-              disabled={scId === 0}>
-              <Plus className="h-4 w-4" />
-              เพิ่มรายการ
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => { addForm.reset({ class_id: 0, st_count: 0 }); setAddOpen(true) }}
+                disabled={scId === 0}>
+                <Plus className="h-4 w-4" />
+                เพิ่มรายการ
+              </Button>
+              <Button
+                onClick={() => setConfirmOpen(true)}
+                disabled={scId === 0 || rows.length === 0}
+                title="ยืนยันแล้วจะแก้ไขจำนวนนักเรียนไม่ได้จนกว่าจะขึ้นปีใหม่"
+              >
+                <Lock className="h-4 w-4" />
+                ยืนยันจำนวนนักเรียน
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -304,6 +337,17 @@ export default function StudentPage() {
           </div>
         </div>
       </FormDialog>
+
+      {/* ── Dialog ยืนยันจำนวนนักเรียน (ล็อกข้อมูล) ──────────────────────────── */}
+      <ConfirmDialog
+        open={confirmOpen}
+        onConfirm={() => confirmMutation.mutate()}
+        onCancel={() => setConfirmOpen(false)}
+        title="ยืนยันจำนวนนักเรียน"
+        description="หากยืนยันแล้วจะไม่สามารถแก้ไขจำนวนนักเรียนได้อีกจนกว่าจะขึ้นปีการศึกษาใหม่ ต้องการยืนยันหรือไม่?"
+        confirmLabel="ยืนยัน"
+        cancelLabel="ยกเลิก"
+      />
     </div>
   )
 }

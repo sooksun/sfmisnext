@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Send, AlertTriangle, RotateCcw, Printer } from 'lucide-react'
 import { openPrintWindow, makeHeader, makeSignatures, fmtBaht, numberToThaiBaht, esc, thaiFullDate } from '@/lib/print-utils'
+import { getLastEntryDate, setLastEntryDate } from '@/lib/last-entry-date'
 import { PageHeader } from '@/components/shared/page-header'
 import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
@@ -84,19 +85,28 @@ interface UserRequest {
   name: string
 }
 
-const invoiceSchema = z.object({
-  no_doc: z.string().min(1, 'กรุณากรอกเลขที่ใบสำคัญ'),
-  bg_type_id: z.number().min(1, 'กรุณาเลือกประเภทงบ'),
-  rw_type: z.number().min(1, 'กรุณาเลือกประเภทการจ่าย'),
-  p_id: z.number().min(1, 'กรุณาเลือกผู้รับเงิน'),
-  detail: z.string().min(1, 'กรุณากรอกรายละเอียด'),
-  amount: z.number().min(0.01, 'กรุณากรอกจำนวนเงิน'),
-  date_request: z.string().min(1, 'กรุณาเลือกวันที่'),
-  user_request: z.number().min(1, 'กรุณาเลือกผู้ขอเบิก'),
-  order_id: z.number().optional(), // ลิงก์มูลหนี้จากพัสดุที่ตรวจรับแล้ว
-  loan_type: z.number().optional(),
-  loan_start_date: z.string().optional(),
-})
+const invoiceSchema = z
+  .object({
+    no_doc: z.string().min(1, 'กรุณากรอกเลขที่ใบสำคัญ'),
+    bg_type_id: z.number().min(1, 'กรุณาเลือกประเภทงบ'),
+    rw_type: z.number().min(1, 'กรุณาเลือกประเภทการจ่าย'),
+    p_id: z.number().optional(), // ผู้รับเงิน (partner) — บังคับเฉพาะค่าพัสดุ/บริการ
+    detail: z.string().min(1, 'กรุณากรอกรายละเอียด'),
+    amount: z.number().min(0.01, 'กรุณากรอกจำนวนเงิน'),
+    date_request: z.string().min(1, 'กรุณาเลือกวันที่'),
+    user_request: z.number().min(1, 'กรุณาเลือกผู้ขอเบิก'),
+    order_id: z.number().optional(), // ลิงก์มูลหนี้จากพัสดุที่ตรวจรับแล้ว
+    tr_id: z.number().optional(), // ลิงก์ใบขอเบิกค่าเดินทางที่อนุมัติแล้ว
+    la_id: z.number().optional(), // ลิงก์ใบยืมเงินที่อนุมัติแล้ว
+    loan_type: z.number().optional(),
+    loan_start_date: z.string().optional(),
+  })
+  .superRefine((val, ctx) => {
+    // ค่าพัสดุ/บริการ (3) ผู้รับเงินเป็นร้านค้า → บังคับเลือก
+    if (val.rw_type === 3 && (!val.p_id || val.p_id < 1)) {
+      ctx.addIssue({ code: 'custom', path: ['p_id'], message: 'กรุณาเลือกผู้รับเงิน' })
+    }
+  })
 type InvoiceForm = z.infer<typeof invoiceSchema>
 
 // มูลหนี้จากพัสดุที่ตรวจรับแล้ว (พร้อมขอเบิก)
@@ -111,6 +121,26 @@ interface PayableParcel {
   project_id: number
   project_name: string
   insp_date: string | null
+}
+
+// ใบขอเบิกค่าเดินทางที่ ผอ. อนุมัติแล้ว (รอจ่าย)
+interface PayableTravel {
+  tr_id: number
+  requester_name: string
+  purpose: string
+  amount: number
+  bg_type_id: number
+  budget_type_name: string
+}
+// ใบยืมเงินที่ ผอ. อนุมัติแล้ว (รอรับเงิน)
+interface PayableLoan {
+  la_id: number
+  la_no: string
+  borrower_name: string
+  purpose: string
+  amount: number
+  bg_type_id: number
+  budget_type_name: string
 }
 
 const returnSchema = z.object({
@@ -206,6 +236,27 @@ export default function InvoicePage() {
     enabled: scId > 0 && dialogOpen && !editing,
   })
 
+  // ใบขอเบิกค่าเดินทาง + ใบยืมเงิน ที่ ผอ. อนุมัติแล้ว (เชื่อมเป็นต้นเรื่องการจ่าย)
+  const { data: payableTravel } = useQuery({
+    queryKey: ['payable-travel', scId, syId, apiYear, dialogOpen],
+    queryFn: () => apiGet<PayableTravel[]>(`Invoice/loadPayableTravel/${scId}/${syId}/${apiYear}`),
+    enabled: scId > 0 && syId > 0 && !!apiYear && dialogOpen && !editing,
+  })
+  const { data: payableLoans } = useQuery({
+    queryKey: ['payable-loans', scId, syId, apiYear, dialogOpen],
+    queryFn: () => apiGet<PayableLoan[]>(`Invoice/loadPayableLoans/${scId}/${syId}/${apiYear}`),
+    enabled: scId > 0 && syId > 0 && !!apiYear && dialogOpen && !editing,
+  })
+
+  // เลขที่เอกสารถัดไป (preview) — backend ออกให้อัตโนมัติตอนบันทึก
+  const { data: docCounters } = useQuery({
+    queryKey: ['doc-counters', scId, apiYear, dialogOpen],
+    queryFn: () => apiGet<{ data: { formatted_next: string }[] }>(`DocCounter/loadCounters/${scId}/${apiYear}`),
+    enabled: scId > 0 && !!apiYear && dialogOpen && !editing,
+  })
+  const nextDoc = (prefix: string) =>
+    docCounters?.data?.find((c) => c.formatted_next.startsWith(prefix))?.formatted_next
+
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } =
     useForm<InvoiceForm>({
       resolver: zodResolver(invoiceSchema),
@@ -226,7 +277,7 @@ export default function InvoicePage() {
   })
 
   const bgTypeId = watch('bg_type_id')
-  const pId = watch('p_id')
+  const pId = watch('p_id') ?? 0
   const rwType = watch('rw_type')
   const userRequest = watch('user_request')
   const dateRequest = watch('date_request')
@@ -314,8 +365,8 @@ export default function InvoicePage() {
     setEditing(null)
     reset({
       no_doc: '', bg_type_id: 0, rw_type: 0, p_id: 0, detail: '', amount: 0,
-      date_request: new Date().toISOString().substring(0, 10), user_request: 0,
-      order_id: undefined, loan_type: undefined, loan_start_date: '',
+      date_request: getLastEntryDate('pay'), user_request: 0,
+      order_id: 0, tr_id: 0, la_id: 0, loan_type: undefined, loan_start_date: '',
     })
     setDialogOpen(true)
   }
@@ -325,6 +376,8 @@ export default function InvoicePage() {
     const pp = payableList.find((p) => String(p.order_id) === orderId)
     if (!pp) return
     setValue('order_id', pp.order_id)
+    setValue('tr_id', 0)
+    setValue('la_id', 0)
     if (pp.p_id) setValue('p_id', pp.p_id, { shouldValidate: true })
     if (pp.bg_type_id) setValue('bg_type_id', pp.bg_type_id, { shouldValidate: true })
     if (pp.amount) setValue('amount', pp.amount, { shouldValidate: true })
@@ -335,6 +388,36 @@ export default function InvoicePage() {
       { shouldValidate: true },
     )
     toast.success('เติมข้อมูลมูลหนี้จากพัสดุอัตโนมัติแล้ว')
+  }
+
+  // เชื่อมใบขอเบิกค่าเดินทางที่ ผอ. อนุมัติแล้ว → เติมอัตโนมัติ (ผู้รับเป็นบุคคลภายใน)
+  function applyTravel(trId: string) {
+    const t = travelList.find((x) => String(x.tr_id) === trId)
+    if (!t) return
+    setValue('tr_id', t.tr_id)
+    setValue('order_id', 0)
+    setValue('la_id', 0)
+    setValue('p_id', 0)
+    if (t.bg_type_id) setValue('bg_type_id', t.bg_type_id, { shouldValidate: true })
+    if (t.amount) setValue('amount', t.amount, { shouldValidate: true })
+    setValue('rw_type', 2, { shouldValidate: true })
+    setValue('detail', `ค่าใช้จ่ายเดินทางไปราชการ ${t.requester_name}${t.purpose ? ' — ' + t.purpose : ''}`, { shouldValidate: true })
+    toast.success('เติมข้อมูลจากใบขอเบิกค่าเดินทางแล้ว')
+  }
+
+  // เชื่อมใบยืมเงินที่ ผอ. อนุมัติแล้ว → เติมอัตโนมัติ
+  function applyLoan(laId: string) {
+    const l = loanList.find((x) => String(x.la_id) === laId)
+    if (!l) return
+    setValue('la_id', l.la_id)
+    setValue('order_id', 0)
+    setValue('tr_id', 0)
+    setValue('p_id', 0)
+    if (l.bg_type_id) setValue('bg_type_id', l.bg_type_id, { shouldValidate: true })
+    if (l.amount) setValue('amount', l.amount, { shouldValidate: true })
+    setValue('rw_type', 1, { shouldValidate: true })
+    setValue('detail', `จ่ายเงินยืมตามสัญญา ${l.la_no} — ${l.borrower_name}${l.purpose ? ' (' + l.purpose + ')' : ''}`, { shouldValidate: true })
+    toast.success('เติมข้อมูลจากใบยืมเงินแล้ว')
   }
 
   function openEdit(item: InvoiceRow) {
@@ -381,7 +464,7 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
   function openReturn(loan: LoanRow) {
     setReturnTarget(loan)
     resetReturn({
-      loan_returned_date: new Date().toISOString().substring(0, 10),
+      loan_returned_date: getLastEntryDate('pay'),
       loan_return_cash: 0,
       loan_return_voucher_amount: 0,
     })
@@ -400,6 +483,8 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
   const budgetTypeList = Array.isArray(budgetTypes) ? budgetTypes : []
   const userRequestList = Array.isArray(userRequests) ? userRequests : []
   const payableList = Array.isArray(payableParcels) ? payableParcels : []
+  const travelList = Array.isArray(payableTravel) ? payableTravel : []
+  const loanList = Array.isArray(payableLoans) ? payableLoans : []
 
   const columns = useMemo(() => [
     {
@@ -581,15 +666,21 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         title={editing ? 'แก้ไขใบสำคัญจ่าย' : 'สร้างใบสำคัญจ่าย'}
-        onSubmit={handleSubmit((d) => saveMutation.mutate(d))}
+        onSubmit={handleSubmit((d) =>
+          saveMutation.mutate(d, {
+            onSuccess: (res: any) => {
+              if (res?.flag && !editing) setLastEntryDate(d.date_request, 'pay')
+            },
+          }),
+        )}
         loading={saveMutation.isPending}
       >
         <div className="space-y-3">
-          {/* สะพานพัสดุ→การเงิน: เลือกมูลหนี้จากพัสดุที่ตรวจรับแล้ว → เติมอัตโนมัติ */}
-          {!editing && (
+          {/* เชื่อมเอกสารต้นเรื่องที่ ผอ. อนุมัติแล้ว → เติมอัตโนมัติ (ตามประเภทการจ่าย) */}
+          {!editing && (rwType === 0 || rwType === 3) && (
             <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
               <Label className="text-indigo-800 font-semibold">
-                เลือกมูลหนี้จากพัสดุที่ตรวจรับแล้ว
+                เลือกมูลหนี้จากพัสดุที่ตรวจรับแล้ว (ใบจัดซื้อ/จัดจ้าง)
               </Label>
               {payableList.length > 0 ? (
                 <>
@@ -613,6 +704,70 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
               ) : (
                 <p className="text-xs text-indigo-600 mt-1">
                   ยังไม่มีพัสดุที่ตรวจรับแล้วรอตั้งเบิก — รายการจะปรากฏเองเมื่อพัสดุ &quot;ตรวจรับผ่าน + ลงบัญชีวัสดุ&quot; แล้ว
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ค่าเดินทาง → เลือกใบขอเบิกค่าเดินทางที่ ผอ. อนุมัติแล้ว */}
+          {!editing && rwType === 2 && (
+            <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
+              <Label className="text-sky-800 font-semibold">
+                เลือกใบขอเบิกค่าเดินทางที่ ผอ. อนุมัติแล้ว (แบบ 8708)
+              </Label>
+              {travelList.length > 0 ? (
+                <>
+                  <Select onValueChange={applyTravel}>
+                    <SelectTrigger className="mt-1 bg-white">
+                      <SelectValue placeholder={`มี ${travelList.length} ใบรออนุมัติจ่าย — เลือกเพื่อเติมอัตโนมัติ`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {travelList.map((t) => (
+                        <SelectItem key={t.tr_id} value={String(t.tr_id)}>
+                          {t.requester_name} · {fmt(t.amount)} บาท{t.purpose ? ` · ${t.purpose}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-sky-700 mt-1">
+                    ออกเช็ค/เงินสดแล้ว ระบบจะปิดใบขอเบิกค่าเดินทางให้อัตโนมัติ (ลงเป็น บค.)
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-sky-700 mt-1">
+                  ยังไม่มีใบขอเบิกค่าเดินทางที่ ผอ. อนุมัติแล้วรอจ่าย
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* เงินยืม → เลือกใบยืมเงินที่ ผอ. อนุมัติแล้ว */}
+          {!editing && rwType === 1 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <Label className="text-amber-800 font-semibold">
+                เลือกใบยืมเงินที่ ผอ. อนุมัติแล้ว (สัญญายืมเงิน)
+              </Label>
+              {loanList.length > 0 ? (
+                <>
+                  <Select onValueChange={applyLoan}>
+                    <SelectTrigger className="mt-1 bg-white">
+                      <SelectValue placeholder={`มี ${loanList.length} ใบรอรับเงิน — เลือกเพื่อเติมอัตโนมัติ`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {loanList.map((l) => (
+                        <SelectItem key={l.la_id} value={String(l.la_id)}>
+                          {l.la_no} · {l.borrower_name} · {fmt(l.amount)} บาท
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-amber-700 mt-1">
+                    ออกเช็ค/เงินสดแล้ว ระบบจะบันทึกรับเงินยืม (ค้างชำระ) + คำนวณกำหนดส่งใช้ให้อัตโนมัติ
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-amber-700 mt-1">
+                  ยังไม่มีใบยืมเงินที่ ผอ. อนุมัติแล้วรอรับเงิน
                 </p>
               )}
             </div>
@@ -646,7 +801,6 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
                   <SelectItem value="1">เงินยืม</SelectItem>
                   <SelectItem value="2">ค่าเดินทาง</SelectItem>
                   <SelectItem value="3">ค่าพัสดุ/บริการ</SelectItem>
-                  <SelectItem value="4">หัก ณ ที่จ่าย</SelectItem>
                 </SelectContent>
               </Select>
               {errors.rw_type && <p className="text-red-500 text-xs mt-1">{errors.rw_type.message}</p>}
@@ -736,6 +890,13 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
               {errors.date_request && <p className="text-red-500 text-xs mt-1">{errors.date_request.message}</p>}
             </div>
           </div>
+          {!editing && (nextDoc('บจ') || nextDoc('บค')) && (
+            <p className="rounded-md bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700">
+              ระบบจะออกเลขที่เอกสาร + เลขเช็คให้อัตโนมัติเมื่อบันทึก (ไม่ต้องกรอกเอง)
+              {nextDoc('บจ') && <> — จ่ายเช็ค: <b>{nextDoc('บจ')}</b></>}
+              {nextDoc('บค') && <> · จ่ายเงินสด: <b>{nextDoc('บค')}</b></>}
+            </p>
+          )}
         </div>
       </FormDialog>
 
@@ -762,7 +923,15 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
         open={returnDialogOpen}
         onClose={() => { setReturnDialogOpen(false); setReturnTarget(null) }}
         title={`บันทึกการคืนเงิน — ${returnTarget?.no_doc ?? ''}`}
-        onSubmit={() => handleReturn((d) => returnMutation.mutate(d))()}
+        onSubmit={() =>
+          handleReturn((d) =>
+            returnMutation.mutate(d, {
+              onSuccess: (res: any) => {
+                if (res?.flag) setLastEntryDate(d.loan_returned_date, 'pay')
+              },
+            }),
+          )()
+        }
         loading={returnMutation.isPending}
         submitLabel="บันทึกการคืน"
       >

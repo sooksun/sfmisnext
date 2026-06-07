@@ -36,7 +36,7 @@ interface MasterCategory {
 interface IncomeType {
   bg_type_id: number
   budget_type: string
-  estimated_amount: number   // ยอดประมาณการจาก pln_real_budget
+  estimated_amount: number   // ยอดประมาณการแยกตามประเภท (จากการคำนวณรายหัว หน้า 1.5)
 }
 
 interface BudgetDetail {
@@ -120,12 +120,12 @@ export default function BudgetCategoryPage() {
     enabled: addOpen,
   })
 
-  // ── load income types (เฉพาะที่มียอดประมาณการ > 0 จาก pln_real_budget) ──
+  // ── load income types (เฉพาะที่มียอดประมาณการ > 0 — ดึงสดจากการคำนวณรายหัว) ──
   const { data: incomeTypes } = useQuery({
-    queryKey: ['estimated-income-by-type', scId, apiYear],
+    queryKey: ['estimated-income-by-type', scId, syId],
     queryFn: () =>
-      apiGet<IncomeType[]>(`Budget/loadEstimatedIncomeByType/${scId}/${apiYear}`),
-    enabled: editOpen && scId > 0 && !!apiYear,
+      apiGet<IncomeType[]>(`Budget/loadEstimatedIncomeByType/${scId}/${syId}`),
+    enabled: editOpen && scId > 0 && syId > 0,
   })
 
   // ── open edit dialog → load existing details ──────────────────────────────
@@ -258,7 +258,9 @@ export default function BudgetCategoryPage() {
         {/* คำเตือนถ้ายังไม่มีประมาณการ */}
         {!hasEstimate && !checkLoading && (
           <div className="bg-yellow-50 border border-yellow-300 rounded p-4 text-sm text-yellow-800">
-            ยังไม่มีข้อมูลประมาณการงบประมาณปีนี้ กรุณาไปตั้งค่าที่หน้า <strong>ประมาณการปีการศึกษา</strong> ก่อน
+            ยังไม่มียอดประมาณการงบประมาณปีนี้ — ยอดนี้คำนวณสดจากหน้า <strong>คำนวณงบจากรายหัว</strong>{' '}
+            กรุณาตรวจสอบ <strong>ชั้นที่เปิดสอน</strong> · <strong>ประเภทเงินรายหัว</strong> และ{' '}
+            <strong>อัตราเงินต่อหัว</strong> ให้ครบก่อน
           </div>
         )}
 

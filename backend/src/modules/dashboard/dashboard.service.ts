@@ -10,6 +10,7 @@ import { GovRevenueService } from '../gov-revenue/gov-revenue.service';
 import { RegisterMoneyTypeService } from '../register-money-type/register-money-type.service';
 import { LoanAgreementService } from '../loan-agreement/loan-agreement.service';
 import { ReportDailyBalanceService } from '../report-daily-balance/report-daily-balance.service';
+import { CashKeepingService } from '../cash-keeping/cash-keeping.service';
 
 export interface DashboardAlert {
   category: 'interest' | 'tax' | 'loan' | 'cash';
@@ -36,6 +37,7 @@ export class DashboardService {
     private readonly registerMoneyTypeService: RegisterMoneyTypeService,
     private readonly loanAgreementService: LoanAgreementService,
     private readonly reportDailyBalanceService: ReportDailyBalanceService,
+    private readonly cashKeepingService: CashKeepingService,
   ) {}
 
   /**
@@ -46,7 +48,7 @@ export class DashboardService {
    *  - เงินสดคงเหลือเกินวงเงินสำรอง
    */
   async loadAlerts(scId: number, syId: number, budgetYear: string) {
-    const [interest, tax, loans, cash] = await Promise.all([
+    const [interest, tax, loans, cash, cashDeposit] = await Promise.all([
       this.govRevenueService
         .interestReminder(scId, syId, budgetYear)
         .catch(() => null),
@@ -57,6 +59,7 @@ export class DashboardService {
         .dueReminder(scId, syId, budgetYear)
         .catch(() => null),
       this.reportDailyBalanceService.loadCashLimitCheck(scId).catch(() => null),
+      this.cashKeepingService.depositReminder(scId, syId).catch(() => null),
     ]);
 
     const alerts: DashboardAlert[] = [];
@@ -111,6 +114,28 @@ export class DashboardService {
         title: 'เงินสดเกินวงเงินสำรองจ่าย',
         message: `เงินสดคงเหลือ ${baht(cash.cash_balance)} บาท เกินวงเงิน ${baht(cash.limit_amount)} บาท ควรนำฝากธนาคาร`,
         link: '/sfmis/financial-report/daily-balance',
+      });
+    }
+
+    // นำเงินสดฝากธนาคารตามระเบียบ 2562 (ครบ/ใกล้ครบกำหนด)
+    if (cashDeposit?.overdue && cashDeposit.overdue > 0) {
+      alerts.push({
+        category: 'cash',
+        level: 'urgent',
+        title: 'เลยกำหนดนำเงินสดฝากธนาคาร',
+        message: `มีเงินสดเก็บรักษา ${cashDeposit.overdue} รายการ รวม ${baht(cashDeposit.total_overdue)} บาท เลยกำหนดนำฝากตามระเบียบ — ต้องนำฝากโดยด่วน`,
+        link: '/sfmis/financial-report/unified-register',
+      });
+    }
+    const dueSoonCount =
+      (cashDeposit?.count ?? 0) - (cashDeposit?.overdue ?? 0);
+    if (dueSoonCount > 0) {
+      alerts.push({
+        category: 'cash',
+        level: 'warning',
+        title: 'ใกล้กำหนดนำเงินสดฝากธนาคาร',
+        message: `มีเงินสดเก็บรักษา ${dueSoonCount} รายการที่ใกล้ครบกำหนดนำฝาก (เกิน 10,000 บาท→วันทำการถัดไป, ไม่เกิน→ภายใน 3 วันทำการ)`,
+        link: '/sfmis/financial-report/unified-register',
       });
     }
 

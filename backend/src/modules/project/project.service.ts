@@ -5,12 +5,18 @@ import { Project } from './entities/project.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { type JwtUser } from '../../common/utils/tenant-guard';
+import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
+import { SchoolYear } from '../school-year/entities/school-year.entity';
 
 @Injectable()
 export class ProjectService {
   constructor(
     @InjectRepository(Project)
     private readonly projectRepository: Repository<Project>,
+    @InjectRepository(ParcelOrder)
+    private readonly parcelOrderRepository: Repository<ParcelOrder>,
+    @InjectRepository(SchoolYear)
+    private readonly schoolYearRepository: Repository<SchoolYear>,
   ) {}
 
   async loadProject(
@@ -88,7 +94,31 @@ export class ProjectService {
     project.projStatus = 0;
     project.del = 0;
 
-    await this.projectRepository.save(project);
+    const saved = await this.projectRepository.save(project);
+
+    // สร้าง parcel_order คู่กัน → ส่งเข้า workflow อนุมัติ (1.3 อนุมัติโครงการ)
+    // status=1 (ขอ) เพื่อให้หัวหน้าฝ่ายแผนงานเริ่มตรวจสอบได้
+    let acadYear: number | null = null;
+    if (payload.sy_id) {
+      const sy = await this.schoolYearRepository.findOne({
+        where: { syId: payload.sy_id },
+      });
+      acadYear = sy?.budgetYear ?? sy?.syYear ?? null;
+    }
+    const order = this.parcelOrderRepository.create({
+      projectId: saved.projId,
+      scId: payload.sc_id ?? null,
+      adminId: payload.up_by ?? null,
+      orderDate: new Date(),
+      orderStatus: 1,
+      acadYear,
+      details: payload.proj_name,
+      budgets: payload.proj_budget || 0,
+      upBy: payload.up_by ?? 0,
+      del: 0,
+    });
+    await this.parcelOrderRepository.save(order);
+
     return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
   }
 
@@ -120,6 +150,20 @@ export class ProjectService {
 
     project.updateDate = new Date();
     await this.projectRepository.save(project);
+
+    // sync รายละเอียด/วงเงิน ไปยัง parcel_order ที่ผูกกัน (ถ้ายังไม่จัดซื้อจริง)
+    const orderPatch: Partial<ParcelOrder> = {};
+    if (payload.proj_name !== undefined) orderPatch.details = payload.proj_name;
+    if (payload.proj_budget !== undefined)
+      orderPatch.budgets = payload.proj_budget;
+    if (Object.keys(orderPatch).length > 0) {
+      orderPatch.updateDate = new Date();
+      await this.parcelOrderRepository.update(
+        { projectId: project.projId, del: 0 },
+        orderPatch,
+      );
+    }
+
     return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };
   }
 
@@ -140,6 +184,13 @@ export class ProjectService {
     project.del = 1;
     project.updateDate = new Date();
     await this.projectRepository.save(project);
+
+    // soft-delete parcel_order ที่ผูกกับโครงการนี้ด้วย (ถ้ายังไม่ถึงขั้นจัดซื้อจริง)
+    await this.parcelOrderRepository.update(
+      { projectId: projId, del: 0 },
+      { del: 1, updateDate: new Date() },
+    );
+
     return { flag: true, ms: 'ลบข้อมูลสำเร็จ' };
   }
 

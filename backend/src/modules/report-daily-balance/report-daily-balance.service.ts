@@ -125,11 +125,12 @@ export class ReportDailyBalanceService {
 
     // ── Batch-load related data แทน N+1 queries ────────────────────
     // รวบรวม IDs ที่ต้องการจาก transactions ทั้งหมด
+    // (รวม previousTransactions ด้วย เพื่อ lookup receive_money_type สำหรับยอดยกมา)
     const prIds = new Set<number>();
     const prdIds = new Set<number>();
     const rwIds = new Set<number>();
 
-    for (const trans of transactions) {
+    for (const trans of [...previousTransactions, ...transactions]) {
       if (trans.type === 1 && trans.prId > 0) {
         prIds.add(trans.prId);
         if (trans.prdId > 0) prdIds.add(trans.prdId);
@@ -254,13 +255,43 @@ export class ReportDailyBalanceService {
       else bump(cashByType, ob.moneyTypeId, v); // legacy ไม่ระบุ → เงินสด
     });
 
-    // FT ทั้งหมด ≤ สิ้นวันที่เลือก (ยกมา + วันนี้) แยกตาม money_channel
+    // FT ทั้งหมด ≤ สิ้นวันที่เลือก (ยกมา + วันนี้) — กฎ cash/bank ตามคู่มือ:
+    //   • register_kind=lend       → ธนาคาร−
+    //   • register_kind=clear_voucher → ไม่กระทบเงิน (ลดลูกหนี้/ลงใบสำคัญ)
+    //   • register_kind=return_cash → เงินสด+
+    //   • register_kind=deposit (type=-1 cash leg) → เงินสด− ; (type=+1 bank leg) → ธนาคาร+
+    //   • รับเงินปกติ (type=+1) → เข้าเงินสดเฉพาะใบเสร็จเงินสด (receive_money_type=2)
+    //     ส่วนอื่นเข้าธนาคาร (กันยอดเงินสดติดลบ)
+    //   • จ่ายใบสำคัญปกติ (type=-1) → ตัดจากธนาคารเสมอ (ช่องเงินสดสงวนไว้สำหรับวงจรเงินยืม-คืน-นำฝาก)
     [...previousTransactions, ...transactions].forEach((t) => {
-      const sign = t.type === 1 ? 1 : t.type === -1 ? -1 : 0;
-      if (!sign) return;
-      const v = Number(t.amount) * sign;
-      if (t.moneyChannel === 2) bump(bankByType, t.bgTypeId, v);
-      else bump(cashByType, t.bgTypeId, v); // 0/1 = เงินสด
+      const amt = Number(t.amount) || 0;
+      const kind = t.registerKind ?? 'normal';
+
+      if (kind === 'lend') {
+        bump(bankByType, t.bgTypeId, -amt);
+        return;
+      }
+      if (kind === 'clear_voucher') {
+        return;
+      }
+      if (kind === 'return_cash') {
+        bump(cashByType, t.bgTypeId, amt);
+        return;
+      }
+      if (kind === 'deposit') {
+        if (t.type === 1) bump(bankByType, t.bgTypeId, amt);
+        else if (t.type === -1) bump(cashByType, t.bgTypeId, -amt);
+        return;
+      }
+
+      // normal
+      if (t.type === 1) {
+        const recv = t.prId > 0 ? receiveMap.get(t.prId) : undefined;
+        if (recv?.receiveMoneyType === 2) bump(cashByType, t.bgTypeId, amt);
+        else bump(bankByType, t.bgTypeId, amt);
+      } else if (t.type === -1) {
+        bump(bankByType, t.bgTypeId, -amt);
+      }
     });
 
     // เงินฝากส่วนราชการ (สพป.) จาก smp_deposit_entry ≤ วันที่เลือก

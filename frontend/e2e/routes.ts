@@ -17,7 +17,6 @@ export const APP_ROUTES = [
   '/sfmis/plan-menu/budget-transfer',
   '/sfmis/plan-menu/plan-trace',
   '/sfmis/plan-menu/project-followup',
-  '/sfmis/plan-menu/sar-report',
   '/sfmis/receive-menu/receive',
   '/sfmis/pay-menu/invoice',
   '/sfmis/confirm-invoice',

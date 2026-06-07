@@ -8,6 +8,7 @@ import { MasterClassroom } from './entities/master-classroom.entity';
 import { MasterClassroomBudget } from './entities/master-classroom-budget.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { BudgetIncomeTypeSchool } from '../bank/entities/budget-income-type-school.entity';
+import { SchoolClassroom } from './entities/school-classroom.entity';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { BudgetIncomeTypeSchool } from '../bank/entities/budget-income-type-scho
       MasterClassroomBudget,
       BudgetIncomeType,
       BudgetIncomeTypeSchool,
+      SchoolClassroom,
     ]),
   ],
   controllers: [StudentController],

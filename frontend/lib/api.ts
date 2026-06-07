@@ -99,6 +99,16 @@ async function handleResponse<T>(
     throw new Error('ไม่มีสิทธิ์เข้าถึงข้อมูลนี้')
   }
 
+  // 4xx/5xx อื่น ๆ — พยายามดึง message จาก body (NestJS BadRequestException ส่ง {message, statusCode})
+  try {
+    const data = await res.clone().json()
+    const msg = Array.isArray(data?.message)
+      ? data.message.join(', ')
+      : data?.message || data?.ms
+    if (msg) throw new Error(String(msg))
+  } catch (e) {
+    if (e instanceof Error && e.message && !e.message.startsWith('JSON')) throw e
+  }
   throw new Error(`API error: ${res.status}`)
 }
 

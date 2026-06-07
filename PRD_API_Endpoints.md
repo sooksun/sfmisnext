@@ -7,6 +7,10 @@
 
 ---
 
+> ⚠️ **หมายเหตุสถานะจริง (มิ.ย. 2569):** เอกสารนี้เป็น **API reference เชิงออกแบบของ 21 โมดูล core** ตอนเริ่มโปรเจกต์ Repo จริงขยายเป็น **68 โมดูล / 200+ endpoints** (เพิ่ม loan-agreement, travel-reimbursement, bank-reconciliation, regulatory-config ฯลฯ) ที่ **ไม่ได้ระบุในไฟล์นี้** — endpoint จริงดูได้จาก `*.controller.ts` ในแต่ละโมดูล (`backend/src/modules/`). path params/route บางจุดอาจต่างจากที่ร่างไว้ ให้ยึดโค้ดเป็นหลัก แหล่งสถานะรวม: `plan.md` + `CLAUDE.md`
+
+---
+
 ## Table of Contents
 
 1. [API Overview](#api-overview)

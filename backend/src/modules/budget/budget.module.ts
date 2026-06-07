@@ -9,6 +9,7 @@ import { MasterBudgetCategory } from './entities/master-budget-category.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { PlnRealBudget } from '../policy/entities/pln-real-budget.entity';
 import { TbExpenses } from './entities/tb-expenses.entity';
+import { StudentModule } from '../student/student.module';
 
 @Module({
   imports: [
@@ -21,6 +22,8 @@ import { TbExpenses } from './entities/tb-expenses.entity';
       PlnRealBudget,
       TbExpenses,
     ]),
+    // ดึงยอดประมาณการสดจากการคำนวณรายหัว (StudentService.getPerheadTotal)
+    StudentModule,
   ],
   controllers: [BudgetController],
   providers: [BudgetService],

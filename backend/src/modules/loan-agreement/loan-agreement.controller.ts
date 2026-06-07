@@ -31,6 +31,50 @@ export class LoanAgreementController {
     return this.loanAgreementService.addLoanAgreement(dto);
   }
 
+  @Post('verifyLoan')
+  @HttpCode(HttpStatus.OK)
+  verifyLoan(
+    @Body()
+    dto: {
+      la_id: number;
+      verify_by: number;
+      verify_name?: string;
+      verify_date: string;
+      up_by?: number;
+    },
+  ) {
+    return this.loanAgreementService.verifyLoan(dto);
+  }
+
+  @Post('approveLoan')
+  @HttpCode(HttpStatus.OK)
+  approveLoan(
+    @Body()
+    dto: {
+      la_id: number;
+      approve_by: number;
+      approve_name?: string;
+      approve_date: string;
+      approve_amount?: number;
+      up_by?: number;
+    },
+  ) {
+    return this.loanAgreementService.approveLoan(dto);
+  }
+
+  @Post('disburseLoan')
+  @HttpCode(HttpStatus.OK)
+  disburseLoan(
+    @Body()
+    dto: {
+      la_id: number;
+      receipt_date: string;
+      up_by?: number;
+    },
+  ) {
+    return this.loanAgreementService.disburseLoan(dto);
+  }
+
   @Post('returnLoan')
   @HttpCode(HttpStatus.OK)
   returnLoan(

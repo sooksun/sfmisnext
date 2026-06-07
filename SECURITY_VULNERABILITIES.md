@@ -12,8 +12,8 @@
 | Stack | Total | 🔴 Critical | 🟠 High | 🟡 Moderate | 🟢 Low |
 |---|---:|---:|---:|---:|---:|
 | Backend (NestJS) | 28 | 1 | 11 | 14 | 2 |
-| Frontend (Next.js) | 3 | 0 | 2 | 1 | 0 |
-| **รวม** | **31** | **1** | **13** | **15** | **2** |
+| Frontend (Next.js) | 1 | 0 | 1 | 0 | 0 |
+| **รวม** | **29** | **1** | **12** | **15** | **2** |
 
 > **หมายเหตุ:** vulnerability ส่วนใหญ่ใน backend อยู่ใน devDependencies (NestJS CLI tooling, build tools) — **ไม่ส่งผลต่อ production runtime** เพราะ deploy ใช้ `npm ci --omit=dev`
 
@@ -23,20 +23,20 @@
 
 ### Frontend
 
-#### 1. 🟠 HIGH — `next` 16.2.2 (DoS)
+#### 1. ~~🟠 HIGH — `next` 16.2.2 (DoS)~~ → **แพตช์แล้ว (2026-05-12)**
 - **Advisory:** GHSA-q4gf-8mx6-v5v3 — Denial of Service with Server Components
 - **CVSS:** 7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H)
 - **Range:** `>=16.0.0-beta.0 <16.2.3`
-- **Fix:** อัปเกรด `next` → 16.2.4 (semver-compatible, ไม่ใช่ breaking change)
-- **คำสั่ง:**
+- **Fix ที่ใช้ใน repo:** อัปเกรด `next` → **16.2.6** (ล่าสุดในเลน 16.2.x ณ วันที่แพตช์) และรัน `npm audit` ติดตาม
+- **คำสั่งอ้างอิง:**
   ```bash
-  cd frontend && npm install next@16.2.4
+  cd frontend && npm install next@16.2.6
   ```
 
-#### 2. 🟡 MODERATE — `postcss` <8.5.10 (XSS)
+#### 2. ~~🟡 MODERATE — `postcss` <8.5.10 (XSS)~~ → **แพตช์แล้ว (2026-05-12)**
 - **Advisory:** GHSA-qx2v-qp2m-jg93 — XSS via Unescaped `</style>` in CSS Stringify
 - **CVSS:** 6.1
-- **Fix:** แก้ไปด้วยกันเมื่ออัปเกรด `next` → 16.2.4 (postcss เป็น transitive dep ของ next)
+- **หมายเหตุ:** `next@16.2.6` ยัง bundle `postcss@8.4.x` — ใช้ **`overrides` ใน `frontend/package.json`** บังคับ `postcss@^8.5.10` (resolve เป็น 8.5.14) และ `fast-uri@^3.1.2` เพื่อปิดช่องโหว่ transitive ที่ `npm audit` รายงาน
 
 #### 3. 🟠 HIGH — `xlsx` 0.18.5 ⚠️ **ไม่มี fix จาก npm**
 - **Advisories:**

@@ -19,6 +19,7 @@ import { useAppContext } from '@/hooks/use-app-context'
 import { Printer } from 'lucide-react'
 import { openPrintWindow } from '@/lib/print-utils'
 import { officialDailyBalanceForm } from '@/lib/official-forms'
+import { buildDailyBalanceGroups } from '@/lib/daily-balance-groups'
 
 interface DailyBalanceRow {
   id: number
@@ -218,13 +219,16 @@ export default function DailyBalancePage() {
     const body = officialDailyBalanceForm({
       scName,
       date: selectedDate,
-      rows: rows.map((r) => ({
-        name: r.budget_type_name ?? r.budget_type ?? '-',
-        cash: cashOf(r),
-        bank: bankOf(r),
-        smp: smpOf(r),
-        total: totalOf(r),
-      })),
+      rows: buildDailyBalanceGroups(
+        rows.map((r) => ({
+          bgTypeId: r.bg_type_id,
+          name: r.budget_type_name ?? r.budget_type ?? '-',
+          cash: cashOf(r),
+          bank: bankOf(r),
+          smp: smpOf(r),
+          total: totalOf(r),
+        })),
+      ),
       totalCash,
       totalBank,
       totalSmp,

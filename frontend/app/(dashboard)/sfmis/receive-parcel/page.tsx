@@ -2,7 +2,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Trash2, Eye } from 'lucide-react'
+import { Trash2, Eye, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button'
 import { apiGet, apiPost } from '@/lib/api'
 import { getThaiDateTime, fmtDateTH } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
+import { openPrintWindow } from '@/lib/print-utils'
+import { receiveParcelForm, type OrderPrintData } from '@/lib/official-procurement-forms'
 
 interface ReceiveParcel {
   receive_id: number
@@ -60,11 +62,42 @@ export default function ReceiveParcelPage() {
 
   const rows = Array.isArray(data) ? data : []
 
+  // พิมพ์ใบรับพัสดุ (pdf16) — ใช้ข้อมูลจาก loadOrderForPrint ของคำสั่งซื้อ
+  async function printReceive(item: ReceiveParcel) {
+    try {
+      const d = await apiGet<OrderPrintData>(
+        `Project_approve/loadOrderForPrint/${item.order_id}`,
+      )
+      if (!d) {
+        toast.error('ไม่พบข้อมูลคำสั่งซื้อ')
+        return
+      }
+      const { title, body } = receiveParcelForm({
+        scName: d.school_name,
+        receiveNo: String(item.receive_id),
+        receiveDate: item.receive_date,
+        partnerName: d.partner?.p_name,
+        rows: d.items.map((it) => ({ supp_name: it.supp_name, qty: it.pc_total })),
+      })
+      openPrintWindow({ title, body })
+    } catch {
+      toast.error('พิมพ์ใบรับพัสดุไม่สำเร็จ')
+    }
+  }
+
   const columns = useMemo(() => [
     {
       header: 'จัดการ',
       render: (item: ReceiveParcel) => (
         <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => printReceive(item)}
+            title="พิมพ์ใบรับพัสดุ"
+          >
+            <Printer className="h-3 w-3" />
+          </Button>
           <Button
             size="sm"
             variant="destructive"
@@ -75,7 +108,7 @@ export default function ReceiveParcelPage() {
           </Button>
         </div>
       ),
-      headerClassName: 'w-16',
+      headerClassName: 'w-20',
     },
     { header: 'โครงการ', key: 'project_name' as keyof ReceiveParcel },
     { header: 'วันที่รับ', render: (item: ReceiveParcel) => <span>{fmtDateTH(item.receive_date)}</span> },

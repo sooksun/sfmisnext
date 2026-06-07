@@ -19,8 +19,8 @@ const sizeMap = {
   sm: 'max-w-sm',
   md: 'max-w-md',
   lg: 'max-w-lg',
-  xl: 'max-w-2xl',
-  '2xl': 'max-w-3xl',
+  xl: 'max-w-3xl',
+  '2xl': 'max-w-4xl',
 }
 
 export function FormDialog({
@@ -35,13 +35,18 @@ export function FormDialog({
 }: FormDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className={cn('w-full', sizeMap[size])}>
-        <DialogHeader>
+      <DialogContent
+        className={cn(
+          'flex max-h-[90vh] w-[95vw] flex-col gap-0 p-0',
+          sizeMap[size],
+        )}
+      >
+        <DialogHeader className="shrink-0 border-b px-6 pt-6 pb-3">
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <div className="py-2">{children}</div>
+        <div className="flex-1 overflow-y-auto px-6 py-3">{children}</div>
         {onSubmit && (
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t px-6 py-3">
             <Button variant="outline" onClick={onClose} disabled={loading}>
               ปิด
             </Button>

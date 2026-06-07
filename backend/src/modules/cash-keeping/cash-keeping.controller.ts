@@ -23,6 +23,16 @@ export class CashKeepingController {
     return this.cashKeepingService.loadRecords(scId, syId);
   }
 
+  /** เตือนนำเงินสดฝากธนาคารตามระเบียบ 2562 (เกิน 10,000→1 วันทำการ, ไม่เกิน→3 วันทำการ) */
+  @Get('depositReminder/:sc_id/:sy_id')
+  @HttpCode(HttpStatus.OK)
+  depositReminder(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('sy_id', ParseIntPipe) syId: number,
+  ) {
+    return this.cashKeepingService.depositReminder(scId, syId);
+  }
+
   @Post('addRecord')
   @HttpCode(HttpStatus.OK)
   addRecord(

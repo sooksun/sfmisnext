@@ -2,18 +2,22 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AuditCommitteeService } from './audit-committee.service';
 import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
+import { Project } from '../project/entities/project.entity';
 
 describe('AuditCommitteeService', () => {
   let service: AuditCommitteeService;
   let repo: jest.Mocked<any>;
+  let projectRepo: jest.Mocked<any>;
 
   beforeEach(async () => {
     repo = { find: jest.fn(), findOne: jest.fn(), save: jest.fn() };
+    projectRepo = { find: jest.fn().mockResolvedValue([]) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuditCommitteeService,
         { provide: getRepositoryToken(ParcelOrder), useValue: repo },
+        { provide: getRepositoryToken(Project), useValue: projectRepo },
       ],
     }).compile();
 
@@ -114,6 +118,17 @@ describe('AuditCommitteeService', () => {
       expect(row.committee2).toBe(2);
       expect(row.committee3).toBe(3);
       expect(row.budgets).toBe(5000);
+    });
+
+    it('เติม project_name (join pln_project) และ order_name (= details)', async () => {
+      repo.find.mockResolvedValue([
+        { orderId: 1, projectId: 2, scId: 5, details: 'ซื้อกระดาษ' },
+      ]);
+      projectRepo.find.mockResolvedValue([{ projId: 2, projName: 'โครงการพัฒนา' }]);
+
+      const result = await service.loadAuditCommitteeStatus(5, 3);
+      expect(result.data[0].project_name).toBe('โครงการพัฒนา');
+      expect(result.data[0].order_name).toBe('ซื้อกระดาษ');
     });
   });
 

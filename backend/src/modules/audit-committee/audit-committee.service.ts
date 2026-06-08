@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
+import { Project } from '../project/entities/project.entity';
 import { UpdateSetCommitteeDto } from './dto/update-set-committee.dto';
 
 @Injectable()
@@ -11,25 +12,37 @@ export class AuditCommitteeService {
   constructor(
     @InjectRepository(ParcelOrder)
     private readonly parcelOrderRepository: Repository<ParcelOrder>,
+    @InjectRepository(Project)
+    private readonly projectRepository: Repository<Project>,
   ) {}
 
   async loadAuditCommitteeStatus(scId: number, _yearId: number) {
-    // Load parcel orders that need committee setup (order_status = 6 or related)
-    // Also include orders that might have been set but need review
+    // โหลดคำสั่งซื้อของโรงเรียนที่ยังไม่ถูกยกเลิก เพื่อแต่งตั้งคณะกรรมการตรวจรับ
     const orders = await this.parcelOrderRepository.find({
       where: {
         scId,
         del: 0,
-        // Filter by year if needed - might need to join with school_year or project
-        // For now, load all orders that are in committee setup stage
       },
       order: { orderId: 'DESC' },
     });
 
-    // Filter by year if yearId is provided
-    // This might need to join with project or school_year table
-    // For now, return all orders
+    // ดึงชื่อโครงการมาแสดง (join pln_project ด้วย project_id)
+    const projectIds = [
+      ...new Set(
+        orders.map((o) => o.projectId).filter((x): x is number => !!x),
+      ),
+    ];
+    const projects = projectIds.length
+      ? await this.projectRepository.find({
+          where: { projId: In(projectIds) },
+        })
+      : [];
+    const projName = (id: number | null) =>
+      projects.find((p) => p.projId === id)?.projName ?? '';
+
     const formattedData = orders.map((order) => ({
+      project_name: projName(order.projectId),
+      order_name: order.details ?? '',
       order_id: order.orderId,
       project_id: order.projectId,
       project_type: order.projectType,

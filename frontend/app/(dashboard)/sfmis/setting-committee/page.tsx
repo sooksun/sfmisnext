@@ -82,7 +82,10 @@ export default function SettingCommitteePage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['audit-committee', scId, apiYear],
-    queryFn: () => apiGet<CommitteeOrder[]>(`Audit_committee/loadAuditCommitteeStatus/${scId}/${apiYear}`),
+    queryFn: () =>
+      apiGet<{ data: CommitteeOrder[]; count: number }>(
+        `Audit_committee/loadAuditCommitteeStatus/${scId}/${apiYear}`,
+      ),
     enabled: scId > 0 && apiYear !== '',
   })
 
@@ -173,7 +176,7 @@ export default function SettingCommitteePage() {
     setDialogOpen(true)
   }
 
-  const rows = Array.isArray(data) ? data : []
+  const rows = data?.data ?? []
 
   const columns = [
     {

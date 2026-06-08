@@ -17,6 +17,7 @@ import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { PlnProcurementPlanItem } from '../procurement-plan/entities/pln-procurement-plan-item.entity';
 import { PlnProcurementPlan } from '../procurement-plan/entities/pln-procurement-plan.entity';
 import { Supplies } from '../supplie/entities/supplies.entity';
+import { Unit } from '../general-db/entities/unit.entity';
 import { Project } from '../project/entities/project.entity';
 import { School } from '../school/entities/school.entity';
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
@@ -46,6 +47,8 @@ export class ProjectApproveService {
     private readonly planRepository: Repository<PlnProcurementPlan>,
     @InjectRepository(Supplies)
     private readonly suppliesRepository: Repository<Supplies>,
+    @InjectRepository(Unit)
+    private readonly unitRepository: Repository<Unit>,
     @InjectRepository(Project)
     private readonly projectRepository: Repository<Project>,
     @InjectRepository(School)
@@ -230,12 +233,20 @@ export class ProjectApproveService {
       : [];
     const suppName = (id: number | null) =>
       supplies.find((s) => s.suppId === id)?.suppName ?? '';
-    const items = details.map((d) => ({
-      pc_id: d.pcId,
-      supp_id: d.suppId,
-      supp_name: suppName(d.suppId),
-      pc_total: d.pcTotal ?? 0,
-    }));
+    const suppPrice = (id: number | null) =>
+      Number(supplies.find((s) => s.suppId === id)?.suppPrice ?? 0) || 0;
+    const items = details.map((d) => {
+      const qty = Number(d.pcTotal ?? 0) || 0;
+      const price = suppPrice(d.suppId);
+      return {
+        pc_id: d.pcId,
+        supp_id: d.suppId,
+        supp_name: suppName(d.suppId),
+        pc_total: qty,
+        supp_price: price,
+        amount: Math.round(price * qty * 100) / 100,
+      };
+    });
 
     // คณะกรรมการ (committee1-3 = admin_id) → ชื่อ
     const committeeIds = [order.committee1, order.committee2, order.committee3]
@@ -248,10 +259,12 @@ export class ProjectApproveService {
       (id) => admins.find((a) => a.adminId === id)?.name ?? '',
     );
 
-    // ผู้ขาย/ผู้รับจ้าง (order.suppliers = p_id)
-    const partner = order.suppliers
+    // ผู้ขาย/ผู้รับจ้าง — หน้าตั้งกรรมการตรวจรับบันทึกร้านค้าไว้ที่ order.pId
+    // ส่วน order.suppliers เป็นช่องเก่า → อ่าน pId ก่อน แล้ว fallback suppliers
+    const partnerId = Number(order.pId || order.suppliers || 0);
+    const partner = partnerId
       ? await this.partnerRepository.findOne({
-          where: { pId: Number(order.suppliers), del: 0 },
+          where: { pId: partnerId, del: 0 },
         })
       : null;
 
@@ -262,6 +275,16 @@ export class ProjectApproveService {
         })
       : null;
     const school = await this.schoolRepository.findOne({ where: { scId } });
+    const school_address = school
+      ? [school.add1, school.add2, school.tumbol]
+          .filter((x) => x && String(x).trim())
+          .join(' ')
+      : '';
+
+    // ผู้อำนวยการ (admin type 2) — ใช้ลงนามท้ายเอกสาร
+    const director = await this.adminRepository.findOne({
+      where: { scId, type: 2, del: 0 },
+    });
 
     return {
       order,
@@ -270,6 +293,9 @@ export class ProjectApproveService {
       partner: partner ? { p_id: partner.pId, p_name: partner.pName } : null,
       project_name: project?.projName ?? order.details ?? '',
       school_name: school?.scName ?? '',
+      school_address,
+      school_tel: school?.tel ?? '',
+      director_name: director?.name ?? '',
     };
   }
 
@@ -708,6 +734,147 @@ export class ProjectApproveService {
     });
     await this.parcelDetailRepository.save(detail);
     return { flag: true };
+  }
+
+  /**
+   * นำเข้ารายการพัสดุ/บริการของคำสั่งซื้อจากไฟล์ Excel (frontend แปลงเป็น array แล้ว)
+   * - จับคู่พัสดุจากคลังกลางด้วยรหัส (supp_no) ก่อน → ถ้าไม่พบใช้ชื่อ (supp_name)
+   * - ถ้ายังไม่พบ → สร้างพัสดุใหม่อัตโนมัติ (และสร้างหน่วยนับใหม่ถ้าจำเป็น)
+   * - แก้ไขได้เฉพาะคำสั่งซื้อที่ยังไม่เข้าสายอนุมัติ (สถานะ 0–1)
+   */
+  async importParcelDetails(
+    dto: {
+      order_id: number;
+      up_by?: number;
+      items: Array<{
+        supp_no?: string;
+        supp_name: string;
+        qty: number;
+        price?: number;
+        unit?: string;
+      }>;
+    },
+    scId: number,
+  ) {
+    const order = await this.parcelOrderRepository.findOne({
+      where: { orderId: dto.order_id, scId, del: 0 },
+    });
+    if (!order) return { flag: false, ms: 'ไม่พบคำสั่งซื้อ' };
+    if (!ProjectApproveService.EDITABLE_STATUSES.includes(order.orderStatus)) {
+      return {
+        flag: false,
+        ms: 'รายการนี้เข้าสู่ขั้นอนุมัติแล้ว ไม่สามารถนำเข้าได้',
+      };
+    }
+    if (!Array.isArray(dto.items) || dto.items.length === 0) {
+      return { flag: false, ms: 'ไม่พบรายการในไฟล์' };
+    }
+
+    // โหลด master ทั้งหมดของโรงเรียนไว้จับคู่ในหน่วยความจำ
+    const supplies = await this.suppliesRepository.find({
+      where: { scId, del: 0 },
+    });
+    const units = await this.unitRepository.find({
+      where: { scId, uStatus: 1 },
+    });
+
+    const norm = (v: unknown) => String(v ?? '').trim();
+    const findSupplie = (no: string, name: string) => {
+      const code = norm(no);
+      const n = norm(name);
+      return supplies.find(
+        (s) =>
+          (code && norm(s.suppNo) === code) || (n && norm(s.suppName) === n),
+      );
+    };
+    const findUnit = (name: string) => {
+      const n = norm(name);
+      return n ? units.find((u) => norm(u.unName) === n) : undefined;
+    };
+
+    let added = 0;
+    let createdSupplies = 0;
+    let createdUnits = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < dto.items.length; i++) {
+      const row = dto.items[i] || ({} as (typeof dto.items)[number]);
+      const rowNo = i + 1;
+      const name = norm(row.supp_name);
+      const qty = Number(row.qty);
+
+      if (!name) {
+        errors.push(`แถวที่ ${rowNo}: ไม่มีชื่อพัสดุ/บริการ`);
+        continue;
+      }
+      if (!Number.isFinite(qty) || qty <= 0) {
+        errors.push(`แถวที่ ${rowNo} (${name}): จำนวนไม่ถูกต้อง`);
+        continue;
+      }
+
+      let supplie = findSupplie(row.supp_no ?? '', name);
+      if (!supplie) {
+        // หาหน่วยนับ → ถ้าไม่มีให้สร้างใหม่
+        let unId = 0;
+        const unitName = norm(row.unit);
+        if (unitName) {
+          let unit = findUnit(unitName);
+          if (!unit) {
+            unit = await this.unitRepository.save(
+              this.unitRepository.create({
+                unName: unitName,
+                scId,
+                uStatus: 1,
+                upBy: dto.up_by ?? 0,
+              }),
+            );
+            units.push(unit);
+            createdUnits++;
+          }
+          unId = unit.unId;
+        }
+
+        const price = Number(row.price);
+        supplie = await this.suppliesRepository.save(
+          this.suppliesRepository.create({
+            suppNo: norm(row.supp_no) || `IMP${Date.now()}${rowNo}`,
+            suppName: name,
+            suppPrice: Number.isFinite(price) && price >= 0 ? price : 0,
+            tsId: 0,
+            unId,
+            suppCapMax: 1,
+            suppCapMin: 0,
+            scId,
+            upBy: dto.up_by ?? 0,
+            del: 0,
+          }),
+        );
+        supplies.push(supplie);
+        createdSupplies++;
+      }
+
+      await this.parcelDetailRepository.save(
+        this.parcelDetailRepository.create({
+          orderId: dto.order_id,
+          suppId: supplie.suppId,
+          pcTotal: qty,
+          del: 0,
+        }),
+      );
+      added++;
+    }
+
+    return {
+      flag: added > 0,
+      added,
+      created_supplies: createdSupplies,
+      created_units: createdUnits,
+      errors,
+      ms:
+        `นำเข้าสำเร็จ ${added} รายการ` +
+        (createdSupplies ? ` (สร้างพัสดุใหม่ ${createdSupplies})` : '') +
+        (errors.length ? ` — ข้าม ${errors.length} แถว` : ''),
+    };
   }
 
   async removeParcelDetail(dto: { pc_id: number }, scId: number) {

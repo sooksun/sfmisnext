@@ -12,6 +12,7 @@ import { apiGet } from '@/lib/api'
 import { useAppContext } from '@/hooks/use-app-context'
 import {
   PROCUREMENT_FORMS,
+  buildAllForms,
   type OrderPrintData,
 } from '@/lib/official-procurement-forms'
 import { openPrintWindow } from '@/lib/print-utils'
@@ -88,6 +89,15 @@ export default function ProcurementDocsPage() {
     openPrintWindow({ title, body })
   }
 
+  function printAll() {
+    if (!printData) {
+      toast.error('กำลังโหลดข้อมูล กรุณาลองอีกครั้ง')
+      return
+    }
+    const { title, body } = buildAllForms(printData)
+    openPrintWindow({ title, body })
+  }
+
   const columns = useMemo(
     () => [
       {
@@ -143,19 +153,30 @@ export default function ProcurementDocsPage() {
         {isFetching ? (
           <p className="text-center text-gray-400 py-6">กำลังโหลดข้อมูล...</p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {PROCUREMENT_FORMS.map((f) => (
-              <Button
-                key={f.key}
-                variant="outline"
-                className="justify-start"
-                onClick={() => printForm(f.key)}
-                disabled={!printData}
-              >
-                <FileText className="h-4 w-4 shrink-0" />
-                <span className="truncate text-left">{f.label}</span>
-              </Button>
-            ))}
+          <div className="space-y-3">
+            <Button
+              className="w-full"
+              onClick={printAll}
+              disabled={!printData}
+              title="พิมพ์เอกสารทุกฉบับต่อหน้ากันเป็นชุดเดียว"
+            >
+              <Printer className="h-4 w-4 shrink-0" />
+              พิมพ์ทั้งหมด (รวมทุกฉบับเป็นชุดเดียว)
+            </Button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {PROCUREMENT_FORMS.map((f) => (
+                <Button
+                  key={f.key}
+                  variant="outline"
+                  className="justify-start"
+                  onClick={() => printForm(f.key)}
+                  disabled={!printData}
+                >
+                  <FileText className="h-4 w-4 shrink-0" />
+                  <span className="truncate text-left">{f.label}</span>
+                </Button>
+              ))}
+            </div>
           </div>
         )}
       </FormDialog>

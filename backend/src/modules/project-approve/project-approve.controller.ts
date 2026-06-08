@@ -128,6 +128,7 @@ export class ProjectApproveController {
   }
 
   @Post('approveParcelByPlan')
+  @HttpCode(HttpStatus.OK)
   async approveParcelByPlan(
     @Body() dto: ApproveParcelByPlanDto,
     @CurrentUser('sc_id') scId: number,
@@ -136,6 +137,7 @@ export class ProjectApproveController {
   }
 
   @Post('approveParcelByBusiness')
+  @HttpCode(HttpStatus.OK)
   async approveParcelByBusiness(
     @Body() dto: ApproveParcelByBusinessDto,
     @CurrentUser('sc_id') scId: number,
@@ -144,6 +146,7 @@ export class ProjectApproveController {
   }
 
   @Post('approveParcelBySupplie')
+  @HttpCode(HttpStatus.OK)
   async approveParcelBySupplie(
     @Body()
     dto: {
@@ -158,6 +161,7 @@ export class ProjectApproveController {
   }
 
   @Post('approveParcelByCeo')
+  @HttpCode(HttpStatus.OK)
   async approveParcelByCeo(
     @Body() dto: ApproveParcelByCeoDto,
     @CurrentUser('sc_id') scId: number,
@@ -166,6 +170,7 @@ export class ProjectApproveController {
   }
 
   @Post('addProjectApprove')
+  @HttpCode(HttpStatus.OK)
   async addProjectApprove(
     @Body() dto: AddProjectApproveDto,
     @CurrentUser() user: JwtUser,
@@ -175,6 +180,7 @@ export class ProjectApproveController {
   }
 
   @Post('updateProjectApprove')
+  @HttpCode(HttpStatus.OK)
   async updateProjectApprove(
     @Body() dto: UpdateProjectApproveDto,
     @CurrentUser('sc_id') scId: number,
@@ -183,6 +189,7 @@ export class ProjectApproveController {
   }
 
   @Post('removeParcelOrder')
+  @HttpCode(HttpStatus.OK)
   async removeParcelOrder(
     @Body() dto: RemoveParcelOrderDto,
     @CurrentUser('sc_id') scId: number,
@@ -215,6 +222,26 @@ export class ProjectApproveController {
     @CurrentUser('sc_id') scId: number,
   ) {
     return await this.projectApproveService.addParcelDetail(dto, scId);
+  }
+
+  @Post('importParcelDetails')
+  @HttpCode(HttpStatus.OK)
+  async importParcelDetails(
+    @Body()
+    dto: {
+      order_id: number;
+      up_by?: number;
+      items: Array<{
+        supp_no?: string;
+        supp_name: string;
+        qty: number;
+        price?: number;
+        unit?: string;
+      }>;
+    },
+    @CurrentUser('sc_id') scId: number,
+  ) {
+    return await this.projectApproveService.importParcelDetails(dto, scId);
   }
 
   @Post('removeParcelDetail')

@@ -1,8 +1,8 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Settings2, Plus, Trash2, Lock } from 'lucide-react'
+import { Settings2, Plus, Trash2, Lock, Upload, FileDown } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
@@ -19,6 +19,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
+import { exportToXlsx } from '@/lib/export-xlsx'
+import { readXlsxRows } from '@/lib/import-xlsx'
 import { useAppContext } from '@/hooks/use-app-context'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -56,7 +58,25 @@ interface SupplieMaster {
   supp_name: string
 }
 
+interface ImportItem {
+  supp_no: string
+  supp_name: string
+  qty: number
+  price: number
+  unit: string
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** ดึงค่าจาก row ตามชื่อคอลัมน์ที่เป็นไปได้ (รองรับชื่อหัวตารางหลายแบบ) แล้ว trim */
+const pick = (row: Record<string, unknown>, keys: string[]): string => {
+  for (const k of keys) {
+    const v = row[k]
+    if (v !== undefined && v !== null && String(v).trim() !== '')
+      return String(v).trim()
+  }
+  return ''
+}
 
 const PROJECT_TYPE: Record<number, string> = { 1: 'จัดซื้อ', 2: 'จัดจ้าง' }
 const METHOD_TYPE: Record<number, string> = {
@@ -101,6 +121,8 @@ export default function ManageProjectPage() {
   const [newSuppId, setNewSuppId] = useState(0)
   const [newQty, setNewQty] = useState(1)
   const [deleteLine, setDeleteLine] = useState<SupplieLine | null>(null)
+  // นำเข้า Excel
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── Queries ─────────────────────────────────────────────────────────────────
 
@@ -215,7 +237,73 @@ export default function ManageProjectPage() {
     onError: () => toast.error('เกิดข้อผิดพลาด'),
   })
 
+  const importLines = useMutation({
+    mutationFn: (items: ImportItem[]) =>
+      apiPost('Project_approve/importParcelDetails', {
+        order_id: activeOrder!.order_id,
+        up_by: userId,
+        items,
+      }),
+    onSuccess: (res: any) => {
+      if (res?.flag) {
+        toast.success(res.ms || 'นำเข้าเรียบร้อยแล้ว')
+        if (Array.isArray(res.errors) && res.errors.length) {
+          toast.warning(
+            `ข้ามบางแถว:\n${res.errors.slice(0, 5).join('\n')}` +
+              (res.errors.length > 5 ? `\n…และอีก ${res.errors.length - 5} แถว` : ''),
+          )
+        }
+        qc.invalidateQueries({ queryKey: ['mp-lines', activeOrder?.order_id] })
+        qc.invalidateQueries({ queryKey: ['mp-supplie-master', scId] })
+      } else {
+        toast.error(res?.ms || 'นำเข้าไม่สำเร็จ')
+      }
+    },
+    onError: () => toast.error('เกิดข้อผิดพลาดขณะนำเข้า'),
+  })
+
   // ── Handlers ──────────────────────────────────────────────────────────────
+
+  function downloadTemplate() {
+    exportToXlsx(
+      [
+        {
+          รหัสพัสดุ: '',
+          'ชื่อพัสดุ/บริการ': 'ตัวอย่าง: กระดาษ A4 80 แกรม',
+          จำนวน: 10,
+          ราคาต่อหน่วย: 120,
+          หน่วย: 'รีม',
+        },
+      ],
+      'รายการพัสดุ',
+      'เทมเพลตนำเข้าพัสดุ',
+    )
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // เคลียร์เพื่อให้เลือกไฟล์เดิมซ้ำได้
+    if (!file || !activeOrder) return
+    try {
+      const rows = await readXlsxRows(file)
+      const items: ImportItem[] = rows
+        .map((r) => ({
+          supp_no: pick(r, ['รหัสพัสดุ', 'รหัส']),
+          supp_name: pick(r, ['ชื่อพัสดุ/บริการ', 'ชื่อพัสดุ', 'ชื่อ', 'รายการ']),
+          qty: Number(pick(r, ['จำนวน']) || 0),
+          price: Number(pick(r, ['ราคาต่อหน่วย', 'ราคา']) || 0),
+          unit: pick(r, ['หน่วย']),
+        }))
+        .filter((it) => it.supp_name)
+      if (items.length === 0) {
+        toast.error('ไม่พบรายการในไฟล์ — ตรวจสอบหัวคอลัมน์ให้ตรงเทมเพลต')
+        return
+      }
+      importLines.mutate(items)
+    } catch {
+      toast.error('อ่านไฟล์ไม่สำเร็จ — รองรับ .xlsx / .csv เท่านั้น')
+    }
+  }
 
   function openManage(project: ProjectRow) {
     const order = ordersByProject.get(project.proj_id) ?? null
@@ -380,7 +468,41 @@ export default function ManageProjectPage() {
 
             {/* รายการพัสดุ */}
             <div>
-              <Label className="text-base font-semibold">รายการพัสดุ</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-base font-semibold">รายการพัสดุ</Label>
+                {!locked && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={downloadTemplate}
+                      title="ดาวน์โหลดไฟล์เทมเพลต Excel"
+                    >
+                      <FileDown className="h-4 w-4 mr-1" />
+                      เทมเพลต
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={importLines.isPending}
+                      title="นำเข้าสินค้า/บริการจากไฟล์ Excel"
+                    >
+                      <Upload className="h-4 w-4 mr-1" />
+                      {importLines.isPending ? 'กำลังนำเข้า…' : 'นำเข้า Excel'}
+                    </Button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      className="hidden"
+                      onChange={handleImportFile}
+                    />
+                  </div>
+                )}
+              </div>
               <div className="mt-2 border rounded-md overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-gray-600">

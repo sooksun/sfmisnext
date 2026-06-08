@@ -11,6 +11,7 @@ import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { PlnProcurementPlanItem } from '../procurement-plan/entities/pln-procurement-plan-item.entity';
 import { PlnProcurementPlan } from '../procurement-plan/entities/pln-procurement-plan.entity';
 import { Supplies } from '../supplie/entities/supplies.entity';
+import { Unit } from '../general-db/entities/unit.entity';
 import { Project } from '../project/entities/project.entity';
 import { School } from '../school/entities/school.entity';
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
@@ -46,6 +47,7 @@ describe('ProjectApproveService', () => {
   let planItemRepo: jest.Mocked<any>;
   let planRepo: jest.Mocked<any>;
   let suppliesRepo: jest.Mocked<any>;
+  let unitRepo: jest.Mocked<any>;
   let projectRepo: jest.Mocked<any>;
   let schoolRepo: jest.Mocked<any>;
   let regulatoryConfig: jest.Mocked<Pick<RegulatoryConfigService, 'getThreshold'>>;
@@ -68,11 +70,21 @@ describe('ProjectApproveService', () => {
     adminRepo = {
       createQueryBuilder: jest.fn().mockReturnValue(makeQb()),
       find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(null),
     };
     rwRepo = { createQueryBuilder: jest.fn().mockReturnValue(makeQb()) };
     planItemRepo = { findOne: jest.fn() };
     planRepo = { findOne: jest.fn() };
-    suppliesRepo = { find: jest.fn().mockResolvedValue([]) };
+    suppliesRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      create: jest.fn((x) => x),
+      save: jest.fn((x) => Promise.resolve({ suppId: 999, ...x })),
+    };
+    unitRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      create: jest.fn((x) => x),
+      save: jest.fn((x) => Promise.resolve({ unId: 99, ...x })),
+    };
     projectRepo = { findOne: jest.fn() };
     schoolRepo = { findOne: jest.fn() };
     regulatoryConfig = { getThreshold: jest.fn() };
@@ -92,6 +104,7 @@ describe('ProjectApproveService', () => {
         },
         { provide: getRepositoryToken(PlnProcurementPlan), useValue: planRepo },
         { provide: getRepositoryToken(Supplies), useValue: suppliesRepo },
+        { provide: getRepositoryToken(Unit), useValue: unitRepo },
         { provide: getRepositoryToken(Project), useValue: projectRepo },
         { provide: getRepositoryToken(School), useValue: schoolRepo },
         { provide: RegulatoryConfigService, useValue: regulatoryConfig },
@@ -803,6 +816,94 @@ describe('ProjectApproveService', () => {
     });
   });
 
+  describe('importParcelDetails', () => {
+    it('ไม่พบคำสั่งซื้อ → flag: false', async () => {
+      poRepo.findOne.mockResolvedValue(null);
+      const result = await service.importParcelDetails(
+        { order_id: 1, items: [{ supp_name: 'กระดาษ', qty: 1 }] },
+        5,
+      );
+      expect(result).toEqual({ flag: false, ms: 'ไม่พบคำสั่งซื้อ' });
+    });
+
+    it('สถานะเกินขั้นแก้ไข → flag: false ไม่บันทึก', async () => {
+      poRepo.findOne.mockResolvedValue({ orderId: 1, scId: 5, orderStatus: 3 });
+      const result = await service.importParcelDetails(
+        { order_id: 1, items: [{ supp_name: 'กระดาษ', qty: 1 }] },
+        5,
+      );
+      expect(result.flag).toBe(false);
+      expect(pdRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('ไม่มีรายการในไฟล์ → flag: false', async () => {
+      poRepo.findOne.mockResolvedValue({ orderId: 1, scId: 5, orderStatus: 0 });
+      const result = await service.importParcelDetails(
+        { order_id: 1, items: [] },
+        5,
+      );
+      expect(result).toEqual({ flag: false, ms: 'ไม่พบรายการในไฟล์' });
+    });
+
+    it('จับคู่พัสดุเดิมตามชื่อ → เพิ่ม detail โดยไม่สร้างพัสดุใหม่', async () => {
+      poRepo.findOne.mockResolvedValue({ orderId: 1, scId: 5, orderStatus: 0 });
+      suppliesRepo.find.mockResolvedValue([
+        { suppId: 7, suppNo: 'A001', suppName: 'กระดาษ A4', scId: 5, del: 0 },
+      ]);
+      unitRepo.find.mockResolvedValue([]);
+      const result = await service.importParcelDetails(
+        { order_id: 1, items: [{ supp_name: 'กระดาษ A4', qty: 5 }] },
+        5,
+      );
+      expect(suppliesRepo.save).not.toHaveBeenCalled();
+      expect(pdRepo.create).toHaveBeenCalledWith({
+        orderId: 1,
+        suppId: 7,
+        pcTotal: 5,
+        del: 0,
+      });
+      expect(result.flag).toBe(true);
+      expect(result.added).toBe(1);
+      expect(result.created_supplies).toBe(0);
+    });
+
+    it('ไม่พบพัสดุ → สร้างพัสดุ+หน่วยใหม่แล้วเพิ่ม detail', async () => {
+      poRepo.findOne.mockResolvedValue({ orderId: 1, scId: 5, orderStatus: 1 });
+      suppliesRepo.find.mockResolvedValue([]);
+      unitRepo.find.mockResolvedValue([]);
+      const result = await service.importParcelDetails(
+        {
+          order_id: 1,
+          up_by: 11,
+          items: [{ supp_name: 'ปากกาใหม่', qty: 3, price: 15, unit: 'ด้าม' }],
+        },
+        5,
+      );
+      expect(unitRepo.save).toHaveBeenCalled();
+      expect(suppliesRepo.save).toHaveBeenCalled();
+      expect(pdRepo.save).toHaveBeenCalled();
+      expect(result.flag).toBe(true);
+      expect(result.created_supplies).toBe(1);
+      expect(result.created_units).toBe(1);
+    });
+
+    it('จำนวนไม่ถูกต้อง → เก็บ error และข้ามแถว', async () => {
+      poRepo.findOne.mockResolvedValue({ orderId: 1, scId: 5, orderStatus: 0 });
+      suppliesRepo.find.mockResolvedValue([
+        { suppId: 7, suppNo: 'A001', suppName: 'กระดาษ A4', scId: 5, del: 0 },
+      ]);
+      unitRepo.find.mockResolvedValue([]);
+      const result = await service.importParcelDetails(
+        { order_id: 1, items: [{ supp_name: 'กระดาษ A4', qty: 0 }] },
+        5,
+      );
+      expect(result.flag).toBe(false);
+      expect(result.added).toBe(0);
+      expect(result.errors?.length).toBe(1);
+      expect(pdRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
   describe('removeParcelDetail', () => {
     it('ไม่พบรายการพัสดุ → flag: false', async () => {
       pdRepo.findOne.mockResolvedValue(null);
@@ -858,9 +959,17 @@ describe('ProjectApproveService', () => {
         { adminId: 11, name: 'ครู ก' },
         { adminId: 12, name: 'ครู ข' },
       ]);
+      // director (type 2) สำหรับลงนามท้ายเอกสาร
+      adminRepo.findOne.mockResolvedValue({ adminId: 99, name: 'ผอ. ทดสอบ' });
       partnerRepo.findOne.mockResolvedValue({ pId: 7, pName: 'ร้านค้า ค' });
       projectRepo.findOne.mockResolvedValue({ projId: 3, projName: 'โครงการจริง' });
-      schoolRepo.findOne.mockResolvedValue({ scId: 5, scName: 'โรงเรียนทดสอบ' });
+      schoolRepo.findOne.mockResolvedValue({
+        scId: 5,
+        scName: 'โรงเรียนทดสอบ',
+        add1: '111',
+        tumbol: 'ทดสอบ',
+        tel: '053',
+      });
 
       const result = await service.loadOrderForPrint(1, 5);
       expect(result).not.toBeNull();
@@ -869,6 +978,7 @@ describe('ProjectApproveService', () => {
       expect(result!.partner).toEqual({ p_id: 7, p_name: 'ร้านค้า ค' });
       expect(result!.project_name).toBe('โครงการจริง');
       expect(result!.school_name).toBe('โรงเรียนทดสอบ');
+      expect(result!.director_name).toBe('ผอ. ทดสอบ');
     });
   });
 });

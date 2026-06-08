@@ -11,6 +11,7 @@ import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { PlnProcurementPlanItem } from '../procurement-plan/entities/pln-procurement-plan-item.entity';
 import { PlnProcurementPlan } from '../procurement-plan/entities/pln-procurement-plan.entity';
 import { Supplies } from '../supplie/entities/supplies.entity';
+import { Unit } from '../general-db/entities/unit.entity';
 import { Project } from '../project/entities/project.entity';
 import { School } from '../school/entities/school.entity';
 
@@ -26,6 +27,7 @@ import { School } from '../school/entities/school.entity';
       PlnProcurementPlanItem,
       PlnProcurementPlan,
       Supplies,
+      Unit,
       Project,
       School,
     ]),

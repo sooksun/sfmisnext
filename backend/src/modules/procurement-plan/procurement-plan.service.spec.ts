@@ -180,6 +180,29 @@ describe('ProcurementPlanService', () => {
       await service.updatePlan({ pp_id: 1, remark: '' } as any, ownerUser);
       expect(plan.remark).toBe('');
     });
+
+    it('ลดวงเงินแผนต่ำกว่ายอดรวมรายการ → BadRequestException (ดักต้นทาง)', async () => {
+      planRepo.findOne.mockResolvedValue({ ppId: 1, scId: 1, ppStatus: 0 });
+      itemRepo.find.mockResolvedValue([
+        { itemBudget: 20000 },
+        { itemBudget: 10000 }, // รวม 30000
+      ]);
+      await expect(
+        service.updatePlan({ pp_id: 1, pp_total_budget: 1000 } as any, ownerUser),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('ลดวงเงินแผนแต่ยังคลุมยอดรวมรายการ → อัปเดตได้', async () => {
+      const plan: any = { ppId: 1, scId: 1, ppStatus: 0, ppTotalBudget: 50000 };
+      planRepo.findOne.mockResolvedValue(plan);
+      itemRepo.find.mockResolvedValue([{ itemBudget: 30000 }]);
+      const result = await service.updatePlan(
+        { pp_id: 1, pp_total_budget: 40000 } as any,
+        ownerUser,
+      );
+      expect(plan.ppTotalBudget).toBe(40000);
+      expect(result.flag).toBe(true);
+    });
   });
 
   // ─── removePlan ─────────────────────────────────────────────────────────────
@@ -338,6 +361,37 @@ describe('ProcurementPlanService', () => {
         ownerUser,
       );
       expect(item.itemTitle).toBe('ใหม่');
+      expect(result.flag).toBe(true);
+    });
+
+    it('แก้วงเงินรายการจนรวมเกินวงเงินแผน → BadRequestException (ดักต้นทาง)', async () => {
+      const item: any = { ppiId: 1, ppId: 1, del: 0, itemBudget: 500 };
+      itemRepo.findOne.mockResolvedValue(item);
+      planRepo.findOne.mockResolvedValue({ ppId: 1, scId: 1, ppStatus: 0, ppTotalBudget: 1000 });
+      itemRepo.find.mockResolvedValue([
+        { ppiId: 1, itemBudget: 500 },
+        { ppiId: 2, itemBudget: 400 }, // อื่น ๆ รวม 400
+      ]);
+      // 400 + 700 = 1100 > 1000
+      await expect(
+        service.updatePlanItem({ ppi_id: 1, item_budget: 700 } as any, ownerUser),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('แก้วงเงินรายการแต่ยังไม่เกินวงเงินแผน → อัปเดตได้', async () => {
+      const item: any = { ppiId: 1, ppId: 1, del: 0, itemBudget: 500 };
+      itemRepo.findOne.mockResolvedValue(item);
+      planRepo.findOne.mockResolvedValue({ ppId: 1, scId: 1, ppStatus: 0, ppTotalBudget: 1000 });
+      itemRepo.find.mockResolvedValue([
+        { ppiId: 1, itemBudget: 500 },
+        { ppiId: 2, itemBudget: 400 },
+      ]);
+      // 400 + 600 = 1000 ≤ 1000
+      const result = await service.updatePlanItem(
+        { ppi_id: 1, item_budget: 600 } as any,
+        ownerUser,
+      );
+      expect(item.itemBudget).toBe(600);
       expect(result.flag).toBe(true);
     });
   });

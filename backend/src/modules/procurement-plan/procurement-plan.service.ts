@@ -137,6 +137,23 @@ export class ProcurementPlanService {
     }
     if (plan.ppStatus === 1)
       throw new BadRequestException('แผนประกาศแล้ว แก้ไขไม่ได้');
+
+    // ดักตั้งแต่ต้นทาง: วงเงินแผนใหม่ต้องไม่ต่ำกว่ายอดรวมรายการที่มีอยู่
+    if (dto.pp_total_budget !== undefined) {
+      const items = await this.itemRepo.find({
+        where: { ppId: plan.ppId, del: 0 },
+      });
+      const sumItem = items.reduce(
+        (a, b) => a + Number(b.itemBudget || 0),
+        0,
+      );
+      if (dto.pp_total_budget < sumItem) {
+        throw new BadRequestException(
+          `วงเงินแผน (${dto.pp_total_budget}) ต่ำกว่ายอดรวมรายการที่มีอยู่ (${sumItem}) — ลบ/แก้รายการก่อน`,
+        );
+      }
+    }
+
     Object.assign(plan, {
       ppNo: dto.pp_no ?? plan.ppNo,
       ppTitle: dto.pp_title ?? plan.ppTitle,
@@ -259,6 +276,23 @@ export class ProcurementPlanService {
     }
     if (plan.ppStatus === 1)
       throw new BadRequestException('แผนประกาศแล้ว แก้ไขรายการไม่ได้');
+
+    // M8: ตรวจ sum รายการไม่เกินวงเงินแผน (ดักตั้งแต่แก้ไขรายการ ไม่รอจน announce)
+    const newBudget = dto.item_budget ?? Number(item.itemBudget);
+    if (newBudget && newBudget > 0) {
+      const siblings = await this.itemRepo.find({
+        where: { ppId: plan.ppId, del: 0 },
+      });
+      const othersSum = siblings
+        .filter((s) => s.ppiId !== item.ppiId)
+        .reduce((a, b) => a + Number(b.itemBudget || 0), 0);
+      if (othersSum + newBudget > Number(plan.ppTotalBudget)) {
+        throw new BadRequestException(
+          `ยอดรวมรายการ (${othersSum + newBudget}) จะเกินวงเงินแผน (${plan.ppTotalBudget})`,
+        );
+      }
+    }
+
     Object.assign(item, {
       projectId: dto.project_id ?? item.projectId,
       itemTitle: dto.item_title ?? item.itemTitle,

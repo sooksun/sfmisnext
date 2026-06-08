@@ -160,14 +160,14 @@ const navGroups: NavItem[] = [
       { label: '3.2 รับเงิน',                        href: '/sfmis/receive-menu/receive',                icon: ArrowDownToLine, roles: FINANCE },
       // 2.4 เดิมออกใบเสร็จแบบ 2 ขั้น — รวมเข้า 2.3 แล้ว (รับเงิน=ออกใบเสร็จ บร. ในตัว)
       // หน้านี้ซ้ำกับ 2.3 (ดู/พิมพ์ซ้ำ) + 2.1 (ทะเบียนเล่ม) → ซ่อนจากเมนู (เก็บ route ไว้)
-      { label: '3.4 ใบเสร็จรับเงิน (ที่ออกแล้ว)',     href: '/sfmis/financial-report/receipt',            icon: BookMarked,      roles: FINANCE, hidden: true },
+      { label: 'ใบเสร็จรับเงิน (ที่ออกแล้ว)',         href: '/sfmis/financial-report/receipt',            icon: BookMarked,      roles: FINANCE, hidden: true },
       { label: 'รับเงินเพื่อเก็บรักษา',              href: '/sfmis/financial-report/cash-keeping',       icon: KeyRound,        roles: FINANCE, hidden: true },
       { label: '3.3 จ่ายเงิน',                       href: '/sfmis/pay-menu/invoice',                    icon: FileText,        roles: FINANCE },
       // ขั้นต่อเนื่องของการจ่ายเงิน — เข้าถึงผ่านแถบ "ขั้นตอนการจ่ายเงิน" (ProcessFlow)
-      { label: '3.7 ตรวจสอบใบสำคัญจ่าย',            href: '/sfmis/confirm-invoice',                     icon: ClipboardList,   roles: FINANCE, hidden: true },
+      { label: 'ตรวจสอบใบสำคัญจ่าย',                href: '/sfmis/confirm-invoice',                     icon: ClipboardList,   roles: FINANCE, hidden: true },
       { label: 'สร้างเช็ค',                          href: '/sfmis/pay-menu/generate-check',             icon: CreditCard,      roles: FINANCE, hidden: true },
       { label: 'หนังสือรับรองหักภาษี ณ ที่จ่าย',    href: '/sfmis/pay-menu/withholding-certificate',    icon: FileText,        roles: FINANCE, hidden: true },
-      { label: '3.10 หลักฐานขอเบิกเงินงบประมาณ',     href: '/sfmis/pay-menu/budget-request',             icon: ClipboardList,   roles: FINANCE, hidden: true },
+      { label: 'หลักฐานขอเบิกเงินงบประมาณ',         href: '/sfmis/pay-menu/budget-request',             icon: ClipboardList,   roles: FINANCE, hidden: true },
       { label: '3.4 เงินยืม',                        href: '/sfmis/pay-menu/loan-agreement',             icon: BookCopy,        roles: FINANCE },
       { label: 'ยืมเงินข้ามประเภท',                 href: '/sfmis/pay-menu/fund-borrowing',             icon: BookCopy,        roles: FINANCE, hidden: true },
       { label: '3.5 ขอเบิกค่าเดินทาง',               href: '/sfmis/pay-menu/travel-reimbursement',       icon: Plane,           roles: ALL },

@@ -29,6 +29,11 @@ export const PLAN_FLOW: ProcessFlowDef = {
   ],
   steps: [
     {
+      label: 'เงินเหลือจ่ายปีเก่า',
+      href: '/sfmis/prev-year-balance',
+      hint: 'นำเงินเหลือจ่ายปีก่อน (ยอด ณ 30 ก.ย.) เข้ารวมในวงเงินวางแผนปีนี้',
+    },
+    {
       label: 'เตรียมงบประมาณ',
       href: '/sfmis/student',
       hint: 'บันทึกและยืนยันจำนวนนักเรียนของปี',

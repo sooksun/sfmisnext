@@ -24,10 +24,18 @@ export const DialogOverlay = React.forwardRef<
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
+/** เป็นการ interact ที่มาจาก popover ของ ThaiDatePicker (portal ไป body) หรือไม่ */
+function isInDatePickerPopover(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    !!target.closest('[data-thai-datepicker-popover]')
+  )
+}
+
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, onPointerDownOutside, onInteractOutside, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -36,6 +44,22 @@ export const DialogContent = React.forwardRef<
         'fixed left-[50%] top-[50%] z-50 grid w-full translate-x-[-50%] translate-y-[-50%] gap-4 bg-white p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] rounded-lg',
         className
       )}
+      onPointerDownOutside={(e) => {
+        // คลิกในปฏิทิน (อยู่นอก DOM ของ dialog) ต้องไม่ปิด dialog
+        if (isInDatePickerPopover(e.detail.originalEvent.target)) {
+          e.preventDefault()
+          return
+        }
+        onPointerDownOutside?.(e)
+      }}
+      onInteractOutside={(e) => {
+        const original = (e.detail as { originalEvent?: Event }).originalEvent
+        if (isInDatePickerPopover(original?.target ?? null)) {
+          e.preventDefault()
+          return
+        }
+        onInteractOutside?.(e)
+      }}
       {...props}
     >
       {children}

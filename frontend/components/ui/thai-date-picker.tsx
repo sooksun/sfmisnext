@@ -225,7 +225,16 @@ export function ThaiDatePicker({
       {open && mounted && coords && createPortal(
         <div
           ref={popoverRef}
-          style={{ position: 'fixed', top: coords.top, left: coords.left, zIndex: 9999 }}
+          data-thai-datepicker-popover=""
+          style={{
+            position: 'fixed',
+            top: coords.top,
+            left: coords.left,
+            zIndex: 9999,
+            // Radix modal Dialog ตั้ง body { pointer-events: none } ขณะเปิด
+            // popover นี้ portal ไป body จึงต้องเปิด pointer-events เองให้คลิกได้
+            pointerEvents: 'auto',
+          }}
           className="w-72 rounded-lg border border-gray-200 bg-white shadow-lg"
         >
           {/* ── Header ── */}

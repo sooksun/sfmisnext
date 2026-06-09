@@ -50,18 +50,26 @@ export default function CheckControlPage() {
   const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2 })
   const rows = Array.isArray(data) ? data : []
 
-  // พิมพ์ "ทะเบียนคุมเช็ค" (คู่มือ ตย.6) — เฉพาะรายการที่ออกเช็คแล้ว (มีเลขที่เช็ค)
+  // พิมพ์ "ทะเบียนคุมเช็ค" (คู่มือ ตย.6) — คุมลำดับเลขเช็คทั้งเล่ม
+  //   รวมเช็คที่ "ยกเลิก" (status 201) ด้วย ไม่ใช่เฉพาะที่ออกแล้ว (202) เพื่อไม่ให้เลขเช็คข้าม
   function handlePrintCheque() {
-    const cheques = rows.filter((r) => r.check_no_doc && r.status === 202)
+    const cheques = rows
+      .filter((r) => r.check_no_doc && (r.status === 202 || r.status === 201))
+      .sort((a, b) =>
+        String(a.check_no_doc).localeCompare(String(b.check_no_doc), undefined, { numeric: true }),
+      )
     if (cheques.length === 0) return
     const body = officialChequeRegister({
       scName, budgetYear: beYear,
-      rows: cheques.map((r) => ({
-        date: r.offer_check_date,
-        chequeNo: r.check_no_doc,
-        payee: r.partner_name || r.detail,
-        amount: Number(r.amount) || 0,
-      })),
+      rows: cheques.map((r) => {
+        const cancelled = r.status === 201
+        return {
+          date: r.offer_check_date,
+          chequeNo: r.check_no_doc,
+          payee: cancelled ? 'ยกเลิก' : (r.partner_name || r.detail),
+          amount: cancelled ? null : (Number(r.amount) || 0),
+        }
+      }),
     })
     openPrintWindow({ title: 'ทะเบียนคุมเช็ค', body })
   }

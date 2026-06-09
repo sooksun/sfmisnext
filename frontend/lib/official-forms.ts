@@ -43,6 +43,13 @@ export function officialHeader(title: string, lines: string[]): string {
   </div>`
 }
 
+/** ชื่อโรงเรียน — เติม "โรงเรียน" นำหน้าเฉพาะเมื่อยังไม่มี (กัน "โรงเรียนโรงเรียน...") */
+function schoolName(scName?: string | null): string {
+  if (!scName) return ''
+  const s = esc(scName)
+  return /^โรงเรียน/.test(scName) ? s : `โรงเรียน${s}`
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // 1) รายงานเงินคงเหลือประจำวัน (finance4 หน้า 22 / form-028)
 // ───────────────────────────────────────────────────────────────────────────
@@ -459,7 +466,7 @@ export interface EvidenceRegisterOpts {
 
 export function officialDisbursementEvidenceRegister(o: EvidenceRegisterOpts): string {
   const header = officialHeader('ทะเบียนคุมหลักฐานขอเบิก', [
-    o.scName ? `โรงเรียน${esc(o.scName)}${o.budgetYear ? ` ปีงบประมาณ ${esc(String(o.budgetYear))}` : ''}` : '',
+    o.scName ? `${schoolName(o.scName)}${o.budgetYear ? ` ปีงบประมาณ ${esc(String(o.budgetYear))}` : ''}` : '',
   ].filter(Boolean))
 
   const total = o.rows.reduce((s, r) => s + Number(r.amount || 0), 0)
@@ -1311,7 +1318,7 @@ function bahtSatang(v?: number | null): { baht: string; sat: string } {
 }
 
 const regHead = (o: { scName?: string; budgetYear?: string | number }) =>
-  `โรงเรียน${o.scName ? esc(o.scName) : ''}${o.budgetYear ? ` ปีงบประมาณ ${esc(String(o.budgetYear))}` : ''}`
+  `${schoolName(o.scName)}${o.budgetYear ? ` ปีงบประมาณ ${esc(String(o.budgetYear))}` : ''}`
 
 // ── 7) ทะเบียนคุมเช็ค (ตย.6) ────────────────────────────────────────────────
 export interface ChequeRegisterRow {

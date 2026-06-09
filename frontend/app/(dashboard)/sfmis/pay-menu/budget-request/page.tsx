@@ -18,9 +18,6 @@ import { DataTable } from '@/components/shared/data-table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
 import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 import { ExportButton } from '@/components/ui/export-button'
 import { apiGet, apiPost } from '@/lib/api'
@@ -44,9 +41,15 @@ interface BudgetRequestItem {
   action_date: string | null
   creditor_name: string | null
   expense_type: number
+  expense_type_text: string | null
   amount: number
   send_date: string | null
   remark: string | null
+}
+
+/** ป้ายประเภทรายจ่ายที่จะแสดง/พิมพ์ — ใช้ข้อความอิสระถ้ามี ไม่งั้น fallback หมวดงบเดิม */
+function expenseLabel(r: BudgetRequestItem): string {
+  return r.expense_type_text || EXPENSE_TYPES[r.expense_type] || ''
 }
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
@@ -54,12 +57,18 @@ interface BudgetRequestItem {
 const schema = z.object({
   action_date: z.string().min(1, 'กรุณาระบุวันที่ดำเนินการ'),
   creditor_name: z.string().min(1, 'กรุณาระบุเจ้าหนี้/ผู้ขอเบิก'),
-  expense_type: z.number({ error: 'กรุณาเลือกประเภทรายจ่าย' }).min(1),
+  expense_type_text: z.string().min(1, 'กรุณาระบุประเภทรายจ่าย'),
   amount: z.number({ error: 'กรุณาระบุจำนวนเงิน' }).min(0.01, 'จำนวนเงินต้องมากกว่า 0'),
   send_date: z.string().optional(),
   remark: z.string().optional(),
 })
 type FormValues = z.infer<typeof schema>
+
+/** หาเลขหมวดงบจากข้อความ (ถ้าตรงพรีเซ็ต) — เก็บ expense_type ไว้เข้ากันได้ย้อนหลัง */
+function matchExpenseType(text: string): number {
+  const hit = Object.entries(EXPENSE_TYPES).find(([, v]) => v === text)
+  return hit ? Number(hit[0]) : 3
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -81,7 +90,7 @@ export default function BudgetRequestPage() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { expense_type: 3, amount: 0 },
+    defaultValues: { expense_type_text: 'ค่าใช้สอย', amount: 0 },
   })
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = form
 
@@ -98,7 +107,7 @@ export default function BudgetRequestPage() {
       rows: items.map((r) => ({
         date: r.action_date,
         creditor: r.creditor_name,
-        expenseType: EXPENSE_TYPES[r.expense_type] ?? '',
+        expenseType: expenseLabel(r),
         amount: r.amount,
         sendDate: r.send_date,
         note: r.remark,
@@ -125,16 +134,18 @@ export default function BudgetRequestPage() {
   })
 
   function openAdd() {
-    setEditItem(null); reset({ expense_type: 3, amount: 0 }); setOpen(true)
+    setEditItem(null); reset({ expense_type_text: 'ค่าใช้สอย', amount: 0 }); setOpen(true)
   }
   function openEdit(item: BudgetRequestItem) {
     setEditItem(item)
-    reset({ action_date: item.action_date ?? '', creditor_name: item.creditor_name ?? '', expense_type: item.expense_type, amount: item.amount, send_date: item.send_date ?? '', remark: item.remark ?? '' })
+    reset({ action_date: item.action_date ?? '', creditor_name: item.creditor_name ?? '', expense_type_text: expenseLabel(item), amount: item.amount, send_date: item.send_date ?? '', remark: item.remark ?? '' })
     setOpen(true)
   }
   function onSubmit(vals: FormValues) {
-    if (editItem) updateMut.mutate({ br_id: editItem.br_id, ...(vals as Record<string, unknown>), up_by: adminId })
-    else addMut.mutate({ sc_id: scId, sy_id: syId, budget_year: String(budgetYear), up_by: adminId, ...(vals as Record<string, unknown>) })
+    // เก็บทั้งข้อความอิสระ (expense_type_text) และเลขหมวด (expense_type) เพื่อเข้ากันได้ย้อนหลัง
+    const dto = { ...(vals as Record<string, unknown>), expense_type: matchExpenseType(vals.expense_type_text) }
+    if (editItem) updateMut.mutate({ br_id: editItem.br_id, ...dto, up_by: adminId })
+    else addMut.mutate({ sc_id: scId, sy_id: syId, budget_year: String(budgetYear), up_by: adminId, ...dto })
   }
 
   const paged = items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -144,7 +155,7 @@ export default function BudgetRequestPage() {
     { header: 'ที่', render: (r: BudgetRequestItem) => r.br_seq, headerClassName: 'w-12' },
     { header: 'วันที่ดำเนินการ', render: (r: BudgetRequestItem) => fmtDateTH(r.action_date) },
     { header: 'เจ้าหนี้/ผู้ขอเบิก', render: (r: BudgetRequestItem) => r.creditor_name },
-    { header: 'ประเภทรายจ่าย', render: (r: BudgetRequestItem) => EXPENSE_TYPES[r.expense_type] ?? '-' },
+    { header: 'ประเภทรายจ่าย', render: (r: BudgetRequestItem) => expenseLabel(r) || '-' },
     { header: 'จำนวนเงิน', render: (r: BudgetRequestItem) => <span className="font-medium">{r.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>, headerClassName: 'text-right', className: 'text-right' },
     { header: 'วันที่ส่ง สพป.', render: (r: BudgetRequestItem) => r.send_date ? fmtDateTH(r.send_date) : <span className="text-orange-500 text-xs">ยังไม่ส่ง</span> },
     {
@@ -174,7 +185,7 @@ export default function BudgetRequestPage() {
             <Button variant="outline" onClick={handlePrint} disabled={items.length === 0}>
               <Printer className="h-4 w-4 mr-1" />พิมพ์แบบฟอร์ม
             </Button>
-            <ExportButton onExport={() => exportToXlsx(items.map((r) => ({ 'ที่': r.br_seq, 'วันที่': fmtDateTH(r.action_date), 'เจ้าหนี้': r.creditor_name, 'ประเภท': EXPENSE_TYPES[r.expense_type], 'จำนวน': r.amount, 'ส่ง สพป.': r.send_date ? fmtDateTH(r.send_date) : 'ยังไม่ส่ง' })), 'หลักฐานขอเบิก', `budget-request-${budgetYear}`)} />
+            <ExportButton onExport={() => exportToXlsx(items.map((r) => ({ 'ที่': r.br_seq, 'วันที่': fmtDateTH(r.action_date), 'เจ้าหนี้': r.creditor_name, 'ประเภท': expenseLabel(r), 'จำนวน': r.amount, 'ส่ง สพป.': r.send_date ? fmtDateTH(r.send_date) : 'ยังไม่ส่ง' })), 'หลักฐานขอเบิก', `budget-request-${budgetYear}`)} />
             <Button onClick={openAdd}><Plus className="h-4 w-4 mr-1" />เพิ่มรายการ</Button>
           </div>
         }
@@ -197,11 +208,11 @@ export default function BudgetRequestPage() {
             </div>
             <div className="space-y-1.5">
               <Label>ประเภทรายจ่าย <span className="text-red-500">*</span></Label>
-              <Select value={String(watch('expense_type') ?? '')} onValueChange={(v) => setValue('expense_type', Number(v), { shouldValidate: true })}>
-                <SelectTrigger><SelectValue placeholder="เลือกประเภท" /></SelectTrigger>
-                <SelectContent>{Object.entries(EXPENSE_TYPES).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
-              </Select>
-              {errors.expense_type && <p className="text-xs text-red-500">{errors.expense_type.message}</p>}
+              <Input list="expense-type-presets" {...register('expense_type_text')} placeholder="พิมพ์หรือเลือก เช่น ค่ารักษาพยาบาล" />
+              <datalist id="expense-type-presets">
+                {Object.values(EXPENSE_TYPES).map((v) => <option key={v} value={v} />)}
+              </datalist>
+              {errors.expense_type_text && <p className="text-xs text-red-500">{errors.expense_type_text.message}</p>}
             </div>
           </div>
           <div className="space-y-1.5">

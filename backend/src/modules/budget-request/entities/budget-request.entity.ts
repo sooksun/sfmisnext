@@ -59,6 +59,19 @@ export class BudgetRequest {
   })
   expenseType: number;
 
+  /**
+   * ประเภทรายจ่ายแบบข้อความอิสระ (เช่น "ค่ารักษาพยาบาล(คู่สมรส)", "ค่าการศึกษาบุตร")
+   * ใช้แสดง/พิมพ์แทน label หมวด expense_type ถ้ามีค่า — รองรับรายการขอเบิกที่ไม่เข้า 9 หมวดงบ
+   */
+  @Column({
+    name: 'expense_type_text',
+    type: 'varchar',
+    length: 200,
+    nullable: true,
+    comment: 'ประเภทรายจ่ายแบบข้อความอิสระ (override label หมวด expense_type)',
+  })
+  expenseTypeText: string | null;
+
   @Column({ type: 'float', default: 0 }) amount: number;
 
   @Column({

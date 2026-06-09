@@ -47,11 +47,23 @@ describe('BudgetRequestService', () => {
       });
     });
 
-    it('คืนผลลัพธ์จาก repo', async () => {
-      const rows = [{ brId: 1 }, { brId: 2 }];
+    it('คืนผลลัพธ์ map เป็น snake_case (รวม expense_type_text)', async () => {
+      const rows = [
+        {
+          brId: 1, brSeq: 1, actionDate: '2026-01-01', creditorName: 'ร้าน A',
+          expenseType: 3, expenseTypeText: 'ค่ารักษาพยาบาล', amount: 100,
+          sendDate: null, remark: null,
+        },
+      ];
       repo.find.mockResolvedValue(rows);
       const result = await service.loadBudgetRequests(5, 3, '2569');
-      expect(result).toBe(rows);
+      expect(result).toEqual([
+        {
+          br_id: 1, br_seq: 1, action_date: '2026-01-01', creditor_name: 'ร้าน A',
+          expense_type: 3, expense_type_text: 'ค่ารักษาพยาบาล', amount: 100,
+          send_date: null, remark: null,
+        },
+      ]);
     });
   });
 

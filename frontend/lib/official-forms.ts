@@ -487,7 +487,7 @@ export function officialDisbursementEvidenceRegister(o: EvidenceRegisterOpts): s
   const table = `<table class="of">
     <thead><tr>
       <th>วัน เดือน ปี</th>
-      <th>เจ้าหนี้หรือผู้ขอเบิก</th>
+      <th>ชื่อเจ้าหนี้หรือผู้ขอเบิก</th>
       <th>ประเภทรายจ่าย</th>
       <th>จำนวนเงิน</th>
       <th>ลายมือชื่อผู้รับหลักฐาน</th>
@@ -502,7 +502,9 @@ export function officialDisbursementEvidenceRegister(o: EvidenceRegisterOpts): s
     </tr></tfoot>
   </table>`
 
-  return FORM_CSS + header + table
+  const footnote = `<div style="font-size:12pt;margin-top:4mm;"><u>หมายเหตุ</u> ให้สถานศึกษาบันทึกรายการที่ส่งเบิกกับส่วนราชการผู้เบิกทุกรายการ</div>`
+
+  return FORM_CSS + header + table + footnote
 }
 
 // ───────────────────────────────────────────────────────────────────────────

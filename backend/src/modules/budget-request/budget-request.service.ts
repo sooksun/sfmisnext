@@ -15,10 +15,22 @@ export class BudgetRequestService {
   ) {}
 
   async loadBudgetRequests(scId: number, syId: number, budgetYear: string) {
-    return this.repo.find({
+    const rows = await this.repo.find({
       where: { scId, syId, budgetYear, del: 0 },
       order: { brSeq: 'ASC' },
     });
+    // map → snake_case ให้ตรงกับที่ frontend อ่าน (repo.find คืน property แบบ camelCase)
+    return rows.map((r) => ({
+      br_id: r.brId,
+      br_seq: r.brSeq,
+      action_date: r.actionDate,
+      creditor_name: r.creditorName,
+      expense_type: r.expenseType,
+      expense_type_text: r.expenseTypeText,
+      amount: r.amount,
+      send_date: r.sendDate,
+      remark: r.remark,
+    }));
   }
 
   async addBudgetRequest(dto: AddBudgetRequestDto) {
@@ -41,6 +53,7 @@ export class BudgetRequestService {
       actionDate: dto.action_date,
       creditorName: dto.creditor_name,
       expenseType: dto.expense_type,
+      expenseTypeText: dto.expense_type_text ?? null,
       amount: dto.amount,
       sendDate: dto.send_date ?? null,
       remark: dto.remark ?? null,
@@ -59,6 +72,7 @@ export class BudgetRequestService {
         actionDate: dto.action_date,
         creditorName: dto.creditor_name,
         expenseType: dto.expense_type,
+        expenseTypeText: dto.expense_type_text ?? null,
         amount: dto.amount,
         sendDate: dto.send_date ?? null,
         remark: dto.remark ?? null,

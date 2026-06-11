@@ -195,6 +195,7 @@ const navGroups: NavItem[] = [
       { label: '4.6 ทะเบียนคุมเงินฝากธนาคาร',   href: '/sfmis/report/bank-ledger',                icon: Landmark,    roles: FINANCE },
       { label: '4.7 งบเทียบยอดธนาคาร',          href: '/sfmis/report/bank-reconciliation',         icon: Scale,       roles: FINANCE },
       { label: '4.8 หนังสือรับรองภาษีหัก ณ ที่จ่าย', href: '/sfmis/report/certificate',           icon: BadgeCheck,  roles: FINANCE },
+      { label: '4.11 ประเมินตนเอง (แบบ 2544)',   href: '/sfmis/financial-report/self-assessment',  icon: ClipboardCheck, roles: FINANCE },
     ],
   },
   {

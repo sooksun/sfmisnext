@@ -58,6 +58,7 @@ import { ContractSecurityModule } from './modules/contract-security/contract-sec
 import { BudgetTransferModule } from './modules/budget-transfer/budget-transfer.module';
 import { ProjectFollowupModule } from './modules/project-followup/project-followup.module';
 import { EgpAnnouncementModule } from './modules/egp-announcement/egp-announcement.module';
+import { FinancialAssessmentModule } from './modules/financial-assessment/financial-assessment.module';
 import { InvoicePreAuditModule } from './modules/invoice-pre-audit/invoice-pre-audit.module';
 import { PlanTraceModule } from './modules/plan-trace/plan-trace.module';
 import { IntraBankTransferModule } from './modules/intra-bank-transfer/intra-bank-transfer.module';
@@ -150,6 +151,7 @@ import { FundBalanceModule } from './modules/fund-balance/fund-balance.module';
     BudgetTransferModule,
     ProjectFollowupModule,
     EgpAnnouncementModule,
+    FinancialAssessmentModule,
     InvoicePreAuditModule,
     PlanTraceModule,
     IntraBankTransferModule,

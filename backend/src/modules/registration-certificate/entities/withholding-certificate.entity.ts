@@ -37,6 +37,13 @@ export class WithholdingCertificate {
   @Column({ type: 'int', default: 100 })
   status: number; // 100 = กำลังทำ, 101 = ออกหนังสือรับรอง
 
+  // การนำส่งภาษีหัก ณ ที่จ่าย ให้สรรพากร (แบบ 2544 ข้อ 3.5)
+  @Column({ name: 'remit_date', type: 'date', nullable: true })
+  remitDate: Date | null;
+  // ช่องทางนำส่ง: 1 = ยื่นในท้องที่ (ภายใน 7 วัน) | 2 = ออนไลน์ (ภายใน 15 วัน)
+  @Column({ name: 'remit_channel', type: 'int', nullable: true })
+  remitChannel: number | null;
+
   @Column({ type: 'int', default: 0 })
   del: number;
 

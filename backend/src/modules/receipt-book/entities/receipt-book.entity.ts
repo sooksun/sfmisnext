@@ -96,6 +96,12 @@ export class ReceiptBook {
     | string
     | null;
 
+  // เลิกใช้เล่ม (ปรุ/เจาะรู/ประทับตราเลิกใช้) — สำหรับเล่มปีก่อนที่ใช้ไม่หมด (แบบ 2544 ข้อ 10.4)
+  @Column({ name: 'retired_date', type: 'date', nullable: true })
+  retiredDate: string | null;
+  @Column({ name: 'retired_by', type: 'int', nullable: true })
+  retiredBy: number | null;
+
   @Column({ type: 'text', nullable: true }) note: string | null;
 
   @Column({ name: 'up_by', type: 'int', default: 0 }) upBy: number;

@@ -61,7 +61,12 @@ describe('PolicyService', () => {
   describe('getBudgetIncomeType', () => {
     it('filter del=0 และ map field', async () => {
       bitRepo.find.mockResolvedValue([
-        { bgTypeId: 1, budgetType: 'งบดำเนินงาน', budgetTypeCalc: 1, budgetBorrowType: '2' },
+        {
+          bgTypeId: 1,
+          budgetType: 'งบดำเนินงาน',
+          budgetTypeCalc: 1,
+          budgetBorrowType: '2',
+        },
       ]);
       const result = await service.getBudgetIncomeType();
       expect(bitRepo.find).toHaveBeenCalledWith(
@@ -97,7 +102,14 @@ describe('PolicyService', () => {
 
     it('map partner field', async () => {
       partnerRepo.find.mockResolvedValue([
-        { pId: 1, pName: 'ร้าน A', pType: 1, pIdTax: '123', payType: 1, scId: 5 },
+        {
+          pId: 1,
+          pName: 'ร้าน A',
+          pType: 1,
+          pIdTax: '123',
+          payType: 1,
+          scId: 5,
+        },
       ]);
       const result = await service.getPartner(5);
       expect(result[0].p_id).toBe(1);

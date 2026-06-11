@@ -48,7 +48,10 @@ describe('RegisterMoneyTypeService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RegisterMoneyTypeService,
-        { provide: getRepositoryToken(BudgetIncomeType), useValue: budgetTypeRepo },
+        {
+          provide: getRepositoryToken(BudgetIncomeType),
+          useValue: budgetTypeRepo,
+        },
         {
           provide: getRepositoryToken(FinancialTransactions),
           useValue: ftRepo,
@@ -100,7 +103,9 @@ describe('RegisterMoneyTypeService', () => {
   // ─── whtRemitReminder ─────────────────────────────────────────────────────
   describe('whtRemitReminder', () => {
     it('ไม่พบประเภทเงินภาษีหัก ณ ที่จ่าย → คืน data ว่าง + ms', async () => {
-      budgetTypeRepo.createQueryBuilder.mockReturnValue(makeQb({ getOne: null }));
+      budgetTypeRepo.createQueryBuilder.mockReturnValue(
+        makeQb({ getOne: null }),
+      );
       const res = await service.whtRemitReminder(1, 3, '2569');
       expect(res).toEqual({
         data: [],
@@ -194,8 +199,22 @@ describe('RegisterMoneyTypeService', () => {
       ftRepo.createQueryBuilder.mockReturnValue(
         makeQb({
           getMany: [
-            { ftId: 1, type: 1, amount: 500, prId: 0, rwId: 0, createDate: null },
-            { ftId: 2, type: -1, amount: 200, rwId: 0, prId: 0, createDate: null },
+            {
+              ftId: 1,
+              type: 1,
+              amount: 500,
+              prId: 0,
+              rwId: 0,
+              createDate: null,
+            },
+            {
+              ftId: 2,
+              type: -1,
+              amount: 200,
+              rwId: 0,
+              prId: 0,
+              createDate: null,
+            },
           ],
         }),
       );
@@ -216,7 +235,14 @@ describe('RegisterMoneyTypeService', () => {
       ftRepo.createQueryBuilder.mockReturnValue(
         makeQb({
           getMany: [
-            { ftId: 5, type: 1, amount: 100, prId: 0, rwId: 9, createDate: null },
+            {
+              ftId: 5,
+              type: 1,
+              amount: 100,
+              prId: 0,
+              rwId: 9,
+              createDate: null,
+            },
           ],
         }),
       );
@@ -233,7 +259,14 @@ describe('RegisterMoneyTypeService', () => {
       ftRepo.createQueryBuilder.mockReturnValue(
         makeQb({
           getMany: [
-            { ftId: 7, type: -1, amount: 800, rwId: 3, prId: 0, createDate: null },
+            {
+              ftId: 7,
+              type: -1,
+              amount: 800,
+              rwId: 3,
+              prId: 0,
+              createDate: null,
+            },
           ],
         }),
       );
@@ -255,7 +288,14 @@ describe('RegisterMoneyTypeService', () => {
       ftRepo.createQueryBuilder.mockReturnValue(
         makeQb({
           getMany: [
-            { ftId: 1, type: 1, amount: 500, prId: 4, rwId: 0, createDate: null },
+            {
+              ftId: 1,
+              type: 1,
+              amount: 500,
+              prId: 4,
+              rwId: 0,
+              createDate: null,
+            },
           ],
         }),
       );

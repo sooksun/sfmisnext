@@ -15,9 +15,9 @@ export class AddInvoiceDto {
   @IsNumber()
   sc_id: number;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  no_doc: string;
+  no_doc?: string; // เว้นว่างได้ — ออกเลขอัตโนมัติ บจ./บค. ตอนออกเช็ค/จ่ายเงิน
 
   @IsOptional()
   @IsNumber()
@@ -96,6 +96,10 @@ export class AddInvoiceDto {
   @IsOptional()
   @IsNumber()
   type_offer_check?: number;
+
+  @IsOptional()
+  @IsNumber()
+  ba_id?: number; // บัญชีธนาคารที่สั่งจ่ายเช็ค — auto-sync ทะเบียนคุมเงินฝากธนาคาร
 
   @IsOptional()
   @IsNumber()

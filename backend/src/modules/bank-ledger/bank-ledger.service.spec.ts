@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { BankLedgerService } from './bank-ledger.service';
 import { BankLedgerEntry } from './entities/bank-ledger-entry.entity';
 import { Admin } from '../admin/entities/admin.entity';
+import { DeleteLogService } from '../delete-log/delete-log.service';
 
 // ─── QueryBuilder mock factory ───────────────────────────────────────────────
 function makeQb(raw: { getRawOne?: unknown; getRawMany?: unknown[] }) {
@@ -19,6 +20,7 @@ describe('BankLedgerService', () => {
   let service: BankLedgerService;
   let repo: jest.Mocked<any>;
   let adminRepo: jest.Mocked<any>;
+  let deleteLog: jest.Mocked<any>;
 
   beforeEach(async () => {
     repo = {
@@ -29,12 +31,14 @@ describe('BankLedgerService', () => {
       createQueryBuilder: jest.fn(),
     };
     adminRepo = { findOne: jest.fn() };
+    deleteLog = { log: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BankLedgerService,
         { provide: getRepositoryToken(BankLedgerEntry), useValue: repo },
         { provide: getRepositoryToken(Admin), useValue: adminRepo },
+        { provide: DeleteLogService, useValue: deleteLog },
       ],
     }).compile();
 
@@ -252,15 +256,25 @@ describe('BankLedgerService', () => {
     it('filter del=0 ที่ findOne', async () => {
       repo.findOne.mockResolvedValue(null);
       await service.updateEntry(1, {});
-      expect(repo.findOne).toHaveBeenCalledWith({ where: { bleId: 1, del: 0 } });
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { bleId: 1, del: 0 },
+      });
     });
 
     it('อัปเดตเฉพาะ field ที่ส่งมา', async () => {
-      const entry: any = { bleId: 1, entryType: 1, amount: 500, detail: 'เดิม' };
+      const entry: any = {
+        bleId: 1,
+        entryType: 1,
+        amount: 500,
+        detail: 'เดิม',
+      };
       repo.findOne.mockResolvedValue(entry);
       repo.save.mockResolvedValue(entry);
 
-      const result = await service.updateEntry(1, { amount: 999, entry_type: 2 });
+      const result = await service.updateEntry(1, {
+        amount: 999,
+        entry_type: 2,
+      });
       expect(entry.amount).toBe(999);
       expect(entry.entryType).toBe(2);
       expect(entry.detail).toBe('เดิม'); // ไม่เปลี่ยน
@@ -270,20 +284,42 @@ describe('BankLedgerService', () => {
 
   // ─── removeEntry ──────────────────────────────────────────────────────────
   describe('removeEntry', () => {
+    it('ไม่มีเหตุผล → flag: false (บังคับ audit trail)', async () => {
+      const result = await service.removeEntry(1, 7);
+      expect(result.flag).toBe(false);
+      expect(result.ms).toContain('เหตุผล');
+      expect(repo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('เหตุผลเป็นช่องว่าง → flag: false', async () => {
+      const result = await service.removeEntry(1, 7, '   ');
+      expect(result.flag).toBe(false);
+      expect(repo.findOne).not.toHaveBeenCalled();
+    });
+
     it('ไม่พบรายการ → flag: false', async () => {
       repo.findOne.mockResolvedValue(null);
-      const result = await service.removeEntry(99, 1);
+      const result = await service.removeEntry(99, 1, 'บันทึกซ้ำ');
       expect(result).toEqual({ flag: false, ms: 'ไม่พบรายการ' });
     });
 
-    it('happy path → soft delete (del=1) และ flag: true', async () => {
-      const entry: any = { bleId: 1, del: 0 };
+    it('happy path → soft delete (del=1) + ลง delete-log และ flag: true', async () => {
+      const entry: any = { bleId: 1, scId: 5, del: 0 };
       repo.findOne.mockResolvedValue(entry);
       repo.save.mockResolvedValue(entry);
 
-      const result = await service.removeEntry(1, 7);
+      const result = await service.removeEntry(1, 7, 'บันทึกซ้ำ');
       expect(entry.del).toBe(1);
       expect(entry.upBy).toBe(7);
+      expect(deleteLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          table: 'bank_ledger_entry',
+          rowId: 1,
+          reason: 'บันทึกซ้ำ',
+          deletedBy: 7,
+          scId: 5,
+        }),
+      );
       expect(result).toEqual({ flag: true, ms: 'ลบรายการเรียบร้อยแล้ว' });
     });
   });

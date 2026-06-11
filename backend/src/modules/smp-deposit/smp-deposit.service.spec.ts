@@ -190,11 +190,18 @@ describe('SmpDepositService', () => {
     it('filter del=0 ที่ findOne', async () => {
       repo.findOne.mockResolvedValue(null);
       await service.updateEntry(1, {});
-      expect(repo.findOne).toHaveBeenCalledWith({ where: { sdeId: 1, del: 0 } });
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { sdeId: 1, del: 0 },
+      });
     });
 
     it('อัปเดตเฉพาะ field ที่ส่งมา', async () => {
-      const entry: any = { sdeId: 1, entryType: 1, amount: 500, detail: 'เดิม' };
+      const entry: any = {
+        sdeId: 1,
+        entryType: 1,
+        amount: 500,
+        detail: 'เดิม',
+      };
       repo.findOne.mockResolvedValue(entry);
       repo.save.mockResolvedValue(entry);
 

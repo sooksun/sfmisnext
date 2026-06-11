@@ -7,6 +7,11 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ReportCheckControlService } from './report-check-control.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('ReportCheckControl')
 export class ReportCheckControlController {
@@ -19,7 +24,9 @@ export class ReportCheckControlController {
   loadCheckControl(
     @Param('scId', ParseIntPipe) scId: number,
     @Param('syId', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.reportCheckControlService.loadCheckControl(scId, syId);
   }
 }

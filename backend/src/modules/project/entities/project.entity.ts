@@ -19,6 +19,23 @@ export class Project {
   @Column({ name: 'proj_detail', type: 'text', nullable: true })
   projDetail: string | null;
 
+  /** สอดคล้องกับนโยบาย สพฐ (เช่น "ข้อ 3 เรื่อง ยกระดับคุณภาพการศึกษา") */
+  @Column({ name: 'proj_policy', type: 'text', nullable: true })
+  projPolicy: string | null;
+
+  /** ประเภทงบประมาณที่ใช้ (เช่น เงินอุดหนุนรายหัว) */
+  @Column({
+    name: 'proj_budget_type',
+    type: 'varchar',
+    length: 150,
+    nullable: true,
+  })
+  projBudgetType: string | null;
+
+  /** ผู้รับผิดชอบโครงการ */
+  @Column({ name: 'proj_owner', type: 'varchar', length: 150, nullable: true })
+  projOwner: string | null;
+
   @Column({
     name: 'proj_budget',
     type: 'decimal',

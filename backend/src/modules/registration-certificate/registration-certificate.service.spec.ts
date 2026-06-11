@@ -51,7 +51,10 @@ describe('RegistrationCertificateService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RegistrationCertificateService,
-        { provide: getRepositoryToken(WithholdingCertificate), useValue: wcRepo },
+        {
+          provide: getRepositoryToken(WithholdingCertificate),
+          useValue: wcRepo,
+        },
         { provide: getRepositoryToken(RequestWithdraw), useValue: rwRepo },
         { provide: getRepositoryToken(Partner), useValue: partnerRepo },
       ],
@@ -147,7 +150,15 @@ describe('RegistrationCertificateService', () => {
 
     it('map ค่า null เป็น default (wc_no/year ว่าง, wc_rank 0)', async () => {
       wcRepo.find.mockResolvedValue([
-        { wcId: 5, wcNo: null, ofId: 0, wcRank: null, year: null, syId: 3, status: 100 },
+        {
+          wcId: 5,
+          wcNo: null,
+          ofId: 0,
+          wcRank: null,
+          year: null,
+          syId: 3,
+          status: 100,
+        },
       ]);
       const result = await service.loadWithholdingCertificateList(5, 3);
       expect(result[0].wc_no).toBe('');
@@ -353,7 +364,16 @@ describe('RegistrationCertificateService', () => {
 
     it('คำนวณ cert_amount = ภาษีที่หัก (cal_vat=1, 10700 → 100)', async () => {
       wcRepo.find.mockResolvedValue([
-        { wcId: 1, wcNo: 'WC-1', ofId: 10, cerDate: null, syId: 3, year: '2569', status: 101, upBy: 7 },
+        {
+          wcId: 1,
+          wcNo: 'WC-1',
+          ofId: 10,
+          cerDate: null,
+          syId: 3,
+          year: '2569',
+          status: 101,
+          upBy: 7,
+        },
       ]);
       rwRepo.find.mockResolvedValue([
         { rwId: 10, pId: 20, amount: 10700, detail: 'ค่าเช่า', bgTypeId: 2 },
@@ -377,7 +397,15 @@ describe('RegistrationCertificateService', () => {
 
     it('up_by null → ว่าง', async () => {
       wcRepo.find.mockResolvedValue([
-        { wcId: 2, ofId: 0, cerDate: null, syId: 3, year: '2569', status: 100, upBy: null },
+        {
+          wcId: 2,
+          ofId: 0,
+          cerDate: null,
+          syId: 3,
+          year: '2569',
+          status: 100,
+          upBy: null,
+        },
       ]);
       rwRepo.find.mockResolvedValue([]);
       partnerRepo.find.mockResolvedValue([]);

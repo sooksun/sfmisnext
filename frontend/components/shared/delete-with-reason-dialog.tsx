@@ -18,6 +18,9 @@ interface DeleteWithReasonDialogProps {
   onClose: () => void
   onConfirm: (reason: string) => void | Promise<void>
   title?: string
+  description?: string
+  reasonLabel?: string
+  confirmLabel?: string
   itemLabel?: string
   loading?: boolean
   requireReason?: boolean
@@ -28,6 +31,9 @@ export function DeleteWithReasonDialog({
   onClose,
   onConfirm,
   title = 'ยืนยันการลบข้อมูล',
+  description = 'การลบจะไม่สามารถย้อนกลับได้ โปรดระบุเหตุผลเพื่อบันทึกลง log',
+  reasonLabel = 'เหตุผลการลบ',
+  confirmLabel = 'ยืนยันการลบ',
   itemLabel,
   loading = false,
   requireReason = true,
@@ -42,7 +48,7 @@ export function DeleteWithReasonDialog({
   const handleConfirm = async () => {
     const trimmed = reason.trim()
     if (requireReason && !trimmed) {
-      setError('กรุณากรอกเหตุผลการลบ')
+      setError(`กรุณากรอก${reasonLabel}`)
       return
     }
     await onConfirm(trimmed)
@@ -57,7 +63,7 @@ export function DeleteWithReasonDialog({
             {title}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            การลบจะไม่สามารถย้อนกลับได้ โปรดระบุเหตุผลเพื่อบันทึกลง log
+            {description}
             {itemLabel && (
               <span className="block mt-2 text-gray-800 font-medium">
                 รายการ: <span className="font-mono">{itemLabel}</span>
@@ -68,7 +74,7 @@ export function DeleteWithReasonDialog({
 
         <div className="py-2">
           <Label htmlFor="delete-reason" className="text-sm">
-            เหตุผลการลบ {requireReason && <span className="text-red-500">*</span>}
+            {reasonLabel} {requireReason && <span className="text-red-500">*</span>}
           </Label>
           <Textarea
             id="delete-reason"
@@ -89,10 +95,10 @@ export function DeleteWithReasonDialog({
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={loading}
+            disabled={loading || (requireReason && !reason.trim())}
             className="bg-red-600 hover:bg-red-700 text-white"
           >
-            {loading ? 'กำลังลบ...' : 'ยืนยันการลบ'}
+            {loading ? 'กำลังดำเนินการ...' : confirmLabel}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

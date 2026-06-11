@@ -11,6 +11,10 @@ import { FinancialTransactions } from '../report-daily-balance/entities/financia
 import { CashKeepingRecord } from '../cash-keeping/entities/cash-keeping-record.entity';
 import { FundBalanceService } from '../fund-balance/fund-balance.service';
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const DUE_DAYS: Record<number, number> = { 1: 15, 2: 30, 3: 30, 4: 30 };
 const CATEGORY_NAMES: Record<number, string> = {
@@ -313,17 +317,21 @@ export class LoanAgreementService {
   }
 
   /** ขั้นที่ 1 — ผู้ตรวจสอบ (เจ้าหน้าที่การเงิน) ตรวจสอบสัญญา */
-  async verifyLoan(dto: {
-    la_id: number;
-    verify_by: number;
-    verify_name?: string;
-    verify_date: string;
-    up_by?: number;
-  }) {
+  async verifyLoan(
+    dto: {
+      la_id: number;
+      verify_by: number;
+      verify_name?: string;
+      verify_date: string;
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
     const loan = await this.laRepo.findOne({
       where: { laId: dto.la_id, del: 0 },
     });
     if (!loan) return { flag: false, ms: 'ไม่พบสัญญายืมเงิน' };
+    if (user && loan.scId != null) assertSameSchool(user, loan.scId);
     if (loan.status !== STATUS.PENDING_VERIFY) {
       return {
         flag: false,
@@ -344,18 +352,22 @@ export class LoanAgreementService {
   }
 
   /** ขั้นที่ 2 — ผู้อนุมัติ (ผอ.) อนุมัติให้ยืม */
-  async approveLoan(dto: {
-    la_id: number;
-    approve_by: number;
-    approve_name?: string;
-    approve_date: string;
-    approve_amount?: number;
-    up_by?: number;
-  }) {
+  async approveLoan(
+    dto: {
+      la_id: number;
+      approve_by: number;
+      approve_name?: string;
+      approve_date: string;
+      approve_amount?: number;
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
     const loan = await this.laRepo.findOne({
       where: { laId: dto.la_id, del: 0 },
     });
     if (!loan) return { flag: false, ms: 'ไม่พบสัญญายืมเงิน' };
+    if (user && loan.scId != null) assertSameSchool(user, loan.scId);
     if (loan.status !== STATUS.PENDING_APPROVE) {
       return {
         flag: false,
@@ -382,15 +394,19 @@ export class LoanAgreementService {
    * ขั้นที่ 3 — รับเงิน (จ่ายเงินยืม): ตัดยอดประเภทเงิน (FT type=-1) +
    * คำนวณกำหนดส่งใช้ (วันรับเงิน + due_days) → สถานะ "ค้างชำระ"
    */
-  async disburseLoan(dto: {
-    la_id: number;
-    receipt_date: string;
-    up_by?: number;
-  }) {
+  async disburseLoan(
+    dto: {
+      la_id: number;
+      receipt_date: string;
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
     const loan = await this.laRepo.findOne({
       where: { laId: dto.la_id, del: 0 },
     });
     if (!loan) return { flag: false, ms: 'ไม่พบสัญญายืมเงิน' };
+    if (user && loan.scId != null) assertSameSchool(user, loan.scId);
     if (loan.status !== STATUS.PENDING_DISBURSE) {
       return {
         flag: false,
@@ -463,19 +479,23 @@ export class LoanAgreementService {
     });
   }
 
-  async returnLoan(dto: {
-    la_id: number;
-    returned_date: string;
-    return_cash: number;
-    return_voucher_amount: number;
-    evidence_no?: string;
-    note?: string;
-    up_by?: number;
-  }) {
+  async returnLoan(
+    dto: {
+      la_id: number;
+      returned_date: string;
+      return_cash: number;
+      return_voucher_amount: number;
+      evidence_no?: string;
+      note?: string;
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
     const loan = await this.laRepo.findOne({
       where: { laId: dto.la_id, del: 0 },
     });
     if (!loan) return { flag: false, ms: 'ไม่พบสัญญายืมเงิน' };
+    if (user && loan.scId != null) assertSameSchool(user, loan.scId);
     if (loan.status === STATUS.RETURNED)
       return { flag: false, ms: 'สัญญานี้ชำระคืนแล้ว' };
     if (loan.status !== STATUS.OUTSTANDING) {
@@ -661,9 +681,10 @@ export class LoanAgreementService {
     );
   }
 
-  async cancelLoan(laId: number, note: string, upBy: number) {
+  async cancelLoan(laId: number, note: string, upBy: number, user?: JwtUser) {
     const loan = await this.laRepo.findOne({ where: { laId, del: 0 } });
     if (!loan) return { flag: false, ms: 'ไม่พบสัญญายืมเงิน' };
+    if (user && loan.scId != null) assertSameSchool(user, loan.scId);
     if (loan.status === STATUS.RETURNED)
       return { flag: false, ms: 'ไม่สามารถยกเลิกสัญญาที่ชำระแล้ว' };
     if (loan.status === STATUS.CANCELLED)
@@ -686,7 +707,12 @@ export class LoanAgreementService {
     });
   }
 
-  async loadEvidence(laId: number) {
+  async loadEvidence(laId: number, user?: JwtUser) {
+    // Multi-tenant guard: หลักฐานส่งใช้ต้องเป็นของสัญญาในโรงเรียนผู้ใช้
+    if (user) {
+      const loan = await this.laRepo.findOne({ where: { laId, del: 0 } });
+      if (loan && loan.scId != null) assertSameSchool(user, loan.scId);
+    }
     const items = await this.lreRepo.find({
       where: { laId, del: 0 },
       order: { lreId: 'ASC' },

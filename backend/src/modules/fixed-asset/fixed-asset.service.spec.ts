@@ -11,7 +11,9 @@ import { UpdateFixedAssetDto } from './dto/update-fixed-asset.dto';
 function makeQb(getOneResult: unknown = null) {
   const qb: Record<string, jest.Mock> = {};
   const chain = () => qb as any;
-  ['where', 'orderBy'].forEach((m) => (qb[m] = jest.fn().mockReturnValue(chain())));
+  ['where', 'orderBy'].forEach(
+    (m) => (qb[m] = jest.fn().mockReturnValue(chain())),
+  );
   qb['getOne'] = jest.fn().mockResolvedValue(getOneResult);
   return qb;
 }
@@ -41,7 +43,10 @@ describe('FixedAssetService', () => {
       providers: [
         FixedAssetService,
         { provide: getRepositoryToken(FixedAsset), useValue: faRepo },
-        { provide: getRepositoryToken(FixedAssetDepreciation), useValue: fadRepo },
+        {
+          provide: getRepositoryToken(FixedAssetDepreciation),
+          useValue: fadRepo,
+        },
       ],
     }).compile();
 
@@ -106,7 +111,13 @@ describe('FixedAssetService', () => {
 
     it('map + คำนวณ book_value = acquired - accum (>= salvage)', async () => {
       faRepo.findAndCount.mockResolvedValue([
-        [makeFa({ acquiredPrice: 10000, accumulatedDepreciation: 3000, salvageValue: 1 })],
+        [
+          makeFa({
+            acquiredPrice: 10000,
+            accumulatedDepreciation: 3000,
+            salvageValue: 1,
+          }),
+        ],
         1,
       ]);
       const result = await service.load(1, 1, 10);
@@ -118,7 +129,13 @@ describe('FixedAssetService', () => {
 
     it('book_value ไม่ต่ำกว่า salvage value', async () => {
       faRepo.findAndCount.mockResolvedValue([
-        [makeFa({ acquiredPrice: 10000, accumulatedDepreciation: 9999, salvageValue: 500 })],
+        [
+          makeFa({
+            acquiredPrice: 10000,
+            accumulatedDepreciation: 9999,
+            salvageValue: 500,
+          }),
+        ],
         1,
       ]);
       const result = await service.load(1, 1, 10);
@@ -138,7 +155,12 @@ describe('FixedAssetService', () => {
     it('คืน asset + book_value + depreciation_history', async () => {
       faRepo.findOne.mockResolvedValue(makeFa());
       fadRepo.find.mockResolvedValue([
-        { budgetYear: 2569, depreciationAmount: 2000, bookValueEnd: 8000, calcDate: '2026-09-30' },
+        {
+          budgetYear: 2569,
+          depreciationAmount: 2000,
+          bookValueEnd: 8000,
+          calcDate: '2026-09-30',
+        },
       ]);
       const result = await service.get(1);
       expect(result?.book_value).toBe(10000); // 10000 - 0 accum (>= salvage 1)
@@ -292,7 +314,12 @@ describe('FixedAssetService', () => {
   // ─── calcDepreciation ─────────────────────────────────────────────────────────
   describe('calcDepreciation', () => {
     it('คำนวณค่าเสื่อมรายปีแบบเส้นตรง (acquired-salvage)/life', async () => {
-      const fa = makeFa({ acquiredPrice: 10000, salvageValue: 0, usefulLifeYears: 5, accumulatedDepreciation: 0 });
+      const fa = makeFa({
+        acquiredPrice: 10000,
+        salvageValue: 0,
+        usefulLifeYears: 5,
+        accumulatedDepreciation: 0,
+      });
       faRepo.find.mockResolvedValue([fa]);
       fadRepo.findOne.mockResolvedValue(null); // ยังไม่เคยคำนวณปีนี้
       const result = await service.calcDepreciation(1, 2569, 7);
@@ -358,9 +385,27 @@ describe('FixedAssetService', () => {
   describe('report', () => {
     it('จัดกลุ่มตามหมวด + รวม total_acquired / total_book_value', async () => {
       faRepo.find.mockResolvedValue([
-        makeFa({ faId: 1, faCategory: 1, acquiredPrice: 10000, accumulatedDepreciation: 2000, salvageValue: 0 }),
-        makeFa({ faId: 2, faCategory: 1, acquiredPrice: 5000, accumulatedDepreciation: 0, salvageValue: 0 }),
-        makeFa({ faId: 3, faCategory: 2, acquiredPrice: 20000, accumulatedDepreciation: 5000, salvageValue: 0 }),
+        makeFa({
+          faId: 1,
+          faCategory: 1,
+          acquiredPrice: 10000,
+          accumulatedDepreciation: 2000,
+          salvageValue: 0,
+        }),
+        makeFa({
+          faId: 2,
+          faCategory: 1,
+          acquiredPrice: 5000,
+          accumulatedDepreciation: 0,
+          salvageValue: 0,
+        }),
+        makeFa({
+          faId: 3,
+          faCategory: 2,
+          acquiredPrice: 20000,
+          accumulatedDepreciation: 5000,
+          salvageValue: 0,
+        }),
       ]);
       const result = await service.report(1, 2569);
       expect(result.summary.total_items).toBe(3);

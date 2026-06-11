@@ -143,10 +143,7 @@ export class ProcurementPlanService {
       const items = await this.itemRepo.find({
         where: { ppId: plan.ppId, del: 0 },
       });
-      const sumItem = items.reduce(
-        (a, b) => a + Number(b.itemBudget || 0),
-        0,
-      );
+      const sumItem = items.reduce((a, b) => a + Number(b.itemBudget || 0), 0);
       if (dto.pp_total_budget < sumItem) {
         throw new BadRequestException(
           `วงเงินแผน (${dto.pp_total_budget}) ต่ำกว่ายอดรวมรายการที่มีอยู่ (${sumItem}) — ลบ/แก้รายการก่อน`,

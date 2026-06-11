@@ -39,7 +39,10 @@ describe('FundBalanceService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FundBalanceService,
-        { provide: getRepositoryToken(FinancialTransactions), useValue: ftRepo },
+        {
+          provide: getRepositoryToken(FinancialTransactions),
+          useValue: ftRepo,
+        },
         { provide: getRepositoryToken(OpeningBalance), useValue: obRepo },
       ],
     }).compile();
@@ -79,7 +82,9 @@ describe('FundBalanceService', () => {
     it('filter opening ด้วย sc_id, money_type_id, del=0 และ sy_id', async () => {
       const { openingQb } = setupBalance(0, 0, 0);
       await service.available(7, 5, 9);
-      expect(openingQb.where).toHaveBeenCalledWith('o.sc_id = :scId', { scId: 7 });
+      expect(openingQb.where).toHaveBeenCalledWith('o.sc_id = :scId', {
+        scId: 7,
+      });
       expect(openingQb.andWhere).toHaveBeenCalledWith('o.money_type_id = :mt', {
         mt: 9,
       });

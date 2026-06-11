@@ -4,6 +4,10 @@ import { Repository } from 'typeorm';
 import { SupplieRequest } from './entities/supplie-request.entity';
 import { SupplieRequestDetail } from './entities/supplie-request-detail.entity';
 import { TransactionSupplies } from '../supplie/entities/transaction-supplies.entity';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const STATUS_NAMES: Record<number, string> = {
   0: 'ร่าง',
@@ -58,9 +62,10 @@ export class SupplieRequestService {
     };
   }
 
-  async getDetail(reqId: number) {
+  async getDetail(reqId: number, user?: JwtUser) {
     const req = await this.reqRepo.findOne({ where: { reqId, del: 0 } });
     if (!req) return null;
+    if (user && req.scId != null) assertSameSchool(user, req.scId);
     const details = await this.detRepo.find({ where: { reqId, del: 0 } });
     return {
       req_id: req.reqId,
@@ -116,11 +121,12 @@ export class SupplieRequestService {
     return { flag: true, ms: 'บันทึกใบเบิกเรียบร้อย', req_id: req.reqId };
   }
 
-  async update(body: any) {
+  async update(body: any, user?: JwtUser) {
     const req = await this.reqRepo.findOne({
       where: { reqId: body.req_id, del: 0 },
     });
     if (!req) return { flag: false, ms: 'ไม่พบใบเบิก' };
+    if (user && req.scId != null) assertSameSchool(user, req.scId);
     if (req.status > 1) return { flag: false, ms: 'อนุมัติแล้ว แก้ไขไม่ได้' };
 
     req.reqNo = body.req_no ?? req.reqNo;
@@ -148,9 +154,10 @@ export class SupplieRequestService {
     return { flag: true, ms: 'อัปเดตใบเบิกสำเร็จ' };
   }
 
-  async submit(reqId: number, upBy: number) {
+  async submit(reqId: number, upBy: number, user?: JwtUser) {
     const req = await this.reqRepo.findOne({ where: { reqId, del: 0 } });
     if (!req) return { flag: false, ms: 'ไม่พบใบเบิก' };
+    if (user && req.scId != null) assertSameSchool(user, req.scId);
     if (req.status !== 0) return { flag: false, ms: 'ส่งแล้วหรืออนุมัติแล้ว' };
     req.status = 1;
     req.upBy = upBy;
@@ -158,9 +165,10 @@ export class SupplieRequestService {
     return { flag: true, ms: 'ส่งคำขอเบิกเรียบร้อย' };
   }
 
-  async approve(reqId: number, approvedBy: number) {
+  async approve(reqId: number, approvedBy: number, user?: JwtUser) {
     const req = await this.reqRepo.findOne({ where: { reqId, del: 0 } });
     if (!req) return { flag: false, ms: 'ไม่พบใบเบิก' };
+    if (user && req.scId != null) assertSameSchool(user, req.scId);
     if (req.status !== 1) return { flag: false, ms: 'สถานะไม่ถูกต้อง' };
     req.status = 2;
     req.approvedBy = approvedBy;
@@ -170,9 +178,10 @@ export class SupplieRequestService {
     return { flag: true, ms: 'อนุมัติใบเบิกเรียบร้อย' };
   }
 
-  async reject(reqId: number, reason: string, upBy: number) {
+  async reject(reqId: number, reason: string, upBy: number, user?: JwtUser) {
     const req = await this.reqRepo.findOne({ where: { reqId, del: 0 } });
     if (!req) return { flag: false, ms: 'ไม่พบใบเบิก' };
+    if (user && req.scId != null) assertSameSchool(user, req.scId);
     if (req.status !== 1) return { flag: false, ms: 'สถานะไม่ถูกต้อง' };
     req.status = 0;
     req.rejectReason = reason;
@@ -185,9 +194,11 @@ export class SupplieRequestService {
     reqId: number,
     issuedBy: number,
     details: { rqd_id: number; issued_qty: number }[],
+    user?: JwtUser,
   ) {
     const req = await this.reqRepo.findOne({ where: { reqId, del: 0 } });
     if (!req) return { flag: false, ms: 'ไม่พบใบเบิก' };
+    if (user && req.scId != null) assertSameSchool(user, req.scId);
     if (req.status !== 2) return { flag: false, ms: 'ต้องอนุมัติก่อนจ่าย' };
 
     for (const d of details) {
@@ -229,9 +240,10 @@ export class SupplieRequestService {
     return { flag: true, ms: 'บันทึกการจ่ายพัสดุเรียบร้อย' };
   }
 
-  async cancel(reqId: number, upBy: number) {
+  async cancel(reqId: number, upBy: number, user?: JwtUser) {
     const req = await this.reqRepo.findOne({ where: { reqId, del: 0 } });
     if (!req) return { flag: false, ms: 'ไม่พบใบเบิก' };
+    if (user && req.scId != null) assertSameSchool(user, req.scId);
     if (req.status === 3)
       return { flag: false, ms: 'เบิกจ่ายแล้ว ยกเลิกไม่ได้' };
     req.status = 9;

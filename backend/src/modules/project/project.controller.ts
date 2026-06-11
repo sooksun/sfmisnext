@@ -72,7 +72,9 @@ export class ProjectController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('syId', ParseIntPipe) syId: number,
     @Param('budgetYear') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.projectService.loadPLNBudgetCategory(scId, syId, budgetYear);
   }
 
@@ -81,7 +83,9 @@ export class ProjectController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('syId', ParseIntPipe) syId: number,
     @Param('budgetYear') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.projectService.loadPLNBudgetCategory(scId, syId, budgetYear);
   }
 
@@ -122,7 +126,11 @@ export class ProjectController {
 
   @Post('master_sc_policy/:scId')
   @HttpCode(HttpStatus.OK)
-  masterScPolicy(@Param('scId', ParseIntPipe) scId: number) {
+  masterScPolicy(
+    @Param('scId', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
     return this.projectService.masterScPolicy(scId);
   }
 }

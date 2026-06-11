@@ -11,14 +11,9 @@ import { AddReceiptDto } from './dto/add-receipt.dto';
 function makeQb(rawMany: unknown[] = []) {
   const qb: Record<string, jest.Mock> = {};
   const chain = () => qb as any;
-  [
-    'leftJoin',
-    'where',
-    'andWhere',
-    'select',
-    'addSelect',
-    'orderBy',
-  ].forEach((m) => (qb[m] = jest.fn().mockReturnValue(chain())));
+  ['leftJoin', 'where', 'andWhere', 'select', 'addSelect', 'orderBy'].forEach(
+    (m) => (qb[m] = jest.fn().mockReturnValue(chain())),
+  );
   qb['getRawMany'] = jest.fn().mockResolvedValue(rawMany);
   return qb;
 }

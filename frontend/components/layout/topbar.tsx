@@ -1,7 +1,7 @@
 'use client'
 import { useSession, signOut } from 'next-auth/react'
-import { useEffect, useRef, useState } from 'react'
-import { LogOut, User, ChevronDown, CalendarDays, Search, KeyRound } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { LogOut, User, ChevronDown, Search, KeyRound } from 'lucide-react'
 import { ChangePasswordDialog } from '@/components/auth/change-password-dialog'
 import { useRouter } from 'next/navigation'
 import {
@@ -12,29 +12,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { toBE } from '@/lib/utils'
-import { useAppContext } from '@/hooks/use-app-context'
+import { YearSwitcher } from '@/components/layout/year-switcher'
 
 export function Topbar() {
   const { data: session } = useSession()
   const router = useRouter()
-  const { syYear, budgetYear: budgetYearRaw } = useAppContext()
-  const [mounted, setMounted] = useState(false)
   const [searchValue, setSearchValue] = useState('')
   const [passwordOpen, setPasswordOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  // Derive yearInfo from hook (client-only) to avoid hydration mismatch
-  const yearInfo = mounted && (syYear > 0 || budgetYearRaw > 0)
-    ? {
-        sy_year: syYear,
-        budget_year: budgetYearRaw,
-      }
-    : null
 
   const user = session?.user as
     | {
@@ -68,19 +53,8 @@ export function Topbar() {
 
   return (
     <header className="flex items-center justify-between h-14 px-4 bg-white border-b border-gray-200 shrink-0">
-      {/* Left: Year info */}
-      <div className="flex items-center gap-2 text-sm text-gray-600">
-        <CalendarDays className="h-4 w-4 text-indigo-600" />
-        {yearInfo ? (
-          <span>
-            ปีการศึกษา <strong>{toBE(yearInfo.sy_year)}</strong>
-            {' · '}
-            ปีงบประมาณ <strong>{toBE(yearInfo.budget_year)}</strong>
-          </span>
-        ) : (
-          <span className="text-gray-400">ยังไม่ได้เลือกปีการศึกษา</span>
-        )}
-      </div>
+      {/* Left: Year switcher (เลือกปีย้อนหลังได้สำหรับงานตรวจสอบ) */}
+      <YearSwitcher />
 
       {/* Center: Global search (desktop only) */}
       <div className="hidden md:flex flex-1 justify-center px-4">

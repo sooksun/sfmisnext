@@ -47,6 +47,9 @@ export class ProjectService {
       proj_id: item.projId,
       proj_name: item.projName,
       proj_detail: item.projDetail,
+      proj_policy: item.projPolicy,
+      proj_budget_type: item.projBudgetType,
+      proj_owner: item.projOwner,
       proj_budget: Number(item.projBudget),
       proj_status: item.projStatus,
       pbc_id: item.pbcId,
@@ -86,6 +89,9 @@ export class ProjectService {
     const project = new Project();
     project.projName = payload.proj_name;
     project.projDetail = payload.proj_detail || null;
+    project.projPolicy = payload.proj_policy || null;
+    project.projBudgetType = payload.proj_budget_type || null;
+    project.projOwner = payload.proj_owner || null;
     project.projBudget = payload.proj_budget || 0;
     project.pbcId = payload.pbc_id || null;
     project.scId = payload.sc_id || null;
@@ -139,6 +145,12 @@ export class ProjectService {
     if (payload.proj_name !== undefined) project.projName = payload.proj_name;
     if (payload.proj_detail !== undefined)
       project.projDetail = payload.proj_detail;
+    if (payload.proj_policy !== undefined)
+      project.projPolicy = payload.proj_policy;
+    if (payload.proj_budget_type !== undefined)
+      project.projBudgetType = payload.proj_budget_type;
+    if (payload.proj_owner !== undefined)
+      project.projOwner = payload.proj_owner;
     if (payload.proj_budget !== undefined)
       project.projBudget = payload.proj_budget;
     if (payload.pbc_id !== undefined) project.pbcId = payload.pbc_id;

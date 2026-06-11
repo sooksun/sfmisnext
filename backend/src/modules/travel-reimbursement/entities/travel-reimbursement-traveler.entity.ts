@@ -18,12 +18,17 @@ export class TravelReimbursementTraveler {
   @Column({ type: 'int', default: 1, comment: 'ลำดับที่' }) seq: number;
 
   @Column({ type: 'varchar', length: 200, nullable: true }) name: string | null;
-  @Column({ type: 'varchar', length: 200, nullable: true }) position: string | null;
+  @Column({ type: 'varchar', length: 200, nullable: true }) position:
+    | string
+    | null;
 
-  @Column({ type: 'float', default: 0, comment: 'ค่าเบี้ยเลี้ยง' }) allowance: number;
-  @Column({ type: 'float', default: 0, comment: 'ค่าเช่าที่พัก' }) lodging: number;
+  @Column({ type: 'float', default: 0, comment: 'ค่าเบี้ยเลี้ยง' })
+  allowance: number;
+  @Column({ type: 'float', default: 0, comment: 'ค่าเช่าที่พัก' })
+  lodging: number;
   @Column({ type: 'float', default: 0, comment: 'ค่าพาหนะ' }) transport: number;
-  @Column({ type: 'float', default: 0, comment: 'ค่าใช้จ่ายอื่น' }) other: number;
+  @Column({ type: 'float', default: 0, comment: 'ค่าใช้จ่ายอื่น' })
+  other: number;
   @Column({ type: 'float', default: 0, comment: 'รวม' }) total: number;
 
   @Column({ type: 'text', nullable: true }) note: string | null;

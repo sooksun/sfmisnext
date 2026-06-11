@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProjectFollowup } from './entities/project-followup.entity';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const PERIOD_NAMES: Record<number, string> = {
   1: 'ไตรมาสที่ 1',
@@ -28,11 +32,13 @@ export class ProjectFollowupService {
     private readonly pfRepo: Repository<ProjectFollowup>,
   ) {}
 
-  async loadByProject(projectId: number) {
+  async loadByProject(projectId: number, user?: JwtUser) {
     const items = await this.pfRepo.find({
       where: { projectId, del: 0 },
       order: { reportDate: 'ASC', pfId: 'ASC' },
     });
+    // กัน cross-tenant: รายงานต้องเป็นของโรงเรียนเดียวกับ JWT user
+    if (user && items.length) assertSameSchool(user, items[0].scId);
     return items.map((p) => ({
       pf_id: p.pfId,
       project_id: p.projectId,
@@ -91,9 +97,10 @@ export class ProjectFollowupService {
     return { flag: true, ms: 'บันทึกรายงานผลเรียบร้อยแล้ว' };
   }
 
-  async update(dto: any) {
+  async update(dto: any, user?: JwtUser) {
     const p = await this.pfRepo.findOne({ where: { pfId: dto.pf_id, del: 0 } });
     if (!p) return { flag: false, ms: 'ไม่พบรายงาน' };
+    if (user) assertSameSchool(user, p.scId);
     if (p.status === 3)
       return { flag: false, ms: 'ผอ.รับทราบแล้ว ไม่สามารถแก้ไขได้' };
 
@@ -122,9 +129,10 @@ export class ProjectFollowupService {
     return { flag: true, ms: 'แก้ไขรายงานเรียบร้อย' };
   }
 
-  async submit(pfId: number, upBy: number) {
+  async submit(pfId: number, upBy: number, user?: JwtUser) {
     const p = await this.pfRepo.findOne({ where: { pfId, del: 0 } });
     if (!p) return { flag: false, ms: 'ไม่พบรายงาน' };
+    if (user) assertSameSchool(user, p.scId);
     if (p.status !== 1) return { flag: false, ms: 'สถานะไม่ถูกต้อง' };
     p.status = 2;
     p.upBy = upBy;
@@ -132,13 +140,17 @@ export class ProjectFollowupService {
     return { flag: true, ms: 'ส่งรายงานเรียบร้อย' };
   }
 
-  async acknowledge(dto: {
-    pf_id: number;
-    acknowledged_by: number;
-    acknowledged_date: string;
-  }) {
+  async acknowledge(
+    dto: {
+      pf_id: number;
+      acknowledged_by: number;
+      acknowledged_date: string;
+    },
+    user?: JwtUser,
+  ) {
     const p = await this.pfRepo.findOne({ where: { pfId: dto.pf_id, del: 0 } });
     if (!p) return { flag: false, ms: 'ไม่พบรายงาน' };
+    if (user) assertSameSchool(user, p.scId);
     if (p.status !== 2) return { flag: false, ms: 'รายงานยังไม่ได้ส่ง' };
     p.status = 3;
     p.acknowledgedBy = dto.acknowledged_by;
@@ -148,9 +160,10 @@ export class ProjectFollowupService {
     return { flag: true, ms: 'รับทราบรายงานเรียบร้อย' };
   }
 
-  async remove(pfId: number, upBy: number) {
+  async remove(pfId: number, upBy: number, user?: JwtUser) {
     const p = await this.pfRepo.findOne({ where: { pfId, del: 0 } });
     if (!p) return { flag: false, ms: 'ไม่พบรายงาน' };
+    if (user) assertSameSchool(user, p.scId);
     if (p.status === 3) return { flag: false, ms: 'ผอ.รับทราบแล้ว ลบไม่ได้' };
     p.del = 1;
     p.upBy = upBy;

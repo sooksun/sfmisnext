@@ -7,6 +7,11 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { YearEndReportService } from './year-end-report.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('YearEndReport')
 export class YearEndReportController {
@@ -18,7 +23,9 @@ export class YearEndReportController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.yearEndReportService.getReceiptUsageReport(
       scId,
       syId,
@@ -32,7 +39,9 @@ export class YearEndReportController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.yearEndReportService.getSchoolRevenueReport(
       scId,
       syId,

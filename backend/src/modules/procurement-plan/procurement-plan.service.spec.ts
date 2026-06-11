@@ -55,7 +55,10 @@ describe('ProcurementPlanService', () => {
       providers: [
         ProcurementPlanService,
         { provide: getRepositoryToken(PlnProcurementPlan), useValue: planRepo },
-        { provide: getRepositoryToken(PlnProcurementPlanItem), useValue: itemRepo },
+        {
+          provide: getRepositoryToken(PlnProcurementPlanItem),
+          useValue: itemRepo,
+        },
         { provide: getRepositoryToken(ParcelOrder), useValue: orderRepo },
       ],
     }).compile();
@@ -74,7 +77,12 @@ describe('ProcurementPlanService', () => {
       expect(qb.andWhere).toHaveBeenCalledWith('p.acad_year = :acadYear', {
         acadYear: 2569,
       });
-      expect(result).toEqual({ data: [{ ppId: 1 }], count: 1, page: 1, pageSize: 1 });
+      expect(result).toEqual({
+        data: [{ ppId: 1 }],
+        count: 1,
+        page: 1,
+        pageSize: 1,
+      });
     });
   });
 
@@ -125,7 +133,11 @@ describe('ProcurementPlanService', () => {
         up_by: 9,
       });
       expect(planRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ scId: 1, ppStatus: 0, ppTotalBudget: 100000 }),
+        expect.objectContaining({
+          scId: 1,
+          ppStatus: 0,
+          ppTotalBudget: 100000,
+        }),
       );
       expect(result).toEqual(
         expect.objectContaining({ flag: true, pp_id: 10 }),
@@ -188,7 +200,10 @@ describe('ProcurementPlanService', () => {
         { itemBudget: 10000 }, // รวม 30000
       ]);
       await expect(
-        service.updatePlan({ pp_id: 1, pp_total_budget: 1000 } as any, ownerUser),
+        service.updatePlan(
+          { pp_id: 1, pp_total_budget: 1000 } as any,
+          ownerUser,
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -241,14 +256,22 @@ describe('ProcurementPlanService', () => {
     });
 
     it('โรงเรียนอื่น → ForbiddenException', async () => {
-      planRepo.findOne.mockResolvedValue({ ppId: 1, scId: 1, ppTotalBudget: 100000 });
+      planRepo.findOne.mockResolvedValue({
+        ppId: 1,
+        scId: 1,
+        ppTotalBudget: 100000,
+      });
       await expect(
         service.announcePlan({ pp_id: 1 } as any, otherUser),
       ).rejects.toThrow(ForbiddenException);
     });
 
     it('ยอดรวมรายการเกินวงเงินแผน → BadRequestException', async () => {
-      planRepo.findOne.mockResolvedValue({ ppId: 1, scId: 1, ppTotalBudget: 1000 });
+      planRepo.findOne.mockResolvedValue({
+        ppId: 1,
+        scId: 1,
+        ppTotalBudget: 1000,
+      });
       itemRepo.find.mockResolvedValue([
         { itemBudget: 800 },
         { itemBudget: 500 }, // รวม 1300 > 1000
@@ -299,7 +322,12 @@ describe('ProcurementPlanService', () => {
     });
 
     it('item_budget ทำให้รวมเกินวงเงินแผน → BadRequestException (M8)', async () => {
-      planRepo.findOne.mockResolvedValue({ ppId: 1, scId: 1, ppStatus: 0, ppTotalBudget: 1000 });
+      planRepo.findOne.mockResolvedValue({
+        ppId: 1,
+        scId: 1,
+        ppStatus: 0,
+        ppTotalBudget: 1000,
+      });
       itemRepo.find.mockResolvedValue([{ itemBudget: 800 }]);
       await expect(
         service.addPlanItem(
@@ -310,7 +338,12 @@ describe('ProcurementPlanService', () => {
     });
 
     it('happy path → เพิ่มรายการ flag: true', async () => {
-      planRepo.findOne.mockResolvedValue({ ppId: 1, scId: 1, ppStatus: 0, ppTotalBudget: 100000 });
+      planRepo.findOne.mockResolvedValue({
+        ppId: 1,
+        scId: 1,
+        ppStatus: 0,
+        ppTotalBudget: 100000,
+      });
       itemRepo.find.mockResolvedValue([]);
       itemRepo.save.mockImplementation(async (x: any) => {
         x.ppiId = 20;
@@ -326,7 +359,12 @@ describe('ProcurementPlanService', () => {
     });
 
     it('method_type default = 3 (เฉพาะเจาะจง) เมื่อไม่ส่ง', async () => {
-      planRepo.findOne.mockResolvedValue({ ppId: 1, scId: 1, ppStatus: 0, ppTotalBudget: 100000 });
+      planRepo.findOne.mockResolvedValue({
+        ppId: 1,
+        scId: 1,
+        ppStatus: 0,
+        ppTotalBudget: 100000,
+      });
       itemRepo.find.mockResolvedValue([]);
       await service.addPlanItem({ pp_id: 1, item_budget: 0 } as any, ownerUser);
       expect(itemRepo.create).toHaveBeenCalledWith(
@@ -367,21 +405,34 @@ describe('ProcurementPlanService', () => {
     it('แก้วงเงินรายการจนรวมเกินวงเงินแผน → BadRequestException (ดักต้นทาง)', async () => {
       const item: any = { ppiId: 1, ppId: 1, del: 0, itemBudget: 500 };
       itemRepo.findOne.mockResolvedValue(item);
-      planRepo.findOne.mockResolvedValue({ ppId: 1, scId: 1, ppStatus: 0, ppTotalBudget: 1000 });
+      planRepo.findOne.mockResolvedValue({
+        ppId: 1,
+        scId: 1,
+        ppStatus: 0,
+        ppTotalBudget: 1000,
+      });
       itemRepo.find.mockResolvedValue([
         { ppiId: 1, itemBudget: 500 },
         { ppiId: 2, itemBudget: 400 }, // อื่น ๆ รวม 400
       ]);
       // 400 + 700 = 1100 > 1000
       await expect(
-        service.updatePlanItem({ ppi_id: 1, item_budget: 700 } as any, ownerUser),
+        service.updatePlanItem(
+          { ppi_id: 1, item_budget: 700 } as any,
+          ownerUser,
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('แก้วงเงินรายการแต่ยังไม่เกินวงเงินแผน → อัปเดตได้', async () => {
       const item: any = { ppiId: 1, ppId: 1, del: 0, itemBudget: 500 };
       itemRepo.findOne.mockResolvedValue(item);
-      planRepo.findOne.mockResolvedValue({ ppId: 1, scId: 1, ppStatus: 0, ppTotalBudget: 1000 });
+      planRepo.findOne.mockResolvedValue({
+        ppId: 1,
+        scId: 1,
+        ppStatus: 0,
+        ppTotalBudget: 1000,
+      });
       itemRepo.find.mockResolvedValue([
         { ppiId: 1, itemBudget: 500 },
         { ppiId: 2, itemBudget: 400 },
@@ -435,7 +486,13 @@ describe('ProcurementPlanService', () => {
 
     it('คำนวณ variance (plan - actual) และ completion_rate ถูกต้อง', async () => {
       planRepo.find.mockResolvedValue([
-        { ppId: 1, ppNo: 'P-1', ppTitle: 'แผน', ppTotalBudget: 100000, ppStatus: 1 },
+        {
+          ppId: 1,
+          ppNo: 'P-1',
+          ppTitle: 'แผน',
+          ppTotalBudget: 100000,
+          ppStatus: 1,
+        },
       ]);
       itemRepo.find.mockResolvedValue([
         { ppiId: 10, itemTitle: 'รายการ1', itemBudget: 5000, methodType: 3 },
@@ -445,7 +502,8 @@ describe('ProcurementPlanService', () => {
       orderRepo.createQueryBuilder.mockImplementation(() => {
         const qb = makeQb([]);
         qb.getMany = jest.fn().mockImplementation(() => {
-          const calls = (orderRepo.createQueryBuilder as jest.Mock).mock.calls.length;
+          const calls = (orderRepo.createQueryBuilder as jest.Mock).mock.calls
+            .length;
           if (calls === 1) {
             return Promise.resolve([
               { orderId: 1, orderStatus: 8, budgets: 4500, isUrgent: 0 },
@@ -468,7 +526,13 @@ describe('ProcurementPlanService', () => {
 
     it('order ที่ยกเลิก (status=9) ถูกข้ามเลือก latest ที่ไม่ใช่ 9', async () => {
       planRepo.find.mockResolvedValue([
-        { ppId: 1, ppNo: 'P-1', ppTitle: 'แผน', ppTotalBudget: 100000, ppStatus: 1 },
+        {
+          ppId: 1,
+          ppNo: 'P-1',
+          ppTitle: 'แผน',
+          ppTotalBudget: 100000,
+          ppStatus: 1,
+        },
       ]);
       itemRepo.find.mockResolvedValue([
         { ppiId: 10, itemTitle: 'ร', itemBudget: 5000, methodType: 3 },

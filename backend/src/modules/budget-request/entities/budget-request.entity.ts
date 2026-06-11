@@ -74,13 +74,32 @@ export class BudgetRequest {
 
   @Column({ type: 'float', default: 0 }) amount: number;
 
+  /**
+   * สถานะเอกสาร: 0=รอส่งเบิก 1=ส่งเบิก 2=โอนเงินแล้ว 3=ยกเลิก
+   */
+  @Column({
+    name: 'status',
+    type: 'int',
+    default: 0,
+    comment: '0=รอส่งเบิก|1=ส่งเบิก|2=โอนเงินแล้ว|3=ยกเลิก',
+  })
+  status: number;
+
   @Column({
     name: 'send_date',
     type: 'date',
     nullable: true,
-    comment: 'วันที่ส่ง สพป.',
+    comment: 'วันที่ส่งเบิก (ส่ง สพป.)',
   })
   sendDate: string | null;
+
+  @Column({
+    name: 'paid_date',
+    type: 'date',
+    nullable: true,
+    comment: 'วันที่ สพป. โอนเงินให้เจ้าหนี้',
+  })
+  paidDate: string | null;
 
   @Column({ type: 'text', nullable: true }) remark: string | null;
   @Column({ name: 'up_by', type: 'int', default: 0 }) upBy: number;

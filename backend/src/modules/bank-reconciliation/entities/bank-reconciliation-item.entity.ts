@@ -21,16 +21,17 @@ export class BankReconciliationItem {
   brId: number;
 
   /**
-   * ประเภทรายการปรับปรุง:
-   * 1 = เช็คค้างขึ้น (outstanding check) — หักจากยอดสมุด
-   * 2 = เงินฝากระหว่างทาง (deposit-in-transit) — บวกยอดสมุด
-   * 3 = รายการอื่น
+   * ประเภทรายการปรับปรุง (ปรับ "ฝั่งธนาคาร" ตามแบบงบพิสูจน์ยอดเงินฝากธนาคาร):
+   * 1 = เช็คค้างขึ้น (outstanding check) — หักจากยอดธนาคาร
+   * 2 = เงินฝากระหว่างทาง (deposit-in-transit) — บวกยอดธนาคาร
+   * 3 = รายการอื่น — บวกยอดธนาคาร
    */
   @Column({
     name: 'item_type',
     type: 'int',
     default: 1,
-    comment: '1=เช็คค้างขึ้น|2=เงินฝากระหว่างทาง|3=อื่น',
+    comment:
+      '1=เช็คค้างขึ้น(หักธนาคาร)|2=เงินฝากระหว่างทาง(บวกธนาคาร)|3=อื่น(บวกธนาคาร)',
   })
   itemType: number;
   @Column({
@@ -42,7 +43,7 @@ export class BankReconciliationItem {
   })
   docRef: string | null;
   @Column({ type: 'text', nullable: true }) detail: string | null;
-  /** จำนวนเงิน — ค่าบวก = บวกเพิ่ม, ค่าลบ = หักออก */
+  /** จำนวนเงิน (เก็บเป็นค่าบวกเสมอ) — ทิศทางหัก/บวกกำหนดโดย item_type */
   @Column({ type: 'float', default: 0 }) amount: number;
 
   @Column({ name: 'up_by', type: 'int', default: 0 }) upBy: number;

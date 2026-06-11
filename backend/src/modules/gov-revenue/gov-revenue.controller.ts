@@ -10,6 +10,11 @@ import {
 } from '@nestjs/common';
 import { GovRevenueService } from './gov-revenue.service';
 import { AddGovRevenueDto } from './dto/add-gov-revenue.dto';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('GovRevenue')
 export class GovRevenueController {
@@ -23,7 +28,9 @@ export class GovRevenueController {
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('budget_year') budgetYear: string,
     @Param('revenue_type', ParseIntPipe) revenueType: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.govRevenueService.loadEntries(
       scId,
       syId,
@@ -39,7 +46,9 @@ export class GovRevenueController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.govRevenueService.monthlySummary(scId, syId, budgetYear);
   }
 
@@ -50,14 +59,17 @@ export class GovRevenueController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.govRevenueService.interestReminder(scId, syId, budgetYear);
   }
 
   /** เพิ่มรายการ */
   @Post('addEntry')
   @HttpCode(HttpStatus.OK)
-  addEntry(@Body() dto: AddGovRevenueDto) {
+  addEntry(@Body() dto: AddGovRevenueDto, @CurrentUser() user: JwtUser) {
+    assertSameSchool(user, dto.sc_id);
     return this.govRevenueService.addEntry(dto);
   }
 
@@ -67,14 +79,18 @@ export class GovRevenueController {
   updateEntry(
     @Param('gre_id', ParseIntPipe) greId: number,
     @Body() dto: Partial<AddGovRevenueDto>,
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.govRevenueService.updateEntry(greId, dto);
+    return this.govRevenueService.updateEntry(greId, dto, user);
   }
 
   /** ลบรายการ (soft delete) */
   @Post('removeEntry')
   @HttpCode(HttpStatus.OK)
-  removeEntry(@Body() dto: { gre_id: number; up_by: number }) {
-    return this.govRevenueService.removeEntry(dto.gre_id, dto.up_by);
+  removeEntry(
+    @Body() dto: { gre_id: number; up_by: number },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.govRevenueService.removeEntry(dto.gre_id, dto.up_by, user);
   }
 }

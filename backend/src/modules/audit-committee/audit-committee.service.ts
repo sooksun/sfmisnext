@@ -4,6 +4,11 @@ import { Repository, In } from 'typeorm';
 import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
 import { Project } from '../project/entities/project.entity';
 import { UpdateSetCommitteeDto } from './dto/update-set-committee.dto';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 
 @Injectable()
 export class AuditCommitteeService {
@@ -14,6 +19,7 @@ export class AuditCommitteeService {
     private readonly parcelOrderRepository: Repository<ParcelOrder>,
     @InjectRepository(Project)
     private readonly projectRepository: Repository<Project>,
+    private readonly regulatoryConfig: RegulatoryConfigService,
   ) {}
 
   async loadAuditCommitteeStatus(scId: number, _yearId: number) {
@@ -97,7 +103,7 @@ export class AuditCommitteeService {
     };
   }
 
-  async updateSetCommittee(dto: UpdateSetCommitteeDto) {
+  async updateSetCommittee(dto: UpdateSetCommitteeDto, user?: JwtUser) {
     const order = await this.parcelOrderRepository.findOne({
       where: { orderId: dto.order_id, del: 0 },
     });
@@ -106,19 +112,50 @@ export class AuditCommitteeService {
       return { flag: false, ms: 'ไม่พบข้อมูล' };
     }
 
+    // Multi-tenant guard: คำสั่งซื้อต้องเป็นของโรงเรียนผู้ใช้ (super admin ข้ามได้)
+    if (user && order.scId != null) assertSameSchool(user, order.scId);
+
     // Update committee information - ensure numbers
-    order.committee1 =
+    const c1 =
       typeof dto.committee1 === 'string'
         ? parseInt(dto.committee1) || 0
         : dto.committee1 || 0;
-    order.committee2 =
+    const c2 =
       typeof dto.committee2 === 'string'
         ? parseInt(dto.committee2) || 0
         : dto.committee2 || 0;
-    order.committee3 =
+    const c3 =
       typeof dto.committee3 === 'string'
         ? parseInt(dto.committee3) || 0
         : dto.committee3 || 0;
+
+    // ── แยกหน้าที่กรรมการตรวจรับ (พ.ร.บ.จัดซื้อจัดจ้างฯ ม.13) ─────────────────
+    // กรรมการต้องไม่ซ้ำกันเอง และต้องไม่ใช่ผู้จัดทำ/ผู้ขอซื้อรายการนี้ (order.adminId)
+    const enforceSeparation = await this.regulatoryConfig.getThreshold(
+      order.scId ?? 0,
+      'procurement.enforce_committee_separation',
+    );
+    if (enforceSeparation >= 1) {
+      const members = [c1, c2, c3].filter((id) => id > 0);
+      const uniq = new Set(members);
+      if (uniq.size !== members.length) {
+        return {
+          flag: false,
+          ms: 'กรรมการตรวจรับต้องไม่ซ้ำกัน — กรุณาเลือกบุคคลต่างกันในแต่ละตำแหน่ง',
+        };
+      }
+      const requester = order.adminId ?? 0;
+      if (requester > 0 && members.includes(requester)) {
+        return {
+          flag: false,
+          ms: 'ผู้จัดทำ/ผู้ขอซื้อรายการนี้เป็นกรรมการตรวจรับไม่ได้ (ผู้มีส่วนได้เสีย ตาม พ.ร.บ.จัดซื้อจัดจ้างฯ ม.13)',
+        };
+      }
+    }
+
+    order.committee1 = c1;
+    order.committee2 = c2;
+    order.committee3 = c3;
     order.orderStatus =
       typeof dto.order_status === 'string'
         ? parseInt(dto.order_status)

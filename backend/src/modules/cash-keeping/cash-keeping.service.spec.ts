@@ -142,8 +142,16 @@ describe('CashKeepingService', () => {
 
     it('fallback ใช้ username เมื่อ name เป็น null', async () => {
       adminRepo.findOne
-        .mockResolvedValueOnce({ name: null, username: 'sender1', position: null })
-        .mockResolvedValueOnce({ name: null, username: 'receiver1', position: null });
+        .mockResolvedValueOnce({
+          name: null,
+          username: 'sender1',
+          position: null,
+        })
+        .mockResolvedValueOnce({
+          name: null,
+          username: 'receiver1',
+          position: null,
+        });
 
       await service.addRecord(baseDto);
       const created = ckrRepo.create.mock.calls[0][0];
@@ -272,7 +280,13 @@ describe('CashKeepingService', () => {
   describe('depositReminder', () => {
     it('เงินสดถือไว้นานเกินกำหนด (วันรับในอดีต) → overdue', async () => {
       ckrRepo.find.mockResolvedValue([
-        { ckrId: 1, recordDate: '2020-01-01', amount: 5000, moneyDetail: 'a', status: 1 },
+        {
+          ckrId: 1,
+          recordDate: '2020-01-01',
+          amount: 5000,
+          moneyDetail: 'a',
+          status: 1,
+        },
       ]);
       const r = await service.depositReminder(1, 2);
       expect(r.count).toBe(1);
@@ -283,7 +297,13 @@ describe('CashKeepingService', () => {
 
     it('วันรับในอนาคต (ยังไม่ถึงกำหนด) → ไม่อยู่ในรายการเตือน', async () => {
       ckrRepo.find.mockResolvedValue([
-        { ckrId: 2, recordDate: '2999-01-01', amount: 20000, moneyDetail: 'b', status: 1 },
+        {
+          ckrId: 2,
+          recordDate: '2999-01-01',
+          amount: 20000,
+          moneyDetail: 'b',
+          status: 1,
+        },
       ]);
       const r = await service.depositReminder(1, 2);
       expect(r.count).toBe(0);
@@ -292,7 +312,13 @@ describe('CashKeepingService', () => {
 
     it('เกิน 10,000 บาท → over_threshold = true', async () => {
       ckrRepo.find.mockResolvedValue([
-        { ckrId: 3, recordDate: '2020-01-01', amount: 15000, moneyDetail: 'c', status: 1 },
+        {
+          ckrId: 3,
+          recordDate: '2020-01-01',
+          amount: 15000,
+          moneyDetail: 'c',
+          status: 1,
+        },
       ]);
       const r = await service.depositReminder(1, 2);
       expect(r.data[0].over_threshold).toBe(true);

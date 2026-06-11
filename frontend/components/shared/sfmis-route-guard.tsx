@@ -19,6 +19,7 @@ const SUPER   = [1]
 const PATH_ROLES: Array<{ prefix: string; roles: number[] }> = [
   // งานนโยบายและแผน
   { prefix: '/sfmis/student',               roles: PLAN },
+  { prefix: '/sfmis/prev-year-balance',     roles: PLAN },
   { prefix: '/sfmis/class-open-config',     roles: PLAN },
   { prefix: '/sfmis/perhead-rate-setting',  roles: PLAN },
   { prefix: '/sfmis/calculate-perhead',     roles: PLAN },
@@ -49,6 +50,7 @@ const PATH_ROLES: Array<{ prefix: string; roles: number[] }> = [
   { prefix: '/sfmis/year',                 roles: ADMIN },
   { prefix: '/sfmis/school-policy',        roles: ADMIN },
   { prefix: '/sfmis/business-setting',     roles: ADMIN },
+  { prefix: '/sfmis/admin-tools/system-reset', roles: SUPER }, // รีเซ็ต/ข้อมูลตัวอย่าง — super admin เท่านั้น
   { prefix: '/sfmis/admin-tools',          roles: ADMIN },
 
   // ระบบแอดมิน

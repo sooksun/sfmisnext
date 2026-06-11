@@ -58,6 +58,6 @@ export class WithholdingCertificateController {
   update(@Body() dto: any, @CurrentUser() user: JwtUser) {
     // ตรวจ tenant ถ้ามี sc_id ใน body; ถ้าไม่มีจะ verify ใน service ระดับ record
     if (dto.sc_id) assertSameSchool(user, dto.sc_id);
-    return this.svc.updateWithholdingCertificate(dto);
+    return this.svc.updateWithholdingCertificate(dto, user);
   }
 }

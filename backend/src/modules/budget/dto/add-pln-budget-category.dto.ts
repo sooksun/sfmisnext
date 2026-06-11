@@ -1,5 +1,6 @@
 import {
   IsInt,
+  IsNumber,
   IsArray,
   IsOptional,
   ValidateNested,
@@ -18,7 +19,8 @@ export class BudgetIncomeTypeItem {
   @Min(1)
   bg_type_id: number;
 
-  @IsInt()
+  // ยอดงบประมาณมีทศนิยมได้ (เช่น 6,499.60 จากการคำนวณรายหัว×สัดส่วน)
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   budget: number;
 

@@ -24,7 +24,9 @@ describe('ContractSecurityService', () => {
   let penRepo: jest.Mocked<any>;
   let smpRepo: jest.Mocked<any>;
   let budgetTypeRepo: jest.Mocked<any>;
-  let regulatoryConfig: jest.Mocked<Pick<RegulatoryConfigService, 'getThreshold'>>;
+  let regulatoryConfig: jest.Mocked<
+    Pick<RegulatoryConfigService, 'getThreshold'>
+  >;
 
   beforeEach(async () => {
     secRepo = {
@@ -44,7 +46,9 @@ describe('ContractSecurityService', () => {
       create: jest.fn((x) => x),
       save: jest.fn(),
     };
-    budgetTypeRepo = { createQueryBuilder: jest.fn().mockReturnValue(makeQb(null)) };
+    budgetTypeRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(makeQb(null)),
+    };
     regulatoryConfig = { getThreshold: jest.fn().mockResolvedValue(5) };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -53,7 +57,10 @@ describe('ContractSecurityService', () => {
         { provide: getRepositoryToken(ContractSecurity), useValue: secRepo },
         { provide: getRepositoryToken(ContractPenalty), useValue: penRepo },
         { provide: getRepositoryToken(SmpDepositEntry), useValue: smpRepo },
-        { provide: getRepositoryToken(BudgetIncomeType), useValue: budgetTypeRepo },
+        {
+          provide: getRepositoryToken(BudgetIncomeType),
+          useValue: budgetTypeRepo,
+        },
         { provide: RegulatoryConfigService, useValue: regulatoryConfig },
       ],
     }).compile();
@@ -96,7 +103,14 @@ describe('ContractSecurityService', () => {
 
     it('type/form/status ที่ไม่รู้จัก → ชื่อเป็น empty string', async () => {
       secRepo.find.mockResolvedValue([
-        { csId: 1, ctId: 7, securityType: 99, securityForm: 99, status: 99, amount: null },
+        {
+          csId: 1,
+          ctId: 7,
+          securityType: 99,
+          securityForm: 99,
+          status: 99,
+          amount: null,
+        },
       ]);
       const [row] = await service.loadByContract(7);
       expect(row.security_type_name).toBe('');
@@ -148,7 +162,13 @@ describe('ContractSecurityService', () => {
     });
 
     it('form ค่า default = 1 เมื่อไม่ส่ง security_form → นำฝาก สพป.', async () => {
-      await service.addSecurity({ ct_id: 7, sc_id: 1, security_type: 4, amount: 100, up_by: 1 });
+      await service.addSecurity({
+        ct_id: 7,
+        sc_id: 1,
+        security_type: 4,
+        amount: 100,
+        up_by: 1,
+      });
       expect(smpRepo.save).toHaveBeenCalled();
     });
 
@@ -186,7 +206,12 @@ describe('ContractSecurityService', () => {
 
   // ─── returnSecurity ──────────────────────────────────────────────────────
   describe('returnSecurity', () => {
-    const dto = { cs_id: 1, return_date: '2026-05-01', return_evidence_no: 'R-1', up_by: 9 };
+    const dto = {
+      cs_id: 1,
+      return_date: '2026-05-01',
+      return_evidence_no: 'R-1',
+      up_by: 9,
+    };
 
     it('ไม่พบรายการ → flag: false', async () => {
       secRepo.findOne.mockResolvedValue(null);
@@ -239,7 +264,13 @@ describe('ContractSecurityService', () => {
     });
 
     it('smpDepositId มี แต่ไม่พบ original entry → ไม่สร้าง mirror', async () => {
-      const s: any = { csId: 1, status: 1, del: 0, smpDepositId: 55, securityType: 2 };
+      const s: any = {
+        csId: 1,
+        status: 1,
+        del: 0,
+        smpDepositId: 55,
+        securityType: 2,
+      };
       secRepo.findOne.mockResolvedValue(s);
       smpRepo.findOne.mockResolvedValue(null);
       await service.returnSecurity(dto);
@@ -258,7 +289,11 @@ describe('ContractSecurityService', () => {
     it('happy path → status=3 (ยึด) และ flag: true', async () => {
       const s: any = { csId: 1, status: 1, del: 0 };
       secRepo.findOne.mockResolvedValue(s);
-      const result = await service.confiscateSecurity({ cs_id: 1, note: 'ยึด', up_by: 9 });
+      const result = await service.confiscateSecurity({
+        cs_id: 1,
+        note: 'ยึด',
+        up_by: 9,
+      });
       expect(s.status).toBe(3);
       expect(s.note).toBe('ยึด');
       expect(result.flag).toBe(true);

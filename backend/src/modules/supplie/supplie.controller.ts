@@ -12,6 +12,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { SupplieService } from './supplie.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 /** Parse JSON query-string safely — throws 400 if malformed instead of 500 */
 function parseJsonArray(raw: string | undefined): unknown[] {
@@ -41,7 +46,9 @@ export class SupplieController {
   loadReceive(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadReceive(scId, syId);
   }
 
@@ -50,20 +57,29 @@ export class SupplieController {
   loadSubProject(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('year_id', ParseIntPipe) yearId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadSubProject(scId, yearId);
   }
 
   @Get('loadGetUserTeacher/:sc_id')
   @HttpCode(HttpStatus.OK)
-  loadGetUserTeacher(@Param('sc_id', ParseIntPipe) scId: number) {
+  loadGetUserTeacher(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadGetUserTeacher(scId);
   }
 
   @Get('loadParcelDetail/:order_id')
   @HttpCode(HttpStatus.OK)
-  loadParcelDetail(@Param('order_id', ParseIntPipe) orderId: number) {
-    return this.supplieService.loadParcelDetail(orderId);
+  loadParcelDetail(
+    @Param('order_id', ParseIntPipe) orderId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.supplieService.loadParcelDetail(orderId, user);
   }
 
   @Get('loadParcelDetailWithdraw/:order_id/:receive_id/:sc_id')
@@ -72,7 +88,9 @@ export class SupplieController {
     @Param('order_id', ParseIntPipe) orderId: number,
     @Param('receive_id', ParseIntPipe) receiveId: number,
     @Param('sc_id', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadParcelDetailWithdraw(
       orderId,
       receiveId,
@@ -82,13 +100,18 @@ export class SupplieController {
 
   @Post('loadStockSupplie')
   @HttpCode(HttpStatus.OK)
-  loadStockSupplie(@Body() dto: LoadStockSupplieDto) {
+  loadStockSupplie(
+    @Body() dto: LoadStockSupplieDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, dto.sc_id);
     return this.supplieService.loadStockSupplie(dto);
   }
 
   @Get('loadStockSupplie')
   @HttpCode(HttpStatus.OK)
   loadStockSupplieGet(
+    @CurrentUser() user: JwtUser,
     @Query('sc_id') scId?: string,
     @Query('receive_id') receiveId?: string,
     @Query('pc_order') pcOrder?: string,
@@ -98,6 +121,8 @@ export class SupplieController {
       receive_id: receiveId ? parseInt(receiveId, 10) : undefined,
       pc_order: parseJsonArray(pcOrder),
     };
+    // ตรวจ tenant เฉพาะเมื่อระบุ sc_id มา (ไม่ระบุ = sc_id 0 → ไม่มีข้อมูลอยู่แล้ว)
+    if (dto.sc_id) assertSameSchool(user, dto.sc_id);
     return this.supplieService.loadStockSupplie(dto);
   }
 
@@ -106,7 +131,9 @@ export class SupplieController {
   loadSupplieOrder(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('year_id', ParseIntPipe) yearId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadSupplieOrder(scId, yearId);
   }
 
@@ -115,45 +142,67 @@ export class SupplieController {
   loadGetSupplieOrder(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('year_id', ParseIntPipe) yearId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadGetSupplieOrder(scId, yearId);
   }
 
   @Get('loadResourcesPeople/:sc_id')
   @HttpCode(HttpStatus.OK)
-  loadResourcesPeople(@Param('sc_id', ParseIntPipe) scId: number) {
+  loadResourcesPeople(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadResourcesPeople(scId);
   }
 
   @Post('editReceiveParcel')
   @HttpCode(HttpStatus.OK)
-  editReceiveParcel(@Body() dto: EditReceiveParcelDto) {
+  editReceiveParcel(
+    @Body() dto: EditReceiveParcelDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, dto.sc_id);
     return this.supplieService.editReceiveParcel(dto);
   }
 
   @Post('removeReceiveParcel')
   @HttpCode(HttpStatus.OK)
-  removeReceiveParcel(@Body() body: { receive_id: number }) {
-    return this.supplieService.removeReceiveParcel(body.receive_id);
+  removeReceiveParcel(
+    @Body() body: { receive_id: number },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.supplieService.removeReceiveParcel(body.receive_id, user);
   }
 
   @Post('updateSupplieOrder')
   @HttpCode(HttpStatus.OK)
-  updateSupplieOrder(@Body() dto: UpdateSupplieOrderDto) {
-    return this.supplieService.updateSupplieOrder(dto);
+  updateSupplieOrder(
+    @Body() dto: UpdateSupplieOrderDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.supplieService.updateSupplieOrder(dto, user);
   }
 
   @Post('confirmWithDrawParcel')
   @HttpCode(HttpStatus.OK)
-  confirmWithDrawParcel(@Body() dto: ConfirmWithdrawParcelDto) {
-    return this.supplieService.confirmWithDrawParcel(dto);
+  confirmWithDrawParcel(
+    @Body() dto: ConfirmWithdrawParcelDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.supplieService.confirmWithDrawParcel(dto, user);
   }
 
   // backward-compat: เก็บ endpoint เดิมที่มี typo (double 'i') ไว้เผื่อ Angular legacy
   @Post('confiirmWithDrawParcel')
   @HttpCode(HttpStatus.OK)
-  confirmWithDrawParcelLegacy(@Body() dto: ConfirmWithdrawParcelDto) {
-    return this.supplieService.confirmWithDrawParcel(dto);
+  confirmWithDrawParcelLegacy(
+    @Body() dto: ConfirmWithdrawParcelDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.supplieService.confirmWithDrawParcel(dto, user);
   }
 }
 
@@ -166,7 +215,9 @@ export class SupplieLowerController {
   loadReceive(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadReceive(scId, syId);
   }
 
@@ -175,20 +226,29 @@ export class SupplieLowerController {
   loadSubProject(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('year_id', ParseIntPipe) yearId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadSubProject(scId, yearId);
   }
 
   @Get('loadGetUserTeacher/:sc_id')
   @HttpCode(HttpStatus.OK)
-  loadGetUserTeacher(@Param('sc_id', ParseIntPipe) scId: number) {
+  loadGetUserTeacher(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadGetUserTeacher(scId);
   }
 
   @Get('loadParcelDetail/:order_id')
   @HttpCode(HttpStatus.OK)
-  loadParcelDetail(@Param('order_id', ParseIntPipe) orderId: number) {
-    return this.supplieService.loadParcelDetail(orderId);
+  loadParcelDetail(
+    @Param('order_id', ParseIntPipe) orderId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.supplieService.loadParcelDetail(orderId, user);
   }
 
   @Get('loadParcelDetailWithdraw/:order_id/:receive_id/:sc_id')
@@ -197,7 +257,9 @@ export class SupplieLowerController {
     @Param('order_id', ParseIntPipe) orderId: number,
     @Param('receive_id', ParseIntPipe) receiveId: number,
     @Param('sc_id', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadParcelDetailWithdraw(
       orderId,
       receiveId,
@@ -207,13 +269,18 @@ export class SupplieLowerController {
 
   @Post('loadStockSupplie')
   @HttpCode(HttpStatus.OK)
-  loadStockSupplie(@Body() dto: LoadStockSupplieDto) {
+  loadStockSupplie(
+    @Body() dto: LoadStockSupplieDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, dto.sc_id);
     return this.supplieService.loadStockSupplie(dto);
   }
 
   @Get('loadStockSupplie')
   @HttpCode(HttpStatus.OK)
   loadStockSupplieGet(
+    @CurrentUser() user: JwtUser,
     @Query('sc_id') scId?: string,
     @Query('receive_id') receiveId?: string,
     @Query('pc_order') pcOrder?: string,
@@ -223,6 +290,8 @@ export class SupplieLowerController {
       receive_id: receiveId ? parseInt(receiveId, 10) : undefined,
       pc_order: parseJsonArray(pcOrder),
     };
+    // ตรวจ tenant เฉพาะเมื่อระบุ sc_id มา (ไม่ระบุ = sc_id 0 → ไม่มีข้อมูลอยู่แล้ว)
+    if (dto.sc_id) assertSameSchool(user, dto.sc_id);
     return this.supplieService.loadStockSupplie(dto);
   }
 
@@ -231,7 +300,9 @@ export class SupplieLowerController {
   loadSupplieOrder(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('year_id', ParseIntPipe) yearId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadSupplieOrder(scId, yearId);
   }
 
@@ -240,37 +311,56 @@ export class SupplieLowerController {
   loadGetSupplieOrder(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('year_id', ParseIntPipe) yearId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadGetSupplieOrder(scId, yearId);
   }
 
   @Get('loadResourcesPeople/:sc_id')
   @HttpCode(HttpStatus.OK)
-  loadResourcesPeople(@Param('sc_id', ParseIntPipe) scId: number) {
+  loadResourcesPeople(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
     return this.supplieService.loadResourcesPeople(scId);
   }
 
   @Post('editReceiveParcel')
   @HttpCode(HttpStatus.OK)
-  editReceiveParcel(@Body() dto: EditReceiveParcelDto) {
+  editReceiveParcel(
+    @Body() dto: EditReceiveParcelDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, dto.sc_id);
     return this.supplieService.editReceiveParcel(dto);
   }
 
   @Post('removeReceiveParcel')
   @HttpCode(HttpStatus.OK)
-  removeReceiveParcel(@Body() body: { receive_id: number }) {
-    return this.supplieService.removeReceiveParcel(body.receive_id);
+  removeReceiveParcel(
+    @Body() body: { receive_id: number },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.supplieService.removeReceiveParcel(body.receive_id, user);
   }
 
   @Post('updateSupplieOrder')
   @HttpCode(HttpStatus.OK)
-  updateSupplieOrder(@Body() dto: UpdateSupplieOrderDto) {
-    return this.supplieService.updateSupplieOrder(dto);
+  updateSupplieOrder(
+    @Body() dto: UpdateSupplieOrderDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.supplieService.updateSupplieOrder(dto, user);
   }
 
   @Post('confirmWithDrawParcel')
   @HttpCode(HttpStatus.OK)
-  confirmWithDrawParcel(@Body() dto: ConfirmWithdrawParcelDto) {
-    return this.supplieService.confirmWithDrawParcel(dto);
+  confirmWithDrawParcel(
+    @Body() dto: ConfirmWithdrawParcelDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.supplieService.confirmWithDrawParcel(dto, user);
   }
 }

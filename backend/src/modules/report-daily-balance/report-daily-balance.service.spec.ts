@@ -14,9 +14,15 @@ import { SmpDepositEntry } from '../smp-deposit/entities/smp-deposit-entry.entit
 function makeQb(opts: { many?: unknown[]; one?: unknown } = {}) {
   const qb: Record<string, jest.Mock> = {};
   const chain = () => qb as any;
-  ['leftJoin', 'where', 'andWhere', 'select', 'addSelect', 'orderBy', 'groupBy'].forEach(
-    (m) => (qb[m] = jest.fn().mockReturnValue(chain())),
-  );
+  [
+    'leftJoin',
+    'where',
+    'andWhere',
+    'select',
+    'addSelect',
+    'orderBy',
+    'groupBy',
+  ].forEach((m) => (qb[m] = jest.fn().mockReturnValue(chain())));
   qb['getMany'] = jest.fn().mockResolvedValue(opts.many ?? []);
   qb['getRawOne'] = jest.fn().mockResolvedValue(opts.one ?? null);
   return qb;
@@ -46,8 +52,14 @@ describe('ReportDailyBalanceService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReportDailyBalanceService,
-        { provide: getRepositoryToken(FinancialTransactions), useValue: ftRepo },
-        { provide: getRepositoryToken(CashReserveLimit), useValue: cashLimitRepo },
+        {
+          provide: getRepositoryToken(FinancialTransactions),
+          useValue: ftRepo,
+        },
+        {
+          provide: getRepositoryToken(CashReserveLimit),
+          useValue: cashLimitRepo,
+        },
         { provide: getRepositoryToken(PlnReceive), useValue: prRepo },
         { provide: getRepositoryToken(PlnReceiveDetail), useValue: prdRepo },
         { provide: getRepositoryToken(RequestWithdraw), useValue: rwRepo },
@@ -87,7 +99,9 @@ describe('ReportDailyBalanceService', () => {
       );
       setupOpening([]);
       setupSmp([]);
-      btRepo.find.mockResolvedValue([{ bgTypeId: 1, budgetType: 'อุดหนุน', del: 0 }]);
+      btRepo.find.mockResolvedValue([
+        { bgTypeId: 1, budgetType: 'อุดหนุน', del: 0 },
+      ]);
 
       const result = await service.loadDailyBalance(1, '2026-05-15', 3);
       const row = result.find((r) => r.bg_type_id === 1)!;
@@ -100,14 +114,36 @@ describe('ReportDailyBalanceService', () => {
     it('income/expense ของวันนี้ และ balance = ยกมา + รับ - จ่าย', async () => {
       setupFt(
         [
-          { ftId: 1, bgTypeId: 1, type: 1, amount: 500, prId: 0, prdId: 0, rwId: 0, moneyChannel: 1, createDate: new Date() },
-          { ftId: 2, bgTypeId: 1, type: -1, amount: 200, prId: 0, prdId: 0, rwId: 0, moneyChannel: 1, createDate: new Date() },
+          {
+            ftId: 1,
+            bgTypeId: 1,
+            type: 1,
+            amount: 500,
+            prId: 0,
+            prdId: 0,
+            rwId: 0,
+            moneyChannel: 1,
+            createDate: new Date(),
+          },
+          {
+            ftId: 2,
+            bgTypeId: 1,
+            type: -1,
+            amount: 200,
+            prId: 0,
+            prdId: 0,
+            rwId: 0,
+            moneyChannel: 1,
+            createDate: new Date(),
+          },
         ],
         [{ bgTypeId: 1, type: 1, amount: 1000, moneyChannel: 1 }],
       );
       setupOpening([]);
       setupSmp([]);
-      btRepo.find.mockResolvedValue([{ bgTypeId: 1, budgetType: 'อุดหนุน', del: 0 }]);
+      btRepo.find.mockResolvedValue([
+        { bgTypeId: 1, budgetType: 'อุดหนุน', del: 0 },
+      ]);
 
       const result = await service.loadDailyBalance(1, '2026-05-15', 3);
       const row = result.find((r) => r.bg_type_id === 1)!;
@@ -119,11 +155,11 @@ describe('ReportDailyBalanceService', () => {
 
     it('รวม opening_balance เข้า carryForward', async () => {
       setupFt([], []);
-      setupOpening([
-        { moneyTypeId: 1, amount: '2500', storageType: 1 },
-      ]);
+      setupOpening([{ moneyTypeId: 1, amount: '2500', storageType: 1 }]);
       setupSmp([]);
-      btRepo.find.mockResolvedValue([{ bgTypeId: 1, budgetType: 'อุดหนุน', del: 0 }]);
+      btRepo.find.mockResolvedValue([
+        { bgTypeId: 1, budgetType: 'อุดหนุน', del: 0 },
+      ]);
 
       const result = await service.loadDailyBalance(1, '2026-05-15', 3);
       const row = result.find((r) => r.bg_type_id === 1)!;
@@ -134,7 +170,17 @@ describe('ReportDailyBalanceService', () => {
     it('แยกยอดตาม storage/channel: เงินสด / ธนาคาร / สพป.', async () => {
       setupFt(
         [
-          { ftId: 1, bgTypeId: 1, type: 1, amount: 100, prId: 0, prdId: 0, rwId: 0, moneyChannel: 2, createDate: new Date() },
+          {
+            ftId: 1,
+            bgTypeId: 1,
+            type: 1,
+            amount: 100,
+            prId: 0,
+            prdId: 0,
+            rwId: 0,
+            moneyChannel: 2,
+            createDate: new Date(),
+          },
         ],
         [],
       );
@@ -145,7 +191,9 @@ describe('ReportDailyBalanceService', () => {
       ]);
       setupSmp([{ moneyTypeId: 1, amount: '200', entryType: 1 }]); // ฝาก สพป. +200
 
-      btRepo.find.mockResolvedValue([{ bgTypeId: 1, budgetType: 'อุดหนุน', del: 0 }]);
+      btRepo.find.mockResolvedValue([
+        { bgTypeId: 1, budgetType: 'อุดหนุน', del: 0 },
+      ]);
 
       const result = await service.loadDailyBalance(1, '2026-05-15', 3);
       const row = result.find((r) => r.bg_type_id === 1)!;
@@ -188,8 +236,16 @@ describe('ReportDailyBalanceService', () => {
       );
       // ft createQueryBuilder ถูกเรียก 2 ครั้ง: cashResult แล้ว bankResult
       ftRepo.createQueryBuilder
-        .mockReturnValueOnce(makeQb({ one: opts.cash ?? { total_income: '0', total_expense: '0' } }))
-        .mockReturnValueOnce(makeQb({ one: opts.bank ?? { total_income: '0', total_expense: '0' } }));
+        .mockReturnValueOnce(
+          makeQb({
+            one: opts.cash ?? { total_income: '0', total_expense: '0' },
+          }),
+        )
+        .mockReturnValueOnce(
+          makeQb({
+            one: opts.bank ?? { total_income: '0', total_expense: '0' },
+          }),
+        );
       openingRepo.find.mockResolvedValue(opts.opening ?? []);
     }
 
@@ -255,11 +311,19 @@ describe('ReportDailyBalanceService', () => {
       const record = { scId: 1, limitAmount: 0, note: null, upBy: 0 } as any;
       cashLimitRepo.findOne.mockResolvedValue(record);
       cashLimitRepo.save.mockResolvedValue(record);
-      const result = await service.setCashLimit({ sc_id: 1, limit_amount: 20000, note: 'ใหม่', up_by: 7 });
+      const result = await service.setCashLimit({
+        sc_id: 1,
+        limit_amount: 20000,
+        note: 'ใหม่',
+        up_by: 7,
+      });
       expect(record.limitAmount).toBe(20000);
       expect(record.note).toBe('ใหม่');
       expect(record.upBy).toBe(7);
-      expect(result).toEqual({ flag: true, ms: 'บันทึกวงเงินสำรองจ่ายเรียบร้อยแล้ว' });
+      expect(result).toEqual({
+        flag: true,
+        ms: 'บันทึกวงเงินสำรองจ่ายเรียบร้อยแล้ว',
+      });
     });
 
     it('ยังไม่มี record → create ใหม่', async () => {
@@ -267,7 +331,10 @@ describe('ReportDailyBalanceService', () => {
       const created = { scId: 1 } as any;
       cashLimitRepo.create.mockReturnValue(created);
       cashLimitRepo.save.mockResolvedValue(created);
-      const result = await service.setCashLimit({ sc_id: 1, limit_amount: 10000 });
+      const result = await service.setCashLimit({
+        sc_id: 1,
+        limit_amount: 10000,
+      });
       expect(cashLimitRepo.create).toHaveBeenCalledWith({ scId: 1 });
       expect(created.limitAmount).toBe(10000);
       expect(result.flag).toBe(true);

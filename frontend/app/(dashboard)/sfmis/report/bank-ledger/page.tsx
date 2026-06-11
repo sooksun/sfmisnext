@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { Plus, Pencil, Trash2, CreditCard, TrendingUp, TrendingDown } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { FormDialog } from '@/components/shared/form-dialog'
-import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { DeleteWithReasonDialog } from '@/components/shared/delete-with-reason-dialog'
 import { DataTable } from '@/components/shared/data-table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -179,8 +179,8 @@ export default function BankLedgerPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (bleId: number) =>
-      apiPost('BankLedger/removeEntry', { ble_id: bleId, up_by: adminId }),
+    mutationFn: ({ bleId, reason }: { bleId: number; reason: string }) =>
+      apiPost('BankLedger/removeEntry', { ble_id: bleId, up_by: adminId, reason }),
     onSuccess: (res: any) => {
       if (res?.flag) {
         toast.success(res.ms || 'ลบสำเร็จ')
@@ -473,15 +473,15 @@ export default function BankLedgerPage() {
       </FormDialog>
 
       {/* Confirm Delete Dialog */}
-      <ConfirmDialog
+      <DeleteWithReasonDialog
         open={deleteItem !== null}
+        onClose={() => setDeleteItem(null)}
+        onConfirm={(reason) => { if (deleteItem) deleteMutation.mutate({ bleId: deleteItem.ble_id, reason }) }}
         title="ยืนยันการลบรายการ"
-        description={`ต้องการลบรายการ "${deleteItem?.detail ?? ''}" จำนวน ${deleteItem ? fmt(deleteItem.amount) : ''} บาท ใช่หรือไม่?`}
+        reasonLabel="เหตุผลการลบ"
         confirmLabel="ลบรายการ"
-        cancelLabel="ยกเลิก"
-        variant="destructive"
-        onConfirm={() => deleteItem && deleteMutation.mutate(deleteItem.ble_id)}
-        onCancel={() => setDeleteItem(null)}
+        itemLabel={`${deleteItem?.detail ?? ''} จำนวน ${deleteItem ? fmt(deleteItem.amount) : ''} บาท`}
+        loading={deleteMutation.isPending}
       />
     </div>
   )

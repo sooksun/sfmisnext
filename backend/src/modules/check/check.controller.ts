@@ -99,10 +99,15 @@ export class CheckController {
   @Post('cancelCheck')
   @HttpCode(HttpStatus.OK)
   cancelCheck(
-    @Body() body: { rw_id: number },
-    @CurrentUser('sc_id') scId: number,
+    @Body() body: { rw_id: number; reason?: string; up_by?: number },
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.checkService.cancelCheck(body.rw_id, scId);
+    return this.checkService.cancelCheck(
+      body.rw_id,
+      user.sc_id,
+      body.reason,
+      body.up_by ?? user.admin_id,
+    );
   }
 
   @Get('loadCommittee/:rw_id')

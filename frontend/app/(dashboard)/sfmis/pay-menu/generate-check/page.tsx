@@ -10,7 +10,7 @@ import { PageHeader } from '@/components/shared/page-header'
 import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
-import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { DeleteWithReasonDialog } from '@/components/shared/delete-with-reason-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -50,6 +50,15 @@ interface CheckUser {
   name: string
 }
 
+interface BankAccount {
+  ba_id: number
+  ba_name: string
+  ba_no: string
+  account_name: string
+  account_no: string
+  bank_name: string
+}
+
 interface CommitteeData {
   crc_id?: number
   member1_name: string
@@ -66,12 +75,18 @@ const statusLabel: Record<number, { label: string; color: string }> = {
   202: { label: 'ออกเช็คแล้ว', color: 'text-green-600' },
 }
 
-const checkSchema = z.object({
-  check_no_doc: z.string().min(1, 'กรุณากรอกเลขที่เช็ค'),
-  user_offer_check: z.number().min(1, 'กรุณาเลือกผู้ออกเช็ค'),
-  offer_check_date: z.string().min(1, 'กรุณาเลือกวันที่'),
-  type_offer_check: z.number(),
-})
+const checkSchema = z
+  .object({
+    check_no_doc: z.string().min(1, 'กรุณากรอกเลขที่เช็ค'),
+    user_offer_check: z.number().min(1, 'กรุณาเลือกผู้ออกเช็ค'),
+    offer_check_date: z.string().min(1, 'กรุณาเลือกวันที่'),
+    type_offer_check: z.number(),
+    ba_id: z.number(),
+  })
+  .refine((d) => d.type_offer_check !== 2 || d.ba_id > 0, {
+    message: 'กรุณาเลือกบัญชีธนาคารที่สั่งจ่าย',
+    path: ['ba_id'],
+  })
 type CheckForm = z.infer<typeof checkSchema>
 
 const committeeSchema = z.object({
@@ -112,6 +127,13 @@ export default function GenerateCheckPage() {
     enabled: scId > 0 && syId > 0,
   })
 
+  const { data: bankAccountsRaw } = useQuery({
+    queryKey: ['check-bank-accounts', scId],
+    queryFn: () => apiGet<BankAccount[]>(`Bank/loadBankAccount/${scId}`),
+    enabled: scId > 0,
+  })
+  const bankAccounts: BankAccount[] = Array.isArray(bankAccountsRaw) ? bankAccountsRaw : []
+
   // โหลดกรรมการของ check ที่กำลัง open committee dialog
   const { data: existingCommittee } = useQuery({
     queryKey: ['committee', committeeTarget?.rw_id],
@@ -123,7 +145,7 @@ export default function GenerateCheckPage() {
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } =
     useForm<CheckForm>({
       resolver: zodResolver(checkSchema),
-      defaultValues: { check_no_doc: '', user_offer_check: 0, offer_check_date: '', type_offer_check: 1 },
+      defaultValues: { check_no_doc: '', user_offer_check: 0, offer_check_date: '', type_offer_check: 1, ba_id: 0 },
     })
 
   // ── Committee form ─────────────────────────────────────────────────────────
@@ -144,6 +166,7 @@ export default function GenerateCheckPage() {
   const userOfferCheck = watch('user_offer_check')
   const typeOfferCheck = watch('type_offer_check')
   const offerCheckDate = watch('offer_check_date')
+  const baId = watch('ba_id')
 
   function openIssue(item: CheckRow) {
     setIssueTarget(item)
@@ -152,6 +175,7 @@ export default function GenerateCheckPage() {
       user_offer_check: item.user_offer_check || 0,
       offer_check_date: new Date().toISOString().substring(0, 10),
       type_offer_check: item.type_offer_check || 1,
+      ba_id: 0,
     })
   }
 
@@ -180,6 +204,8 @@ export default function GenerateCheckPage() {
         amount: Number(issueTarget.amount),
         status: 202,
         up_by: upBy,
+        // จ่ายผ่านเช็ค/ธนาคาร (บจ.) → ส่ง ba_id ให้ backend สร้างรายการถอนในทะเบียนคุมเงินฝาก
+        ...(form.type_offer_check === 2 && form.ba_id > 0 ? { ba_id: form.ba_id } : {}),
       })
     },
     onSuccess: (res: any) => {
@@ -217,7 +243,8 @@ export default function GenerateCheckPage() {
   })
 
   const cancelMutation = useMutation({
-    mutationFn: (item: CheckRow) => apiPost('Check/cancelCheck', { rw_id: item.rw_id, sc_id: scId }),
+    mutationFn: ({ item, reason }: { item: CheckRow; reason: string }) =>
+      apiPost('Check/cancelCheck', { rw_id: item.rw_id, sc_id: scId, reason }),
     onSuccess: (res: any) => {
       if (res.flag) {
         toast.success('ยกเลิกเช็คเรียบร้อยแล้ว')
@@ -378,7 +405,7 @@ export default function GenerateCheckPage() {
           </div>
           <div>
             <Label>ประเภทใบสำคัญ</Label>
-            <Select value={String(typeOfferCheck)} onValueChange={(v) => setValue('type_offer_check', Number(v))}>
+            <Select value={String(typeOfferCheck)} onValueChange={(v) => setValue('type_offer_check', Number(v), { shouldValidate: true })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="1">บค. (ใบสำคัญจ่าย)</SelectItem>
@@ -386,6 +413,29 @@ export default function GenerateCheckPage() {
               </SelectContent>
             </Select>
           </div>
+
+          {/* บัญชีธนาคารที่สั่งจ่าย — เฉพาะกรณีจ่ายผ่านเช็ค/ธนาคาร (บจ.) */}
+          {typeOfferCheck === 2 && (
+            <div>
+              <Label>บัญชีธนาคารที่สั่งจ่าย *</Label>
+              <Select
+                value={baId > 0 ? String(baId) : ''}
+                onValueChange={(v) => setValue('ba_id', Number(v), { shouldValidate: true })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={bankAccounts.length ? 'เลือกบัญชีธนาคาร' : 'ไม่พบบัญชีธนาคาร'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {bankAccounts.map((acc) => (
+                    <SelectItem key={acc.ba_id} value={String(acc.ba_id)}>
+                      {acc.ba_name} — {acc.bank_name} {acc.account_no || acc.ba_no}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.ba_id && <p className="text-red-500 text-xs mt-1">{errors.ba_id.message}</p>}
+            </div>
+          )}
         </div>
       </FormDialog>
 
@@ -454,14 +504,16 @@ export default function GenerateCheckPage() {
       </FormDialog>
 
       {/* ยืนยันยกเลิกเช็ค */}
-      <ConfirmDialog
+      <DeleteWithReasonDialog
         open={!!cancelTarget}
-        onConfirm={() => cancelTarget && cancelMutation.mutate(cancelTarget)}
-        onCancel={() => setCancelTarget(null)}
+        onClose={() => setCancelTarget(null)}
+        onConfirm={(reason) => { if (cancelTarget) cancelMutation.mutate({ item: cancelTarget, reason }) }}
         title="ยืนยันการยกเลิกเช็ค"
-        description={`ต้องการยกเลิกเช็คใบสำคัญ "${cancelTarget?.no_doc}" หรือไม่?`}
+        description="การยกเลิกเช็คจะไม่สามารถย้อนกลับได้ โปรดระบุเหตุผลเพื่อบันทึกลง log"
+        reasonLabel="เหตุผลการยกเลิก"
         confirmLabel="ยกเลิกเช็ค"
-        variant="destructive"
+        itemLabel={`ใบสำคัญ "${cancelTarget?.no_doc ?? ''}"`}
+        loading={cancelMutation.isPending}
       />
     </div>
   )

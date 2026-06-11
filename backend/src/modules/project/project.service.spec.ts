@@ -28,7 +28,9 @@ describe('ProjectService', () => {
       update: jest.fn(),
     };
     syRepo = {
-      findOne: jest.fn().mockResolvedValue({ syId: 1, syYear: 2569, budgetYear: 2569 }),
+      findOne: jest
+        .fn()
+        .mockResolvedValue({ syId: 1, syYear: 2569, budgetYear: 2569 }),
     };
 
     const module: TestingModule = await Test.createTestingModule({

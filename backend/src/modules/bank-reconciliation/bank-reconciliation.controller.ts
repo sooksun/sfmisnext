@@ -12,6 +12,11 @@ import {
 import { BankReconciliationService } from './bank-reconciliation.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('BankReconciliation')
 export class BankReconciliationController {
@@ -25,15 +30,20 @@ export class BankReconciliationController {
   loadReconciliations(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('ba_id', ParseIntPipe) baId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.bankReconciliationService.loadReconciliations(scId, baId);
   }
 
   /** โหลดรายละเอียดงบเทียบยอด พร้อมรายการปรับปรุง */
   @Get('loadDetail/:br_id')
   @HttpCode(HttpStatus.OK)
-  loadDetail(@Param('br_id', ParseIntPipe) brId: number) {
-    return this.bankReconciliationService.loadDetail(brId);
+  loadDetail(
+    @Param('br_id', ParseIntPipe) brId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.bankReconciliationService.loadDetail(brId, user);
   }
 
   /** สร้างหรืออัปเดตงบเทียบยอด (upsert ตาม sc_id + ba_id + recon_month) */
@@ -50,7 +60,9 @@ export class BankReconciliationController {
       note?: string;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, Number(dto.sc_id));
     return this.bankReconciliationService.createOrUpdate(dto);
   }
 
@@ -67,15 +79,19 @@ export class BankReconciliationController {
       amount: number;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.bankReconciliationService.addItem(dto);
+    return this.bankReconciliationService.addItem(dto, user);
   }
 
   /** ลบ (soft delete) รายการปรับปรุง */
   @Post('removeItem')
   @HttpCode(HttpStatus.OK)
-  removeItem(@Body() dto: { bri_id: number; up_by: number }) {
-    return this.bankReconciliationService.removeItem(dto.bri_id, dto.up_by);
+  removeItem(
+    @Body() dto: { bri_id: number; up_by: number },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.bankReconciliationService.removeItem(dto.bri_id, dto.up_by, user);
   }
 
   /** ผู้อำนวยการลงนามรับรองงบเทียบยอด */
@@ -83,7 +99,10 @@ export class BankReconciliationController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
   @Roles(1, 2)
-  signOff(@Body() dto: { br_id: number; signed_by: number; note?: string }) {
-    return this.bankReconciliationService.signOff(dto);
+  signOff(
+    @Body() dto: { br_id: number; signed_by: number; note?: string },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.bankReconciliationService.signOff(dto, user);
   }
 }

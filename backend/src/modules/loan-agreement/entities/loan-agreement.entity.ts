@@ -86,7 +86,11 @@ export class LoanAgreement {
   })
   moneyTypeName: string | null;
 
-  @Column({ type: 'text', nullable: true, comment: 'วัตถุประสงค์การยืม (เพื่อเป็นค่าใช้จ่ายในการ...)' })
+  @Column({
+    type: 'text',
+    nullable: true,
+    comment: 'วัตถุประสงค์การยืม (เพื่อเป็นค่าใช้จ่ายในการ...)',
+  })
   purpose: string | null;
   @Column({
     name: 'expense_detail',
@@ -133,23 +137,65 @@ export class LoanAgreement {
 
   // ── workflow อนุมัติ (ตามสัญญายืมเงิน ตัวอย่างที่ 34) ─────────────────────
   // ผู้ยืม → ผู้ตรวจสอบ (เจ้าหน้าที่การเงิน) → ผู้อนุมัติ (ผอ.) → รับเงิน
-  @Column({ name: 'verify_by', type: 'int', nullable: true, comment: 'ผู้ตรวจสอบ admin_id' })
+  @Column({
+    name: 'verify_by',
+    type: 'int',
+    nullable: true,
+    comment: 'ผู้ตรวจสอบ admin_id',
+  })
   verifyBy: number | null;
-  @Column({ name: 'verify_name', type: 'varchar', length: 200, nullable: true, comment: 'snapshot ชื่อผู้ตรวจสอบ' })
+  @Column({
+    name: 'verify_name',
+    type: 'varchar',
+    length: 200,
+    nullable: true,
+    comment: 'snapshot ชื่อผู้ตรวจสอบ',
+  })
   verifyName: string | null;
-  @Column({ name: 'verify_date', type: 'date', nullable: true, comment: 'วันที่ตรวจสอบ' })
+  @Column({
+    name: 'verify_date',
+    type: 'date',
+    nullable: true,
+    comment: 'วันที่ตรวจสอบ',
+  })
   verifyDate: string | null;
 
-  @Column({ name: 'approve_by', type: 'int', nullable: true, comment: 'ผู้อนุมัติ admin_id' })
+  @Column({
+    name: 'approve_by',
+    type: 'int',
+    nullable: true,
+    comment: 'ผู้อนุมัติ admin_id',
+  })
   approveBy: number | null;
-  @Column({ name: 'approve_name', type: 'varchar', length: 200, nullable: true, comment: 'snapshot ชื่อผู้อนุมัติ (ผอ.)' })
+  @Column({
+    name: 'approve_name',
+    type: 'varchar',
+    length: 200,
+    nullable: true,
+    comment: 'snapshot ชื่อผู้อนุมัติ (ผอ.)',
+  })
   approveName: string | null;
-  @Column({ name: 'approve_date', type: 'date', nullable: true, comment: 'วันที่อนุมัติ' })
+  @Column({
+    name: 'approve_date',
+    type: 'date',
+    nullable: true,
+    comment: 'วันที่อนุมัติ',
+  })
   approveDate: string | null;
-  @Column({ name: 'approve_amount', type: 'float', nullable: true, comment: 'จำนวนเงินที่อนุมัติให้ยืม' })
+  @Column({
+    name: 'approve_amount',
+    type: 'float',
+    nullable: true,
+    comment: 'จำนวนเงินที่อนุมัติให้ยืม',
+  })
   approveAmount: number | null;
 
-  @Column({ name: 'receipt_date', type: 'date', nullable: true, comment: 'วันที่ผู้ยืมรับเงิน' })
+  @Column({
+    name: 'receipt_date',
+    type: 'date',
+    nullable: true,
+    comment: 'วันที่ผู้ยืมรับเงิน',
+  })
   receiptDate: string | null;
 
   // การส่งคืน
@@ -205,7 +251,8 @@ export class LoanAgreement {
   @Column({
     type: 'int',
     default: 10,
-    comment: '10=รอตรวจสอบ|11=รออนุมัติ|12=รอรับเงิน|1=ค้างชำระ|2=คืนแล้ว|3=ยกเลิก',
+    comment:
+      '10=รอตรวจสอบ|11=รออนุมัติ|12=รอรับเงิน|1=ค้างชำระ|2=คืนแล้ว|3=ยกเลิก',
   })
   status: number;
 

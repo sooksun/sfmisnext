@@ -104,7 +104,7 @@ const addItemSchema = z.object({
   item_type: z.number().int().min(1).max(3),
   doc_ref: z.string().optional(),
   detail: z.string().optional(),
-  amount: z.number(),
+  amount: z.number().positive('จำนวนเงินต้องมากกว่า 0'),
 })
 type AddItemForm = z.infer<typeof addItemSchema>
 
@@ -437,13 +437,16 @@ export default function BankReconciliationPage() {
                 <table className="w-full text-sm">
                   <tbody>
                     <tr className="border-b">
-                      <td className="px-4 py-3 text-gray-600 w-2/3">ยอดตามสมุดบัญชีโรงเรียน</td>
+                      <td className="px-4 py-3 text-gray-600 w-2/3">ยอดตาม Bank Statement (ธนาคาร)</td>
                       <td className="px-4 py-3 text-right font-medium">
-                        {showNumber(reconDetail.book_balance)} บาท
+                        {showNumber(reconDetail.bank_statement_balance)} บาท
                       </td>
                     </tr>
                     <tr className="border-b">
-                      <td className="px-4 py-3 text-gray-600">รายการปรับปรุงสุทธิ</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        รายการปรับปรุงสุทธิ
+                        <span className="text-xs text-gray-400 ml-1">(− เช็คค้างขึ้น + เงินฝากระหว่างทาง)</span>
+                      </td>
                       <td
                         className={`px-4 py-3 text-right font-medium ${
                           reconDetail.adjustment_total < 0
@@ -458,15 +461,15 @@ export default function BankReconciliationPage() {
                       </td>
                     </tr>
                     <tr className="border-b bg-blue-50">
-                      <td className="px-4 py-3 text-blue-700 font-semibold">ยอดสมุดบัญชีหลังปรับปรุง</td>
+                      <td className="px-4 py-3 text-blue-700 font-semibold">ยอดเงินฝากธนาคารหลังปรับปรุง</td>
                       <td className="px-4 py-3 text-right font-bold text-blue-700">
                         {showNumber(reconDetail.adjusted_book_balance)} บาท
                       </td>
                     </tr>
                     <tr className="border-b">
-                      <td className="px-4 py-3 text-gray-600">ยอดตาม Bank Statement</td>
+                      <td className="px-4 py-3 text-gray-600">ยอดตามสมุดบัญชีโรงเรียน</td>
                       <td className="px-4 py-3 text-right font-medium">
-                        {showNumber(reconDetail.bank_statement_balance)} บาท
+                        {showNumber(reconDetail.book_balance)} บาท
                       </td>
                     </tr>
                     <tr className={reconDetail.is_balanced ? 'bg-green-50' : 'bg-red-50'}>
@@ -541,11 +544,11 @@ export default function BankReconciliationPage() {
                           <td className="px-4 py-2.5 text-gray-600">{item.detail ?? '-'}</td>
                           <td
                             className={`px-4 py-2.5 text-right font-medium ${
-                              item.amount < 0 ? 'text-red-600' : 'text-green-600'
+                              item.item_type === 1 ? 'text-red-600' : 'text-green-600'
                             }`}
                           >
-                            {item.amount >= 0 ? '+' : ''}
-                            {showNumber(item.amount)}
+                            {item.item_type === 1 ? '−' : '+'}
+                            {showNumber(Math.abs(item.amount))}
                           </td>
                           {!reconDetail.signed_at && (
                             <td className="px-4 py-2.5">
@@ -718,9 +721,9 @@ export default function BankReconciliationPage() {
                 <SelectValue placeholder="เลือกประเภท" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">1 — เช็คค้างขึ้น (หักยอดสมุด)</SelectItem>
-                <SelectItem value="2">2 — เงินฝากระหว่างทาง (บวกยอดสมุด)</SelectItem>
-                <SelectItem value="3">3 — รายการอื่น</SelectItem>
+                <SelectItem value="1">1 — เช็คค้างขึ้น (หักจากยอดธนาคาร)</SelectItem>
+                <SelectItem value="2">2 — เงินฝากระหว่างทาง (บวกยอดธนาคาร)</SelectItem>
+                <SelectItem value="3">3 — รายการอื่น (บวกยอดธนาคาร)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -743,9 +746,10 @@ export default function BankReconciliationPage() {
             <Input
               type="number"
               step="0.01"
+              min="0"
               {...addItemForm.register('amount', { valueAsNumber: true })}
             />
-            <p className="text-xs text-gray-500 mt-1">ค่าลบ = หักออกจากยอดสมุด, ค่าบวก = บวกเพิ่ม</p>
+            <p className="text-xs text-gray-500 mt-1">กรอกจำนวนเงินเป็นค่าบวกเสมอ — ระบบจะหัก/บวกให้ตามประเภทที่เลือก</p>
             {addItemForm.formState.errors.amount && (
               <p className="text-xs text-red-500 mt-1">
                 {addItemForm.formState.errors.amount.message}

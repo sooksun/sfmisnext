@@ -8,6 +8,11 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { UnifiedRegisterService } from './unified-register.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('UnifiedRegister')
 export class UnifiedRegisterController {
@@ -25,7 +30,9 @@ export class UnifiedRegisterController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('year') year: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.unifiedRegisterService.getSummary(scId, syId, year);
   }
 
@@ -40,9 +47,11 @@ export class UnifiedRegisterController {
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('year') year: string,
     @Param('bg_type_id', ParseIntPipe) bgTypeId: number,
+    @CurrentUser() user: JwtUser,
     @Query('from_date') fromDate?: string,
     @Query('to_date') toDate?: string,
   ) {
+    assertSameSchool(user, scId);
     return this.unifiedRegisterService.getRegisterDetail(
       bgTypeId,
       scId,
@@ -64,7 +73,9 @@ export class UnifiedRegisterController {
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('year') year: string,
     @Param('bg_type_id', ParseIntPipe) bgTypeId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.unifiedRegisterService.getSchoolRevenueReport(
       scId,
       syId,

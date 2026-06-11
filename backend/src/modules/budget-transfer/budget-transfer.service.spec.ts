@@ -8,7 +8,12 @@ import type { JwtUser } from '../../common/utils/tenant-guard';
 // ผู้ใช้โรงเรียน 5 (ไม่ใช่ super admin) — ต้องถูกบล็อกเมื่อแตะ record โรงเรียนอื่น
 const userScA: JwtUser = { admin_id: 3, username: 'a', sc_id: 5, type: 2 };
 // super admin — ข้ามได้
-const superAdmin: JwtUser = { admin_id: 1, username: 'root', sc_id: 1, type: 1 };
+const superAdmin: JwtUser = {
+  admin_id: 1,
+  username: 'root',
+  sc_id: 1,
+  type: 1,
+};
 
 describe('BudgetTransferService — cross-tenant guard', () => {
   let service: BudgetTransferService;
@@ -29,9 +34,9 @@ describe('BudgetTransferService — cross-tenant guard', () => {
 
   it('approve: บล็อก 403 เมื่อ record เป็นของโรงเรียนอื่น', async () => {
     repo.findOne.mockResolvedValue({ btId: 10, scId: 99, status: 1, del: 0 });
-    await expect(service.approve(dtoApprove as any, userScA)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(
+      service.approve(dtoApprove as any, userScA),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(repo.save).not.toHaveBeenCalled();
   });
 

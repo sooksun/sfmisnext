@@ -4,6 +4,10 @@ import { Repository } from 'typeorm';
 import { BankReconciliation } from './entities/bank-reconciliation.entity';
 import { BankReconciliationItem } from './entities/bank-reconciliation-item.entity';
 import { Admin } from '../admin/entities/admin.entity';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const ITEM_TYPE_NAMES: Record<number, string> = {
   1: 'เช็คค้างขึ้น',
@@ -11,18 +15,33 @@ const ITEM_TYPE_NAMES: Record<number, string> = {
   3: 'รายการอื่น',
 };
 
+const LOCKED_MS = 'งบเทียบยอดนี้ลงนามรับรองแล้ว ไม่สามารถแก้ไขได้';
+
+/**
+ * คำนวณงบเทียบยอดแบบ "ปรับฝั่งธนาคาร" ตามแบบราชการ (งบพิสูจน์ยอดเงินฝากธนาคาร):
+ *   ยอดธนาคารหลังปรับ = bank statement − เช็คค้างขึ้น (type 1) + เงินฝากระหว่างทาง/อื่น (type ≠ 1)
+ *   ผลต่าง           = ยอดธนาคารหลังปรับ − ยอดสมุดบัญชีโรงเรียน  (ควร = 0)
+ *
+ * ใช้ Math.abs() กับจำนวนเงิน → ผู้ใช้กรอกค่าบวกเสมอ ระบบหัก/บวกให้ตาม item_type
+ * (ทนต่อข้อมูลเดิมที่อาจเก็บค่าติดลบไว้ด้วย) และตรงกับฟอร์มที่พิมพ์ออกทุกตัวเลข
+ */
 function computeBalances(
   r: BankReconciliation,
   items: BankReconciliationItem[],
 ) {
-  const adjustmentTotal = items
-    .filter((i) => i.del === 0)
-    .reduce((s, i) => s + i.amount, 0);
-  const adjustedBook = r.bookBalance + adjustmentTotal;
-  const difference = adjustedBook - r.bankStatementBalance;
+  const active = items.filter((i) => i.del === 0);
+  const checkTotal = active
+    .filter((i) => i.itemType === 1)
+    .reduce((s, i) => s + Math.abs(i.amount), 0);
+  const depositTotal = active
+    .filter((i) => i.itemType !== 1)
+    .reduce((s, i) => s + Math.abs(i.amount), 0);
+  const adjustmentTotal = depositTotal - checkTotal;
+  const adjustedBalance = r.bankStatementBalance + adjustmentTotal;
+  const difference = adjustedBalance - r.bookBalance;
   return {
     adjustmentTotal,
-    adjustedBook,
+    adjustedBalance,
     difference,
     isBalanced: Math.abs(difference) < 0.01 ? 1 : 0,
   };
@@ -62,9 +81,10 @@ export class BankReconciliationService {
     }));
   }
 
-  async loadDetail(brId: number) {
+  async loadDetail(brId: number, user?: JwtUser) {
     const recon = await this.reconRepo.findOne({ where: { brId, del: 0 } });
     if (!recon) return null;
+    if (user) assertSameSchool(user, recon.scId);
     const items = await this.itemRepo.find({
       where: { brId, del: 0 },
       order: { briId: 'ASC' },
@@ -112,6 +132,7 @@ export class BankReconciliationService {
         del: 0,
       },
     });
+    if (recon?.signedAt) return { flag: false, ms: LOCKED_MS };
     if (!recon) {
       recon = this.reconRepo.create({
         scId: dto.sc_id,
@@ -132,7 +153,7 @@ export class BankReconciliationService {
     });
     const comp = computeBalances(recon, items);
     recon.adjustmentTotal = comp.adjustmentTotal;
-    recon.adjustedBookBalance = comp.adjustedBook;
+    recon.adjustedBookBalance = comp.adjustedBalance;
     recon.difference = comp.difference;
     recon.isBalanced = comp.isBalanced;
 
@@ -144,25 +165,30 @@ export class BankReconciliationService {
     };
   }
 
-  async addItem(dto: {
-    br_id: number;
-    item_type: number;
-    doc_ref?: string;
-    detail?: string;
-    amount: number;
-    up_by?: number;
-  }) {
+  async addItem(
+    dto: {
+      br_id: number;
+      item_type: number;
+      doc_ref?: string;
+      detail?: string;
+      amount: number;
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
     const recon = await this.reconRepo.findOne({
       where: { brId: dto.br_id, del: 0 },
     });
     if (!recon) return { flag: false, ms: 'ไม่พบรายการงบเทียบยอด' };
+    if (user) assertSameSchool(user, recon.scId);
+    if (recon.signedAt) return { flag: false, ms: LOCKED_MS };
 
     const item = this.itemRepo.create({
       brId: dto.br_id,
       itemType: dto.item_type,
       docRef: dto.doc_ref ?? null,
       detail: dto.detail ?? null,
-      amount: dto.amount,
+      amount: Math.abs(dto.amount),
       upBy: dto.up_by ?? 0,
       del: 0,
     });
@@ -174,7 +200,7 @@ export class BankReconciliationService {
     });
     const comp = computeBalances(recon, items);
     recon.adjustmentTotal = comp.adjustmentTotal;
-    recon.adjustedBookBalance = comp.adjustedBook;
+    recon.adjustedBookBalance = comp.adjustedBalance;
     recon.difference = comp.difference;
     recon.isBalanced = comp.isBalanced;
     await this.reconRepo.save(recon);
@@ -182,24 +208,28 @@ export class BankReconciliationService {
     return { flag: true, ms: 'เพิ่มรายการปรับปรุงเรียบร้อยแล้ว' };
   }
 
-  async removeItem(briId: number, upBy: number) {
+  async removeItem(briId: number, upBy: number, user?: JwtUser) {
     const item = await this.itemRepo.findOne({ where: { briId, del: 0 } });
     if (!item) return { flag: false, ms: 'ไม่พบรายการ' };
+
+    const recon = await this.reconRepo.findOne({
+      where: { brId: item.brId, del: 0 },
+    });
+    if (user && recon) assertSameSchool(user, recon.scId);
+    if (recon?.signedAt) return { flag: false, ms: LOCKED_MS };
+
     item.del = 1;
     item.upBy = upBy;
     await this.itemRepo.save(item);
 
     // recompute
-    const recon = await this.reconRepo.findOne({
-      where: { brId: item.brId, del: 0 },
-    });
     if (recon) {
       const items = await this.itemRepo.find({
         where: { brId: item.brId, del: 0 },
       });
       const comp = computeBalances(recon, items);
       recon.adjustmentTotal = comp.adjustmentTotal;
-      recon.adjustedBookBalance = comp.adjustedBook;
+      recon.adjustedBookBalance = comp.adjustedBalance;
       recon.difference = comp.difference;
       recon.isBalanced = comp.isBalanced;
       await this.reconRepo.save(recon);
@@ -207,11 +237,15 @@ export class BankReconciliationService {
     return { flag: true, ms: 'ลบรายการเรียบร้อยแล้ว' };
   }
 
-  async signOff(dto: { br_id: number; signed_by: number; note?: string }) {
+  async signOff(
+    dto: { br_id: number; signed_by: number; note?: string },
+    user?: JwtUser,
+  ) {
     const recon = await this.reconRepo.findOne({
       where: { brId: dto.br_id, del: 0 },
     });
     if (!recon) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user) assertSameSchool(user, recon.scId);
     if (recon.signedAt)
       return { flag: false, ms: 'ลงนามแล้ว ไม่สามารถแก้ไขได้' };
 

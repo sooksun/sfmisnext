@@ -9,6 +9,10 @@ import {
   VoidBookDto,
   AdvanceCurrentDto,
 } from './dto/receipt-book.dto';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Injectable()
 export class ReceiptBookService {
@@ -93,11 +97,12 @@ export class ReceiptBookService {
     };
   }
 
-  async closeBook(dto: CloseBookDto) {
+  async closeBook(dto: CloseBookDto, user?: JwtUser) {
     const book = await this.rbRepo.findOne({
       where: { rbId: dto.rb_id, del: 0 },
     });
     if (!book) return { flag: false, ms: 'ไม่พบเล่มใบเสร็จ' };
+    if (user) assertSameSchool(user, book.scId);
     if (book.status !== 1)
       return { flag: false, ms: 'ปิดได้เฉพาะเล่มที่กำลังใช้งาน (สถานะ 1)' };
 
@@ -111,11 +116,12 @@ export class ReceiptBookService {
     };
   }
 
-  async voidBook(dto: VoidBookDto) {
+  async voidBook(dto: VoidBookDto, user?: JwtUser) {
     const book = await this.rbRepo.findOne({
       where: { rbId: dto.rb_id, del: 0 },
     });
     if (!book) return { flag: false, ms: 'ไม่พบเล่มใบเสร็จ' };
+    if (user) assertSameSchool(user, book.scId);
     if (book.status === 3) return { flag: false, ms: 'เล่มนี้ถูกยกเลิกแล้ว' };
 
     // snapshot voided_by_name จาก Admin
@@ -141,11 +147,12 @@ export class ReceiptBookService {
     };
   }
 
-  async advanceCurrent(dto: AdvanceCurrentDto) {
+  async advanceCurrent(dto: AdvanceCurrentDto, user?: JwtUser) {
     const book = await this.rbRepo.findOne({
       where: { rbId: dto.rb_id, del: 0 },
     });
     if (!book) return { flag: false, ms: 'ไม่พบเล่มใบเสร็จ' };
+    if (user) assertSameSchool(user, book.scId);
     if (book.status === 3)
       return { flag: false, ms: 'ไม่สามารถแก้ไขเล่มที่ยกเลิกแล้ว' };
 

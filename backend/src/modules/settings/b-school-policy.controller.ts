@@ -7,9 +7,18 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { SettingsService } from './settings.service';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
+@UseGuards(RolesGuard)
 @Controller('B_school_policy')
 export class BSchoolPolicyController {
   constructor(private readonly settingsService: SettingsService) {}
@@ -68,7 +77,9 @@ export class BSchoolPolicyController {
 
   @Post('add_school_policy')
   @HttpCode(HttpStatus.OK)
-  addSchoolPolicy(@Body() payload: any) {
+  @Roles(1, 2)
+  addSchoolPolicy(@Body() payload: any, @CurrentUser() user: JwtUser) {
+    assertSameSchool(user, Number(payload.sc_id));
     return this.settingsService.addSchoolPolicy({
       sc_id: payload.sc_id,
       sc_policy: payload.sp_name ?? payload.sc_policy ?? '',
@@ -78,7 +89,9 @@ export class BSchoolPolicyController {
 
   @Post('update_school_policy')
   @HttpCode(HttpStatus.OK)
-  updateSchoolPolicy(@Body() payload: any) {
+  @Roles(1, 2)
+  updateSchoolPolicy(@Body() payload: any, @CurrentUser() user: JwtUser) {
+    assertSameSchool(user, Number(payload.sc_id));
     return this.settingsService.updateSchoolPolicy({
       scp_id: payload.sp_id ?? payload.scp_id,
       sc_id: payload.sc_id,
@@ -89,7 +102,10 @@ export class BSchoolPolicyController {
 
   @Post('remove_school_policy')
   @HttpCode(HttpStatus.OK)
-  removeSchoolPolicy(@Body() payload: any) {
+  @Roles(1, 2)
+  removeSchoolPolicy(@Body() payload: any, @CurrentUser() user: JwtUser) {
+    if (payload.sc_id !== undefined)
+      assertSameSchool(user, Number(payload.sc_id));
     return this.settingsService.removeSchoolPolicy({
       scp_id: payload.sp_id ?? payload.scp_id,
     });

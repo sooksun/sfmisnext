@@ -4,8 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, TrendingUp } from 'lucide-react'
+import { Plus, Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, TrendingUp, Printer } from 'lucide-react'
 import { toast } from 'sonner'
+import { openPrintWindow } from '@/lib/print-utils'
+import { officialSmpPassbookRegister } from '@/lib/official-forms'
 import { PageHeader } from '@/components/shared/page-header'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -68,7 +70,7 @@ type EntryForm = z.infer<typeof schema>
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function SmpDepositPage() {
-  const { scId, adminId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const { scId, adminId, syId, budgetYear: budgetYearRaw, scName } = useAppContext()
   const budgetYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
   const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
@@ -221,6 +223,23 @@ export default function SmpDepositPage() {
       'ประเภทเงิน': r.money_type_name ?? '-',
     }))
     exportToXlsx(exportRows, 'สมุดคู่ฝาก', `smp-deposit-${budgetYear}`)
+  }
+
+  // พิมพ์แบบฟอร์ม "สมุดคู่ฝาก (ส่วนราชการผู้เบิก)" (ตย.18)
+  function handlePrint() {
+    if (rows.length === 0) return
+    const body = officialSmpPassbookRegister({
+      scName,
+      budgetYear,
+      rows: rows.map((r) => ({
+        date: r.doc_date,
+        docNo: r.doc_no,
+        deposit: r.amount_in,
+        withdraw: r.amount_out,
+        note: [r.money_type_name, r.detail].filter(Boolean).join(' — ') || r.note,
+      })),
+    })
+    openPrintWindow({ title: `สมุดคู่ฝาก_${budgetYear}`, body, paper: 'A4 landscape' })
   }
 
   function openAdd() {
@@ -444,6 +463,10 @@ export default function SmpDepositPage() {
         title="สมุดคู่ฝากส่วนราชการผู้เบิก"
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handlePrint} disabled={rows.length === 0} className="gap-1.5">
+              <Printer className="h-4 w-4" />
+              พิมพ์แบบฟอร์ม
+            </Button>
             <ExportButton
               onExport={handleExport}
               loading={rows.length === 0}

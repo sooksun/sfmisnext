@@ -10,6 +10,8 @@ import {
 @Entity('request_withdraw')
 @Index(['scId', 'del'])
 @Index(['scId', 'syId', 'del'])
+// เลขที่เช็คห้ามซ้ำในโรงเรียน+ปีเดียวกัน (NULL ได้หลายแถว — ใบที่ยังไม่ออกเช็ค)
+@Index('uidx_check_no', ['scId', 'syId', 'checkNoDoc'], { unique: true })
 export class RequestWithdraw {
   @PrimaryGeneratedColumn({ name: 'rw_id' })
   rwId: number;
@@ -54,7 +56,8 @@ export class RequestWithdraw {
     name: 'tr_id',
     type: 'int',
     default: 0,
-    comment: 'FK travel_reimbursement.tr_id (เชื่อมใบขอเบิกค่าเดินทางที่อนุมัติแล้ว)',
+    comment:
+      'FK travel_reimbursement.tr_id (เชื่อมใบขอเบิกค่าเดินทางที่อนุมัติแล้ว)',
   })
   trId: number;
 
@@ -123,6 +126,14 @@ export class RequestWithdraw {
 
   @Column({ name: 'check_no_doc', type: 'varchar', length: 45, nullable: true })
   checkNoDoc: string | null;
+
+  @Column({
+    name: 'ba_id',
+    type: 'int',
+    nullable: true,
+    comment: 'บัญชีธนาคารที่สั่งจ่าย (เช็ค/โอน) — auto-sync ทะเบียนคุมเงินฝากธนาคาร',
+  })
+  baId: number | null;
 
   @Column({
     name: 'type_offer_check',

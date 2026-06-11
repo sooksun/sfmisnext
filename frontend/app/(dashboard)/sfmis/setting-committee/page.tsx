@@ -64,10 +64,18 @@ const schema = z.object({
 })
 type Form = z.infer<typeof schema>
 
+// ตรงกับนิยาม parcel_order.order_status (0–9)
 const statusLabel: Record<number, { label: string; color: string }> = {
+  0: { label: 'ทบทวนใหม่', color: 'text-gray-500' },
   1: { label: 'รอดำเนินการ', color: 'text-yellow-600' },
+  2: { label: 'ผ่านแผน', color: 'text-yellow-600' },
+  3: { label: 'ผ่านการเงิน', color: 'text-yellow-600' },
+  4: { label: 'ผ่านพัสดุ', color: 'text-yellow-600' },
   5: { label: 'ดำเนินการแล้ว', color: 'text-green-600' },
+  6: { label: 'ตั้งกรรมการ', color: 'text-blue-600' },
   7: { label: 'อนุมัติแล้ว', color: 'text-blue-600' },
+  8: { label: 'สำเร็จ', color: 'text-emerald-600' },
+  9: { label: 'ยกเลิก', color: 'text-red-600' },
 }
 
 export default function SettingCommitteePage() {
@@ -122,6 +130,12 @@ export default function SettingCommitteePage() {
   const committee1 = watch('committee1')
   const committee2 = watch('committee2')
   const committee3 = watch('committee3')
+  // กรรมการห้ามซ้ำชื่อกัน — แต่ละช่องตัดผู้ที่ถูกเลือกในอีก 2 ช่องออก
+  // (ไม่ตัดค่าของช่องตัวเอง เพื่อให้ค่าที่เลือกไว้ยังแสดงผล)
+  const committeeOptionsExcept = (...others: string[]) => {
+    const taken = new Set(others.filter((v) => v && v !== '0'))
+    return directorOptions.filter((d) => !taken.has(String(d.admin_id)))
+  }
   const pId = watch('p_id')
   const dayDeadline = watch('day_deadline')
   const dateDeadline = watch('date_deadline')
@@ -238,7 +252,15 @@ export default function SettingCommitteePage() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         title={`แต่งตั้งคณะกรรมการ — ${editing?.order_name ?? ''}`}
-        onSubmit={handleSubmit((d) => saveMutation.mutate(d))}
+        onSubmit={handleSubmit((d) => {
+          // กันกรรมการซ้ำชื่อ (เผื่อข้อมูลเดิม/edge case) ก่อนบันทึก
+          const picked = [d.committee1, d.committee2, d.committee3].filter((v) => v && v !== '0')
+          if (new Set(picked).size !== picked.length) {
+            toast.error('กรรมการตรวจรับต้องไม่ซ้ำชื่อกัน')
+            return
+          }
+          saveMutation.mutate(d)
+        })}
         loading={saveMutation.isPending}
       >
         <div className="space-y-3">
@@ -269,7 +291,7 @@ export default function SettingCommitteePage() {
             <Select value={committee1} onValueChange={(v) => setValue('committee1', v)}>
               <SelectTrigger><SelectValue placeholder="เลือกคณะกรรมการ" /></SelectTrigger>
               <SelectContent>
-                {directorOptions.map((d) => (
+                {committeeOptionsExcept(committee2, committee3).map((d) => (
                   <SelectItem key={d.admin_id} value={String(d.admin_id)}>{d.name}</SelectItem>
                 ))}
               </SelectContent>
@@ -283,7 +305,7 @@ export default function SettingCommitteePage() {
               <SelectTrigger><SelectValue placeholder="เลือกคณะกรรมการ (ถ้ามี)" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="0">— ไม่ระบุ —</SelectItem>
-                {directorOptions.map((d) => (
+                {committeeOptionsExcept(committee1, committee3).map((d) => (
                   <SelectItem key={d.admin_id} value={String(d.admin_id)}>{d.name}</SelectItem>
                 ))}
               </SelectContent>
@@ -296,7 +318,7 @@ export default function SettingCommitteePage() {
               <SelectTrigger><SelectValue placeholder="เลือกคณะกรรมการ (ถ้ามี)" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="0">— ไม่ระบุ —</SelectItem>
-                {directorOptions.map((d) => (
+                {committeeOptionsExcept(committee1, committee2).map((d) => (
                   <SelectItem key={d.admin_id} value={String(d.admin_id)}>{d.name}</SelectItem>
                 ))}
               </SelectContent>

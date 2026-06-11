@@ -44,7 +44,10 @@ describe('ReportCheckControlService', () => {
         { provide: getRepositoryToken(RequestWithdraw), useValue: rwRepo },
         { provide: getRepositoryToken(Admin), useValue: adminRepo },
         { provide: getRepositoryToken(Partner), useValue: partnerRepo },
-        { provide: getRepositoryToken(BudgetIncomeType), useValue: budgetTypeRepo },
+        {
+          provide: getRepositoryToken(BudgetIncomeType),
+          useValue: budgetTypeRepo,
+        },
       ],
     }).compile();
 
@@ -128,7 +131,9 @@ describe('ReportCheckControlService', () => {
     budgetTypeRepo.find.mockResolvedValue([]);
 
     await service.loadCheckControl(1, 3);
-    expect(adminRepo.find).toHaveBeenCalledWith({ where: { adminId: In([7]) } });
+    expect(adminRepo.find).toHaveBeenCalledWith({
+      where: { adminId: In([7]) },
+    });
     expect(partnerRepo.find).toHaveBeenCalledWith({ where: { pId: In([3]) } });
     expect(budgetTypeRepo.find).toHaveBeenCalledWith({
       where: { bgTypeId: In([2]) },

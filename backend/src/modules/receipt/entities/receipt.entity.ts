@@ -8,6 +8,9 @@ import {
 } from 'typeorm';
 
 @Index(['scId', 'syId'])
+// เลขที่ใบเสร็จห้ามซ้ำในโรงเรียน+ปีเดียวกัน (DB-level กันซ้ำแม้ race/แก้ตรงใน DB)
+// หมายเหตุ: รวมใบที่ยกเลิก (del=1) ด้วย — เลขใบเสร็จที่ยกเลิกห้ามนำกลับมาใช้ใหม่
+@Index('uidx_receipt_no', ['scId', 'syId', 'rNo'], { unique: true })
 @Entity('receipt')
 export class Receipt {
   @PrimaryGeneratedColumn({ name: 'r_id' })

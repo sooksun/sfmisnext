@@ -36,14 +36,14 @@ export class SupInspection {
   @Column({ name: 'insp_note', type: 'text', nullable: true })
   inspNote: string | null;
 
-  @Column({ type: 'int', default: 0 })
-  committee1: number;
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  committee1: string | null;
 
-  @Column({ type: 'int', default: 0 })
-  committee2: number;
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  committee2: string | null;
 
-  @Column({ type: 'int', default: 0 })
-  committee3: number;
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  committee3: string | null;
 
   @Column({ name: 'report_no', type: 'varchar', length: 50, nullable: true })
   reportNo: string | null;

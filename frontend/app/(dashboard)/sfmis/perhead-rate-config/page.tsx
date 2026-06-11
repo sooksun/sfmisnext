@@ -29,6 +29,12 @@ export default function PerheadRateConfigPage() {
     queryFn: () =>
       apiGet<PerheadBudgetType[]>(`Student/loadPerheadBudgetTypes/${scId}`),
     enabled: scId > 0,
+    // ดึงข้อมูลสดทุกครั้งที่เปิดหน้า (กัน cache เก่าค้างจนแสดงค่าผิด)
+    // แต่ปิด refetch ตอนสลับ window/reconnect เพื่อไม่ให้ทับ checkbox ที่กำลังแก้
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 
   useEffect(() => {

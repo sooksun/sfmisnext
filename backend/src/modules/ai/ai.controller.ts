@@ -18,6 +18,7 @@ import { ChatService, ChatContext } from './services/chat.service';
 import { ValidationService } from './services/validation.service';
 import { AnalysisService } from './services/analysis.service';
 import { MergeService } from './services/merge.service';
+import { CrossDomainGuardService } from '../cross-domain-guard/cross-domain-guard.service';
 import { ChatRequestDto } from './dto/chat.dto';
 import {
   ValidateTransactionDto,
@@ -56,6 +57,7 @@ export class AiController {
     private readonly validationService: ValidationService,
     private readonly analysisService: AnalysisService,
     private readonly mergeService: MergeService,
+    private readonly crossDomainGuard: CrossDomainGuardService,
   ) {}
 
   /** สร้าง ChatContext จาก DTO */
@@ -161,6 +163,43 @@ export class AiController {
       dto.sc_id,
       dto.budget_year,
     );
+    return { flag: true, data: alerts, count: alerts.length };
+  }
+
+  /**
+   * เตือนสดที่จุดกรอกข้อมูล (inline) — rule-based ล้วน ไม่เรียก LLM เพื่อ latency ต่ำ
+   *   context='order'   payload: { sc_id, project_id, amount, exclude_order_id? }
+   *   context='invoice' payload: { sc_id, order_id }
+   */
+  @Post('validate/entry')
+  @HttpCode(HttpStatus.OK)
+  async validateEntry(
+    @Body()
+    body: {
+      context: 'order' | 'invoice';
+      sc_id: number;
+      project_id?: number;
+      amount?: number;
+      exclude_order_id?: number;
+      order_id?: number;
+    },
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, body.sc_id);
+    let alerts: Awaited<ReturnType<CrossDomainGuardService['inspect']>> = [];
+    if (body.context === 'order') {
+      alerts = await this.crossDomainGuard.previewParcelOrder({
+        scId: body.sc_id,
+        projectId: body.project_id,
+        newAmount: Number(body.amount ?? 0),
+        excludeOrderId: body.exclude_order_id,
+      });
+    } else if (body.context === 'invoice') {
+      alerts = await this.crossDomainGuard.previewInvoice({
+        scId: body.sc_id,
+        orderId: body.order_id,
+      });
+    }
     return { flag: true, data: alerts, count: alerts.length };
   }
 

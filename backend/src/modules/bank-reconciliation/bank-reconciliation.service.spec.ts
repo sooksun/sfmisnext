@@ -29,8 +29,14 @@ describe('BankReconciliationService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BankReconciliationService,
-        { provide: getRepositoryToken(BankReconciliation), useValue: reconRepo },
-        { provide: getRepositoryToken(BankReconciliationItem), useValue: itemRepo },
+        {
+          provide: getRepositoryToken(BankReconciliation),
+          useValue: reconRepo,
+        },
+        {
+          provide: getRepositoryToken(BankReconciliationItem),
+          useValue: itemRepo,
+        },
         { provide: getRepositoryToken(Admin), useValue: adminRepo },
       ],
     }).compile();
@@ -118,7 +124,14 @@ describe('BankReconciliationService', () => {
     it('item_type ที่ไม่รู้จัก → item_type_name เป็น empty string', async () => {
       reconRepo.findOne.mockResolvedValue({ brId: 1, isBalanced: 0 });
       itemRepo.find.mockResolvedValue([
-        { briId: 1, brId: 1, itemType: 99, docRef: null, detail: null, amount: 0 },
+        {
+          briId: 1,
+          brId: 1,
+          itemType: 99,
+          docRef: null,
+          detail: null,
+          amount: 0,
+        },
       ]);
       const result = await service.loadDetail(1);
       expect(result?.items[0].item_type_name).toBe('');
@@ -164,18 +177,45 @@ describe('BankReconciliationService', () => {
       expect(saved.isBalanced).toBe(1);
     });
 
-    it('recompute: book 1000 + item -100, bank 900 → adjustedBook=900, balanced', async () => {
+    it('เช็คค้างขึ้น (type 1) → หักยอดธนาคาร: bank 1100 − เช็ค 100 = book 1000 → balanced', async () => {
       reconRepo.findOne.mockResolvedValue({ brId: 5 });
-      itemRepo.find.mockResolvedValue([{ amount: -100, del: 0 }]);
+      itemRepo.find.mockResolvedValue([{ itemType: 1, amount: 100, del: 0 }]);
+      await service.createOrUpdate({
+        ...dto,
+        book_balance: 1000,
+        bank_statement_balance: 1100,
+      });
+      const saved = reconRepo.save.mock.calls[0][0];
+      expect(saved.adjustmentTotal).toBe(-100);
+      expect(saved.adjustedBookBalance).toBe(1000);
+      expect(saved.difference).toBe(0);
+      expect(saved.isBalanced).toBe(1);
+    });
+
+    it('เงินฝากระหว่างทาง (type 2) → บวกยอดธนาคาร: bank 900 + 100 = book 1000 → balanced', async () => {
+      reconRepo.findOne.mockResolvedValue({ brId: 5 });
+      itemRepo.find.mockResolvedValue([{ itemType: 2, amount: 100, del: 0 }]);
       await service.createOrUpdate({
         ...dto,
         book_balance: 1000,
         bank_statement_balance: 900,
       });
       const saved = reconRepo.save.mock.calls[0][0];
+      expect(saved.adjustmentTotal).toBe(100);
+      expect(saved.adjustedBookBalance).toBe(1000);
+      expect(saved.isBalanced).toBe(1);
+    });
+
+    it('กรอกค่าติดลบไว้ (ข้อมูลเดิม) → ใช้ Math.abs ผลเท่ากับค่าบวก', async () => {
+      reconRepo.findOne.mockResolvedValue({ brId: 5 });
+      itemRepo.find.mockResolvedValue([{ itemType: 1, amount: -100, del: 0 }]);
+      await service.createOrUpdate({
+        ...dto,
+        book_balance: 1000,
+        bank_statement_balance: 1100,
+      });
+      const saved = reconRepo.save.mock.calls[0][0];
       expect(saved.adjustmentTotal).toBe(-100);
-      expect(saved.adjustedBookBalance).toBe(900);
-      expect(saved.difference).toBe(0);
       expect(saved.isBalanced).toBe(1);
     });
 
@@ -188,23 +228,31 @@ describe('BankReconciliationService', () => {
         bank_statement_balance: 800,
       });
       const saved = reconRepo.save.mock.calls[0][0];
-      expect(saved.difference).toBe(200);
+      // difference = ยอดธนาคารหลังปรับ (800) − book (1000) = −200
+      expect(saved.difference).toBe(-200);
       expect(saved.isBalanced).toBe(0);
     });
 
     it('item ที่ del=1 ไม่ถูกนำมาคำนวณ adjustmentTotal', async () => {
       reconRepo.findOne.mockResolvedValue({ brId: 5 });
       itemRepo.find.mockResolvedValue([
-        { amount: -100, del: 0 },
-        { amount: -500, del: 1 }, // ถูกลบ — ต้องไม่นับ
+        { itemType: 1, amount: 100, del: 0 },
+        { itemType: 1, amount: 500, del: 1 }, // ถูกลบ — ต้องไม่นับ
       ]);
       await service.createOrUpdate({
         ...dto,
         book_balance: 1000,
-        bank_statement_balance: 900,
+        bank_statement_balance: 1100,
       });
       const saved = reconRepo.save.mock.calls[0][0];
       expect(saved.adjustmentTotal).toBe(-100);
+    });
+
+    it('งบที่ลงนามแล้ว → ปฏิเสธการแก้ไข (flag:false, ไม่ save)', async () => {
+      reconRepo.findOne.mockResolvedValue({ brId: 5, signedAt: new Date() });
+      const result = await service.createOrUpdate(dto);
+      expect(result.flag).toBe(false);
+      expect(reconRepo.save).not.toHaveBeenCalled();
     });
 
     it('note เป็น optional → null ได้', async () => {
@@ -224,7 +272,7 @@ describe('BankReconciliationService', () => {
       item_type: 1,
       doc_ref: 'CHK-1',
       detail: 'เช็คค้าง',
-      amount: -100,
+      amount: 100,
       up_by: 7,
     };
 
@@ -235,28 +283,39 @@ describe('BankReconciliationService', () => {
       expect(itemRepo.save).not.toHaveBeenCalled();
     });
 
+    it('งบที่ลงนามแล้ว → flag:false ไม่บันทึก item', async () => {
+      reconRepo.findOne.mockResolvedValue({ brId: 5, signedAt: new Date() });
+      const result = await service.addItem(dto);
+      expect(result.flag).toBe(false);
+      expect(itemRepo.save).not.toHaveBeenCalled();
+    });
+
     it('happy path → บันทึก item + recompute recon', async () => {
-      const recon = { brId: 5, bookBalance: 1000, bankStatementBalance: 900 };
+      const recon = { brId: 5, bookBalance: 1000, bankStatementBalance: 1100 };
       reconRepo.findOne.mockResolvedValue(recon);
-      itemRepo.find.mockResolvedValue([{ amount: -100, del: 0 }]);
+      itemRepo.find.mockResolvedValue([{ itemType: 1, amount: 100, del: 0 }]);
       const result = await service.addItem(dto);
       expect(itemRepo.save).toHaveBeenCalled();
       expect(result.flag).toBe(true);
-      // recon ถูก recompute
+      // recon ถูก recompute (เช็คค้าง หักจากธนาคาร)
       const savedRecon = reconRepo.save.mock.calls[0][0];
       expect(savedRecon.adjustmentTotal).toBe(-100);
       expect(savedRecon.isBalanced).toBe(1);
     });
 
-    it('สร้าง item ด้วย field จาก dto ถูกต้อง', async () => {
-      reconRepo.findOne.mockResolvedValue({ brId: 5, bookBalance: 0, bankStatementBalance: 0 });
+    it('เก็บ amount เป็นค่าบวกเสมอ (Math.abs) แม้ส่งค่าติดลบมา', async () => {
+      reconRepo.findOne.mockResolvedValue({
+        brId: 5,
+        bookBalance: 0,
+        bankStatementBalance: 0,
+      });
       itemRepo.find.mockResolvedValue([]);
-      await service.addItem(dto);
+      await service.addItem({ ...dto, amount: -100 });
       const createdItem = itemRepo.create.mock.calls[0][0];
       expect(createdItem.brId).toBe(5);
       expect(createdItem.itemType).toBe(1);
       expect(createdItem.docRef).toBe('CHK-1');
-      expect(createdItem.amount).toBe(-100);
+      expect(createdItem.amount).toBe(100);
       expect(createdItem.del).toBe(0);
     });
   });
@@ -272,7 +331,11 @@ describe('BankReconciliationService', () => {
     it('soft delete item (del=1) + set upBy', async () => {
       const item = { briId: 1, brId: 5, del: 0, upBy: 0 };
       itemRepo.findOne.mockResolvedValue(item);
-      reconRepo.findOne.mockResolvedValue({ brId: 5, bookBalance: 1000, bankStatementBalance: 1000 });
+      reconRepo.findOne.mockResolvedValue({
+        brId: 5,
+        bookBalance: 1000,
+        bankStatementBalance: 1000,
+      });
       itemRepo.find.mockResolvedValue([]);
       const result = await service.removeItem(1, 7);
       expect(item.del).toBe(1);
@@ -298,6 +361,16 @@ describe('BankReconciliationService', () => {
       expect(result.flag).toBe(true);
       expect(reconRepo.save).not.toHaveBeenCalled();
     });
+
+    it('งบที่ลงนามแล้ว → flag:false ไม่ลบ item', async () => {
+      const item = { briId: 1, brId: 5, del: 0, upBy: 0 };
+      itemRepo.findOne.mockResolvedValue(item);
+      reconRepo.findOne.mockResolvedValue({ brId: 5, signedAt: new Date() });
+      const result = await service.removeItem(1, 7);
+      expect(result.flag).toBe(false);
+      expect(item.del).toBe(0);
+      expect(itemRepo.save).not.toHaveBeenCalled();
+    });
   });
 
   // ─── signOff ────────────────────────────────────────────────────────────────
@@ -313,7 +386,10 @@ describe('BankReconciliationService', () => {
     it('ลงนามแล้ว (signedAt มีค่า) → flag: false', async () => {
       reconRepo.findOne.mockResolvedValue({ brId: 5, signedAt: new Date() });
       const result = await service.signOff(dto);
-      expect(result).toEqual({ flag: false, ms: 'ลงนามแล้ว ไม่สามารถแก้ไขได้' });
+      expect(result).toEqual({
+        flag: false,
+        ms: 'ลงนามแล้ว ไม่สามารถแก้ไขได้',
+      });
       expect(reconRepo.save).not.toHaveBeenCalled();
     });
 
@@ -339,7 +415,11 @@ describe('BankReconciliationService', () => {
     it('admin มี username แต่ไม่มี name → ใช้ username', async () => {
       const recon: any = { brId: 5, signedAt: null };
       reconRepo.findOne.mockResolvedValue(recon);
-      adminRepo.findOne.mockResolvedValue({ adminId: 7, name: null, username: 'user7' });
+      adminRepo.findOne.mockResolvedValue({
+        adminId: 7,
+        name: null,
+        username: 'user7',
+      });
       await service.signOff(dto);
       expect(recon.signedName).toBe('user7');
     });

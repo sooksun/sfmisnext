@@ -1555,3 +1555,282 @@ export function officialSmpPassbookRegister(o: SmpPassbookOpts): string {
   </table>`
   return FORM_CSS + header + table
 }
+
+// ── 13) รายงานการใช้เงินอุดหนุนทั่วไป (ตย.39) ──────────────────────────────
+export interface SubsidyUsageRow {
+  name: string
+  broughtForward?: number | null // ยอดยกมา
+  received?: number | null // รับ
+  spent?: number | null // จ่าย
+  balance?: number | null // คงเหลือ
+  note?: string | null
+}
+export interface SubsidyUsageReportOpts {
+  scName?: string
+  asOfDate?: string | null
+  rows: SubsidyUsageRow[]
+  preparerName?: string
+  preparerPosition?: string
+}
+export function officialSubsidyUsageReport(o: SubsidyUsageReportOpts): string {
+  const header = officialHeader('รายงานการใช้เงินอุดหนุนทั่วไป', [
+    `โรงเรียน${o.scName ? esc(o.scName) : `<span class="of-dotted of-dots"></span>`}`,
+    o.asOfDate ? `ณ วันที่ ${esc(thaiFullDate(o.asOfDate))}` : '',
+  ].filter(Boolean))
+  const n = (v?: number | null) => (v ? fmtBaht(v) : '')
+  const t = { bf: 0, rc: 0, sp: 0, bal: 0 }
+  const body = o.rows
+    .map((r, i) => {
+      t.bf += Number(r.broughtForward || 0)
+      t.rc += Number(r.received || 0)
+      t.sp += Number(r.spent || 0)
+      t.bal += Number(r.balance || 0)
+      return `<tr>
+        <td class="ctr">${i + 1}</td>
+        <td>${esc(r.name)}</td>
+        <td class="num">${n(r.broughtForward)}</td>
+        <td class="num">${n(r.received)}</td>
+        <td class="num">${n(r.spent)}</td>
+        <td class="num">${n(r.balance)}</td>
+        <td>${r.note ? esc(r.note) : ''}</td>
+      </tr>`
+    })
+    .join('')
+  const table = `<table class="of">
+    <thead><tr>
+      <th>ที่</th><th>ประเภท/รายการ</th><th>ยอดยกมา</th><th>รับ</th><th>จ่าย</th><th>คงเหลือ</th><th>หมายเหตุ</th>
+    </tr></thead>
+    <tbody>${body || `<tr><td colspan="7" class="ctr">— ไม่มีรายการ —</td></tr>`}</tbody>
+    <tfoot><tr>
+      <td colspan="2" class="ctr"><b>รวม</b></td>
+      <td class="num"><b>${fmtBaht(t.bf)}</b></td><td class="num"><b>${fmtBaht(t.rc)}</b></td>
+      <td class="num"><b>${fmtBaht(t.sp)}</b></td><td class="num"><b>${fmtBaht(t.bal)}</b></td><td></td>
+    </tr></tfoot>
+  </table>`
+  const nm = (v?: string) => (v ? esc(v) : DOTS)
+  const sign = `<div class="of-sign-wrap of-sign-c" style="margin-top:16mm">
+    <div>ลงชื่อ${nm(o.preparerName)} ผู้รายงาน</div>
+    <div>(${o.preparerName ? esc(o.preparerName) : DOTS})</div>
+    <div>ตำแหน่ง ${nm(o.preparerPosition)}</div>
+  </div>`
+  const note = `<div style="font-size:12pt;margin-top:6mm;"><u>หมายเหตุ</u> ให้รายงานเป็นประจำทุกภาคเรียน ภายใน 15 วัน นับแต่วันปิดภาคเรียน</div>`
+  return FORM_CSS + header + table + note + sign
+}
+
+// ── 14) คำสั่งแต่งตั้งกรรมการเก็บรักษาเงิน / ผู้ตรวจสอบประจำวัน (ตย.41/42) ──
+export interface AppointmentMember {
+  name: string
+  position?: string | null
+}
+export interface AppointmentOrderOpts {
+  scName?: string
+  orderNo?: string | null
+  orderDate?: string | null
+  subject: string // เรื่อง...
+  legalBasis: string // อาศัยอำนาจตามความใน...
+  introLine: string // ประโยคนำก่อนรายชื่อ
+  members: AppointmentMember[]
+  substitutes?: AppointmentMember[]
+  effectiveDate?: string | null
+  directorName?: string | null
+  directorPosition?: string | null
+}
+export function officialAppointmentOrder(o: AppointmentOrderOpts): string {
+  const line = (m: AppointmentMember, i: number) =>
+    `<div style="margin-left:18mm">${i + 1}. ${esc(m.name)}${
+      m.position ? ` &nbsp;&nbsp;ตำแหน่ง ${esc(m.position)}` : ''
+    }</div>`
+  const subs =
+    o.substitutes && o.substitutes.length
+      ? `<p>ถ้ากรรมการผู้ใดไม่สามารถปฏิบัติหน้าที่ได้ ให้บุคคลต่อไปนี้เป็นกรรมการแทน</p>
+         ${o.substitutes.map(line).join('')}`
+      : ''
+  const body = `<div style="font-size:16pt;line-height:1.7">
+    <div style="text-align:center;font-weight:bold;font-size:18pt;margin-top:6mm">คำสั่งโรงเรียน${o.scName ? esc(o.scName) : `<span class="of-dotted of-dots"></span>`}</div>
+    <div style="text-align:center">ที่ ${o.orderNo ? esc(o.orderNo) : DOTS}</div>
+    <div style="text-align:center;font-weight:bold">เรื่อง ${esc(o.subject)}</div>
+    <div style="text-align:center">-------------------------------</div>
+    <p style="text-indent:18mm;margin-top:4mm">${esc(o.legalBasis)} ${esc(o.introLine)}</p>
+    ${o.members.map(line).join('')}
+    ${subs}
+    <p style="text-indent:18mm;margin-top:4mm">ทั้งนี้ ตั้งแต่วันที่ ${o.effectiveDate ? esc(thaiFullDate(o.effectiveDate)) : DOTS} เป็นต้นไป</p>
+    <p style="text-align:center;margin-top:4mm">สั่ง ณ วันที่ ${o.orderDate ? esc(thaiFullDate(o.orderDate)) : DOTS}</p>
+  </div>`
+  const nm = (v?: string | null) => (v ? esc(v) : DOTS)
+  const sign = `<div class="of-sign-wrap of-sign-c" style="margin-top:14mm">
+    <div>ลงชื่อ${nm(o.directorName)}</div>
+    <div>(${o.directorName ? esc(o.directorName) : DOTS})</div>
+    <div>${o.directorPosition ? esc(o.directorPosition) : 'ผู้อำนวยการโรงเรียน'}</div>
+  </div>`
+  return FORM_CSS + body + sign
+}
+
+// ── 15) ทะเบียนคุมเงินฝาก (ตย.14) — เงินประกันสัญญาที่นำฝาก สพป. + วันครบกำหนด ──
+export interface DepositHoldingRow {
+  seq?: number | null
+  itemName?: string | null
+  kind?: string | null
+  receiveDate?: string | null
+  receiveDocNo?: string | null
+  receiveAmount?: number | null
+  depositDate?: string | null
+  depositDocNo?: string | null
+  depositAmount?: number | null
+  dueDate?: string | null
+  returnDate?: string | null
+  note?: string | null
+}
+export interface DepositHoldingOpts {
+  scName?: string
+  budgetYear?: string | number
+  rows: DepositHoldingRow[]
+}
+export function officialDepositHoldingRegister(o: DepositHoldingOpts): string {
+  const header = officialHeader('ทะเบียนคุมเงินฝาก', [
+    `โรงเรียน${o.scName ? esc(o.scName) : ''}${o.budgetYear ? ` ปีงบประมาณ ${esc(String(o.budgetYear))}` : ''}`,
+  ])
+  const d = (v?: string | null) => (v ? esc(thaiFullDate(v)) : '')
+  const n = (v?: number | null) => (v ? fmtBaht(v) : '')
+  const body = o.rows
+    .map(
+      (r, i) => `<tr>
+      <td class="ctr">${r.seq ?? i + 1}</td>
+      <td>${r.itemName ? esc(r.itemName) : ''}</td>
+      <td>${r.kind ? esc(r.kind) : ''}</td>
+      <td class="ctr">${d(r.receiveDate)}</td><td class="ctr">${r.receiveDocNo ? esc(r.receiveDocNo) : ''}</td><td class="num">${n(r.receiveAmount)}</td>
+      <td class="ctr">${d(r.depositDate)}</td><td class="ctr">${r.depositDocNo ? esc(r.depositDocNo) : ''}</td><td class="num">${n(r.depositAmount)}</td>
+      <td class="ctr">${d(r.dueDate)}</td><td class="ctr">${d(r.returnDate)}</td>
+      <td>${r.note ? esc(r.note) : ''}</td>
+    </tr>`,
+    )
+    .join('')
+  const table = `<table class="of">
+    <thead>
+      <tr>
+        <th rowspan="2">ที่</th><th rowspan="2">รายการ</th><th rowspan="2">ประเภท</th>
+        <th colspan="3">การรับ</th><th colspan="3">การนำฝาก</th>
+        <th rowspan="2">วันครบกำหนด</th><th rowspan="2">วันที่เบิกจ่ายเงิน<br/>คืนผู้มีสิทธิ</th><th rowspan="2">หมายเหตุ</th>
+      </tr>
+      <tr>
+        <th>วัน เดือน ปี</th><th>ที่เอกสาร</th><th>จำนวนเงิน</th>
+        <th>วัน เดือน ปี</th><th>ที่เอกสาร</th><th>จำนวนเงิน</th>
+      </tr>
+    </thead>
+    <tbody>${body || `<tr><td colspan="12" class="ctr">— ไม่มีรายการ —</td></tr>`}</tbody>
+  </table>`
+  return FORM_CSS + header + table
+}
+
+// ── 16) ใบรับใบสำคัญ (ตย.37) — แนบการส่งใช้เงินยืม ──
+export interface VoucherReceiptOpts {
+  scName?: string
+  no?: string | null
+  affiliation?: string | null
+  receivedFrom?: string | null
+  position?: string | null
+  loanNo?: string | null
+  loanDate?: string | null
+  voucherCount?: number | null
+  amount?: number | null
+  amountText?: string | null
+  receiverName?: string | null
+  receiverPosition?: string | null
+  date?: string | null
+}
+export function officialVoucherReceipt(o: VoucherReceiptOpts): string {
+  const dot = (v?: string | null, w = '60mm') =>
+    v ? esc(v) : `<span class="of-dotted" style="display:inline-block;min-width:${w};border-bottom:1px dotted #000"></span>`
+  const num = (v?: number | null) => (v ? fmtBaht(v) : dot(null, '40mm'))
+  const body = `<div style="font-size:16pt;line-height:2;max-width:170mm;margin:0 auto">
+    <div style="text-align:center;font-weight:bold;font-size:18pt">ใบรับใบสำคัญ</div>
+    <div style="text-align:right">เลขที่ ${dot(o.no, '30mm')}</div>
+    <div style="text-align:right">ส่วนราชการ โรงเรียน${dot(o.scName, '50mm')}</div>
+    <div style="text-align:right">วันที่ ${o.date ? esc(thaiFullDate(o.date)) : dot(null, '50mm')}</div>
+    <p style="margin-top:6mm">ได้รับใบสำคัญจาก ${dot(o.receivedFrom)}</p>
+    <p>ตำแหน่ง ${dot(o.position, '50mm')} สังกัด ${dot(o.affiliation, '60mm')}</p>
+    <p>เพื่อส่งใช้เงินยืมตามสัญญายืมเงินเลขที่ ${dot(o.loanNo, '35mm')} ลงวันที่ ${o.loanDate ? esc(thaiFullDate(o.loanDate)) : dot(null, '40mm')}</p>
+    <p>รวม ${o.voucherCount != null ? esc(String(o.voucherCount)) : dot(null, '20mm')} ฉบับ เป็นเงิน ${num(o.amount)} บาท
+       (${o.amountText ? esc(o.amountText) : dot(null, '70mm')})</p>
+    <p>ไว้เป็นการถูกต้องแล้ว</p>
+  </div>`
+  const dotc = (v?: string | null) => (v ? esc(v) : DOTS)
+  const sign = `<div class="of-sign-wrap of-sign-c" style="margin-top:16mm">
+    <div>ลงชื่อ${dotc(o.receiverName)} ผู้รับใบสำคัญ</div>
+    <div>(${o.receiverName ? esc(o.receiverName) : DOTS})</div>
+    <div>ตำแหน่ง ${dotc(o.receiverPosition)}</div>
+  </div>`
+  return FORM_CSS + body + sign
+}
+
+// ── 17) ใบจัดซื้อวัสดุเครื่องบริโภค (ตย.36) — ฟอร์ม 4 ส่วน อาหารกลางวัน ──
+export interface FoodPurchaseItem {
+  name?: string | null
+  qty?: string | null
+  unitPrice?: string | null
+  amount?: number | null
+  note?: string | null
+}
+export interface FoodPurchaseOpts {
+  scName?: string
+  docNo?: string | null
+  purpose?: string | null // ประกอบอาหารให้นักเรียนวันที่...
+  items: FoodPurchaseItem[]
+  preparerName?: string | null
+  inspectors?: string[] // กรรมการตรวจรับ
+  purchaseOfficer?: string | null
+  headOfficer?: string | null
+  directorName?: string | null
+  payerName?: string | null
+  receiverName?: string | null
+  fundSource?: string | null // เช่น เงินอุดหนุนอาหารกลางวัน จากเทศบาล
+  date?: string | null
+  amountText?: string | null
+}
+export function officialFoodPurchaseForm(o: FoodPurchaseOpts): string {
+  const total = o.items.reduce((s, i) => s + Number(i.amount || 0), 0)
+  const itemRows = o.items
+    .map(
+      (i) => `<tr>
+      <td>${i.name ? esc(i.name) : ''}</td>
+      <td class="ctr">${i.qty ? esc(i.qty) : ''}</td>
+      <td class="ctr">${i.unitPrice ? esc(i.unitPrice) : ''}</td>
+      <td class="num">${i.amount ? fmtBaht(i.amount) : ''}</td>
+      <td>${i.note ? esc(i.note) : ''}</td>
+    </tr>`,
+    )
+    .join('')
+  const insp = (o.inspectors ?? []).filter(Boolean)
+  const sg = (label: string, name?: string | null) =>
+    `<div>(ลงชื่อ) ${name ? esc(name) : DOTS} ${label}</div>`
+  const head = officialHeader('ใบจัดซื้อวัสดุเครื่องบริโภค', [
+    `โรงเรียน${o.scName ? esc(o.scName) : ''}${o.docNo ? ` &nbsp; เลขที่ ${esc(o.docNo)}` : ''}`,
+  ])
+  const body = `<div style="font-size:14pt;line-height:1.5">
+    <p><b>ส่วนที่ 1 รายงานขอซื้อ</b> — ด้วยโรงเรียน${o.scName ? esc(o.scName) : DOTS} ขอจัดซื้อวัสดุเครื่องบริโภคเพื่อ${o.purpose ? esc(o.purpose) : DOTS}
+    โดยวิธีตกลงราคา (วงเงินไม่เกิน 100,000 บาท) ตามรายการต่อไปนี้</p>
+    <table class="of">
+      <thead><tr><th>รายการอาหาร/เครื่องปรุง</th><th>จำนวน</th><th>ราคาต่อหน่วย</th><th>จำนวนเงิน</th><th>หมายเหตุ</th></tr></thead>
+      <tbody>${itemRows || `<tr><td colspan="5" class="ctr">— ไม่มีรายการ —</td></tr>`}</tbody>
+      <tfoot><tr><td colspan="3" class="ctr"><b>รวม</b></td><td class="num"><b>${fmtBaht(total)}</b></td><td></td></tr></tfoot>
+    </table>
+    <p style="margin-top:2mm">เป็นเงิน ${fmtBaht(total)} บาท (${o.amountText ? esc(o.amountText) : DOTS})${o.fundSource ? ` — ${esc(o.fundSource)}` : ''}</p>
+    ${sg('ผู้จัดทำรายการ', o.preparerName)}
+
+    <p style="margin-top:4mm"><b>ส่วนที่ 2 การอนุมัติการจัดซื้อ</b> — เรียน ผู้อำนวยการโรงเรียน เพื่อโปรดทราบและพิจารณา
+    เห็นชอบตามรายงานขอซื้อ และแต่งตั้งบุคคลทำการตรวจรับ</p>
+    <div style="margin-left:10mm">${insp.length ? insp.map((nm, i) => `<div>${i + 1}. ${esc(nm)}</div>`).join('') : `<div>${DOTS}</div>`}</div>
+    ${sg('เจ้าหน้าที่พัสดุ', o.purchaseOfficer)}
+    ${sg('หัวหน้าเจ้าหน้าที่พัสดุ', o.headOfficer)}
+    <div style="margin-top:2mm">อนุมัติตามเสนอ ${sg('ผู้อำนวยการโรงเรียน', o.directorName)}</div>
+
+    <p style="margin-top:4mm"><b>ส่วนที่ 3 ใบรับรองแทนใบเสร็จรับเงิน</b> — ข้าพเจ้า ${o.payerName ? esc(o.payerName) : DOTS}
+    ได้จ่ายเงินค่าวัสดุข้างต้นเป็นเงิน ${fmtBaht(total)} บาท โดยไม่อาจเรียกใบเสร็จรับเงินได้</p>
+    ${sg('ผู้จ่ายเงิน', o.payerName)}
+
+    <p style="margin-top:4mm"><b>ส่วนที่ 4 ผลการตรวจรับและอนุมัติการจ่ายเงิน</b> — พัสดุตามรายการข้างต้นได้ตรวจรับไว้ถูกต้องครบถ้วนแล้ว</p>
+    <div style="margin-left:10mm">${insp.length ? insp.map((nm) => sg('กรรมการตรวจรับพัสดุ', nm)).join('') : sg('กรรมการตรวจรับพัสดุ', null)}</div>
+    <div style="margin-top:2mm">ทราบและอนุมัติให้จ่ายเงินได้ ${sg('ผู้อำนวยการโรงเรียน', o.directorName)}</div>
+    <p>ผู้รับเงิน ${o.receiverName ? esc(o.receiverName) : DOTS} &nbsp;&nbsp; วันที่ ${o.date ? esc(thaiFullDate(o.date)) : DOTS}</p>
+  </div>`
+  return FORM_CSS + head + body
+}

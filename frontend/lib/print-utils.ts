@@ -1,6 +1,6 @@
 /**
- * Print utility — open a new window with A4-formatted HTML and trigger browser print dialog.
- * ใช้สำหรับสร้างเอกสารราชการแบบ print-to-PDF (ไม่พึ่ง library นอก)
+ * Print utility — render A4-formatted HTML into a hidden iframe and trigger the browser print dialog.
+ * ใช้สำหรับสร้างเอกสารราชการแบบ print-to-PDF (ไม่พึ่ง library นอก, ไม่เปิดแท็บ HTML ให้เห็น)
  */
 
 const THAI_MONTHS = [
@@ -66,8 +66,9 @@ export interface PrintOpts {
 const BASE_CSS = `
 @page { size: {PAPER}; margin: 15mm 15mm 15mm 15mm; }
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; font-family: 'TH SarabunPSK', 'Sarabun', 'Tahoma', sans-serif; font-size: 16pt; color: #000; line-height: 1.5; }
+html, body { margin: 0; padding: 0; font-family: 'TH SarabunPSK', 'Sarabun', 'Tahoma', sans-serif; font-size: 16pt; color: #000; line-height: 1.25; }
 .page { padding: 0; max-width: 100%; }
+p { margin: 3pt 0; }
 .header { text-align: center; margin-bottom: 10mm; }
 .header h1 { font-size: 20pt; margin: 0 0 4pt 0; }
 .header .sub { font-size: 14pt; color: #333; }
@@ -91,13 +92,15 @@ th { background: #f0f0f0; text-align: center; font-weight: bold; }
   .no-print { display: none !important; }
   body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
-.toolbar { position: fixed; top: 8px; right: 8px; z-index: 9999; }
-.toolbar button { font-family: inherit; font-size: 14pt; padding: 6px 14px; margin-left: 4px; cursor: pointer; border: 1px solid #888; background: #fff; border-radius: 4px; }
-.toolbar button:hover { background: #eef; }
 `
 
-/** เปิดหน้าต่างใหม่พร้อม HTML สำหรับพิมพ์เป็นไฟล์ PDF */
+/**
+ * พิมพ์เอกสารเป็น PDF ผ่าน hidden iframe (ไม่เปิดแท็บ HTML ให้เห็น)
+ * เรนเดอร์ HTML เดิมลงใน iframe นอกจอ แล้วเรียก print() → เด้ง dialog พิมพ์/บันทึก PDF ทันที
+ */
 export function openPrintWindow(opts: PrintOpts) {
+  if (typeof window === 'undefined') return
+
   const paper = opts.paper ?? 'A4'
   const css = BASE_CSS.replace('{PAPER}', paper)
   const html = `<!DOCTYPE html>
@@ -108,22 +111,50 @@ export function openPrintWindow(opts: PrintOpts) {
 <style>${css}</style>
 </head>
 <body>
-<div class="toolbar no-print">
-  <button onclick="window.print()">พิมพ์ / บันทึก PDF</button>
-  <button onclick="window.close()">ปิด</button>
-</div>
 <div class="page">${opts.body}</div>
-${opts.autoPrint !== false ? '<script>window.onload=function(){setTimeout(function(){window.print();},300);};</script>' : ''}
 </body>
 </html>`
-  const w = window.open('', '_blank', 'width=900,height=1100')
-  if (!w) {
-    alert('ไม่สามารถเปิดหน้าต่างพิมพ์ได้ กรุณาอนุญาต popup')
-    return
+
+  const FRAME_ID = 'sfmis-print-frame'
+  // ลบ iframe ค้างจากครั้งก่อน (กรณีผู้ใช้กดยกเลิก dialog แล้ว afterprint ไม่ยิง)
+  document.getElementById(FRAME_ID)?.remove()
+
+  const iframe = document.createElement('iframe')
+  iframe.id = FRAME_ID
+  // off-screen เต็ม A4 — ต้องมีกล่องจริงเพื่อให้ตารางหลายหน้าแบ่งหน้าถูก
+  // (ห้าม display:none / visibility:hidden / 0×0 — บางเบราว์เซอร์จะไม่พิมพ์หรือแบ่งหน้าเพี้ยน)
+  iframe.setAttribute(
+    'style',
+    'position:fixed; left:-10000px; top:0; width:210mm; height:297mm; border:0;',
+  )
+
+  const prevTitle = document.title
+  let removed = false
+  const cleanup = () => {
+    if (removed) return
+    removed = true
+    document.title = prevTitle
+    window.removeEventListener('afterprint', cleanup)
+    iframe.remove()
   }
-  w.document.open()
-  w.document.write(html)
-  w.document.close()
+
+  iframe.onload = () => {
+    // ตั้ง title ของ parent ด้วย — Firefox/Safari ใช้ค่านี้เป็นชื่อไฟล์ PDF
+    document.title = opts.title
+    const win = iframe.contentWindow
+    if (win) win.onafterprint = cleanup
+    window.addEventListener('afterprint', cleanup, { once: true })
+
+    if (opts.autoPrint !== false) {
+      setTimeout(() => {
+        win?.focus()
+        win?.print()
+      }, 200)
+    }
+  }
+
+  document.body.appendChild(iframe)
+  iframe.srcdoc = html
 }
 
 function escapeHtml(s: string): string {

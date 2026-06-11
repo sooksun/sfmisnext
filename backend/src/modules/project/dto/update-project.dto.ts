@@ -12,6 +12,18 @@ export class UpdateProjectDto {
   @IsOptional()
   proj_detail?: string;
 
+  @IsString()
+  @IsOptional()
+  proj_policy?: string;
+
+  @IsString()
+  @IsOptional()
+  proj_budget_type?: string;
+
+  @IsString()
+  @IsOptional()
+  proj_owner?: string;
+
   @IsNumber()
   @IsOptional()
   proj_budget?: number;

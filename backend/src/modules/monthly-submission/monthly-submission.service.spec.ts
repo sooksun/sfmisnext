@@ -9,7 +9,9 @@ describe('MonthlySubmissionService', () => {
   let service: MonthlySubmissionService;
   let msRepo: jest.Mocked<any>;
   let adminRepo: jest.Mocked<any>;
-  let regulatoryConfig: jest.Mocked<Pick<RegulatoryConfigService, 'getThreshold'>>;
+  let regulatoryConfig: jest.Mocked<
+    Pick<RegulatoryConfigService, 'getThreshold'>
+  >;
 
   beforeEach(async () => {
     msRepo = {
@@ -123,7 +125,13 @@ describe('MonthlySubmissionService', () => {
 
     it('ไม่มี record → สร้างใหม่ status=1 พร้อม default checklist', async () => {
       msRepo.findOne.mockResolvedValue(null);
-      const created = { msId: 9, scId: 1, syId: 3, submitMonth: '2569-03', status: 1 };
+      const created = {
+        msId: 9,
+        scId: 1,
+        syId: 3,
+        submitMonth: '2569-03',
+        status: 1,
+      };
       msRepo.create.mockReturnValue(created);
       msRepo.save.mockResolvedValue(created);
 
@@ -170,12 +178,21 @@ describe('MonthlySubmissionService', () => {
     it('record ยืนยันแล้ว (status=3) → flag:false ห้ามแก้', async () => {
       msRepo.findOne.mockResolvedValue({ msId: 1, status: 3 });
       const result = await service.saveSubmission(dto);
-      expect(result).toEqual({ flag: false, ms: 'ไม่สามารถแก้ไขรายการที่ยืนยันแล้ว' });
+      expect(result).toEqual({
+        flag: false,
+        ms: 'ไม่สามารถแก้ไขรายการที่ยืนยันแล้ว',
+      });
       expect(msRepo.save).not.toHaveBeenCalled();
     });
 
     it('มี record (status!=3) → update checklist/note/upBy และ flag:true', async () => {
-      const existing = { msId: 1, status: 1, checklist: 'old', note: 'n', upBy: 0 } as any;
+      const existing = {
+        msId: 1,
+        status: 1,
+        checklist: 'old',
+        note: 'n',
+        upBy: 0,
+      } as any;
       msRepo.findOne.mockResolvedValue(existing);
       msRepo.save.mockResolvedValue(existing);
       const result = await service.saveSubmission(dto);
@@ -216,7 +233,10 @@ describe('MonthlySubmissionService', () => {
     it('record ยืนยันแล้ว (status=3) → flag:false', async () => {
       msRepo.findOne.mockResolvedValue({ msId: 1, status: 3 });
       const result = await service.submitMonth({ ms_id: 1, up_by: 1 });
-      expect(result).toEqual({ flag: false, ms: 'ยืนยันแล้ว ไม่สามารถแก้ไขได้' });
+      expect(result).toEqual({
+        flag: false,
+        ms: 'ยืนยันแล้ว ไม่สามารถแก้ไขได้',
+      });
     });
 
     it('happy path → status=2, snapshot ชื่อผู้ส่ง, flag:true', async () => {
@@ -248,7 +268,11 @@ describe('MonthlySubmissionService', () => {
     it('admin มี username แต่ไม่มี name → ใช้ username', async () => {
       const record = { msId: 1, status: 1 } as any;
       msRepo.findOne.mockResolvedValue(record);
-      adminRepo.findOne.mockResolvedValue({ adminId: 7, name: null, username: 'teacher1' });
+      adminRepo.findOne.mockResolvedValue({
+        adminId: 7,
+        name: null,
+        username: 'teacher1',
+      });
       msRepo.save.mockResolvedValue(record);
 
       await service.submitMonth({ ms_id: 1, up_by: 7 });
@@ -277,7 +301,10 @@ describe('MonthlySubmissionService', () => {
       const result = await service.confirmSubmission({ ms_id: 1, up_by: 9 });
       expect(record.status).toBe(3);
       expect(record.upBy).toBe(9);
-      expect(result).toEqual({ flag: true, ms: 'ยืนยันรับรายงานเรียบร้อยแล้ว' });
+      expect(result).toEqual({
+        flag: true,
+        ms: 'ยืนยันรับรายงานเรียบร้อยแล้ว',
+      });
     });
   });
 

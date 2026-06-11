@@ -200,6 +200,16 @@ describe('FiscalYearBalanceService', () => {
       const saved = fybRepo.save.mock.calls[0][0];
       expect(saved.closedByName).toBeNull();
     });
+
+    it('row เดิมถูกปิดปีแล้ว (is_final=1) → flag:false ห้ามแก้', async () => {
+      budgetTypeRepo.findOne.mockResolvedValue({ budgetType: 'อุดหนุน' });
+      fybRepo.findOne.mockResolvedValue({ fybId: 7, isFinal: 1 } as any);
+
+      const res = await service.saveBalance(dto);
+      expect(res.flag).toBe(false);
+      expect(res.ms).toContain('ล็อก');
+      expect(fybRepo.save).not.toHaveBeenCalled();
+    });
   });
 
   // ─── saveBulkBalances ──────────────────────────────────────────────────────
@@ -212,8 +222,18 @@ describe('FiscalYearBalanceService', () => {
         closing_date: '2025-09-30',
         closed_by: 9,
         balances: [
-          { money_type_id: 1, cash_balance: 10, bank_balance: 0, smp_balance: 0 },
-          { money_type_id: 2, cash_balance: 20, bank_balance: 0, smp_balance: 0 },
+          {
+            money_type_id: 1,
+            cash_balance: 10,
+            bank_balance: 0,
+            smp_balance: 0,
+          },
+          {
+            money_type_id: 2,
+            cash_balance: 20,
+            bank_balance: 0,
+            smp_balance: 0,
+          },
         ],
       } as any);
       expect(fybRepo.save).toHaveBeenCalledTimes(2);
@@ -238,6 +258,17 @@ describe('FiscalYearBalanceService', () => {
         flag: false,
         ms: 'ไม่พบข้อมูลยอดยกมา กรุณาบันทึกก่อน',
       });
+    });
+
+    it('ปีงบถูกปิดแล้วทุกรายการ (is_final=1) → flag:false ห้ามปิดซ้ำ', async () => {
+      fybRepo.find.mockResolvedValue([
+        { fybId: 1, isFinal: 1 },
+        { fybId: 2, isFinal: 1 },
+      ] as any);
+      const res: any = await service.finalizeYear(dto);
+      expect(res.flag).toBe(false);
+      expect(res.ms).toContain('ปิดซ้ำ');
+      expect(fybRepo.save).not.toHaveBeenCalled();
     });
 
     it('ยังมีลูกหนี้เงินยืมค้างคืน → block', async () => {

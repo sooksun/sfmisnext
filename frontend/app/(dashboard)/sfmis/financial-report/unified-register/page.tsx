@@ -19,13 +19,14 @@ import { apiGet, apiPost } from '@/lib/api'
 import { fmtDateTH, showNumber, cn } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
 import { openPrintWindow } from '@/lib/print-utils'
-import { officialNonBudgetRegisterForm, officialSchoolRevenueReport } from '@/lib/official-forms'
+import { officialNonBudgetRegisterForm, officialSchoolRevenueReport, officialSubsidyUsageReport } from '@/lib/official-forms'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface SummaryItem {
   bg_type_id: number
   budget_type: string
+  carry_forward: number
   revenue: number
   expenses: number
   balance: number
@@ -203,6 +204,27 @@ export default function UnifiedRegisterPage() {
   }
 
   // พิมพ์แบบฟอร์ม "ทะเบียนคุมเงินนอกงบประมาณ" (คู่มือ ตย.8 / ตย.15)
+  // พิมพ์ "รายงานการใช้เงินอุดหนุนทั่วไป" (ตย.39) — สรุปทุกประเภท: ยอดยกมา/รับ/จ่าย/คงเหลือ
+  function handlePrintSubsidyUsage() {
+    const items = summaryData ?? []
+    if (items.length === 0) {
+      toast.error('ยังไม่มีข้อมูลสำหรับพิมพ์')
+      return
+    }
+    const body = officialSubsidyUsageReport({
+      scName,
+      asOfDate: appliedTo || undefined,
+      rows: items.map((s) => ({
+        name: s.budget_type,
+        broughtForward: s.carry_forward,
+        received: s.revenue,
+        spent: s.expenses,
+        balance: s.balance,
+      })),
+    })
+    openPrintWindow({ title: `รายงานการใช้เงินอุดหนุน_${budgetYear}`, body })
+  }
+
   function handlePrint() {
     if (!detailData) return
     const isSR = (detailData.budget_type ?? '').includes('รายได้สถานศึกษา')
@@ -306,7 +328,15 @@ export default function UnifiedRegisterPage() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-auto min-w-0">
-      <PageHeader title="ทะเบียนคุมเงินทุกประเภท" subtitle={budgetYear ? `ปีงบประมาณ พ.ศ. ${budgetYear}` : undefined} />
+      <PageHeader
+        title="ทะเบียนคุมเงินทุกประเภท"
+        subtitle={budgetYear ? `ปีงบประมาณ พ.ศ. ${budgetYear}` : undefined}
+        actions={
+          <Button variant="outline" onClick={handlePrintSubsidyUsage} className="gap-1">
+            <Printer className="h-4 w-4" /> รายงานการใช้เงินอุดหนุน (ตย.39)
+          </Button>
+        }
+      />
       <ProcessFlow flow="receive" />
 
       <div className="p-4 space-y-4">

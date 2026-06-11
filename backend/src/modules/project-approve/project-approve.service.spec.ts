@@ -15,14 +15,17 @@ import { Unit } from '../general-db/entities/unit.entity';
 import { Project } from '../project/entities/project.entity';
 import { School } from '../school/entities/school.entity';
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
+import { CrossDomainGuardService } from '../cross-domain-guard/cross-domain-guard.service';
 import { PROCUREMENT_METHOD } from './procurement-rules.util';
 
 // ─── QueryBuilder mock factory ───────────────────────────────────────────────
-function makeQb(opts: {
-  manyAndCount?: [unknown[], number];
-  many?: unknown[];
-  rawOne?: unknown;
-} = {}) {
+function makeQb(
+  opts: {
+    manyAndCount?: [unknown[], number];
+    many?: unknown[];
+    rawOne?: unknown;
+  } = {},
+) {
   const qb: Record<string, jest.Mock> = {};
   const chain = () => qb as any;
   ['where', 'andWhere', 'select', 'orderBy', 'skip', 'take'].forEach(
@@ -50,7 +53,9 @@ describe('ProjectApproveService', () => {
   let unitRepo: jest.Mocked<any>;
   let projectRepo: jest.Mocked<any>;
   let schoolRepo: jest.Mocked<any>;
-  let regulatoryConfig: jest.Mocked<Pick<RegulatoryConfigService, 'getThreshold'>>;
+  let regulatoryConfig: jest.Mocked<
+    Pick<RegulatoryConfigService, 'getThreshold'>
+  >;
 
   beforeEach(async () => {
     poRepo = {
@@ -108,6 +113,10 @@ describe('ProjectApproveService', () => {
         { provide: getRepositoryToken(Project), useValue: projectRepo },
         { provide: getRepositoryToken(School), useValue: schoolRepo },
         { provide: RegulatoryConfigService, useValue: regulatoryConfig },
+        {
+          provide: CrossDomainGuardService,
+          useValue: { assertProjectNotOvercommitted: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -200,10 +209,7 @@ describe('ProjectApproveService', () => {
     it('สถานะปัจจุบันไม่ใช่ 1 → BadRequestException (state machine)', async () => {
       poRepo.findOne.mockResolvedValue({ orderId: 1, orderStatus: 3, del: 0 });
       await expect(
-        service.approveParcelByPlan(
-          { order_id: 1, order_status: 2 } as any,
-          5,
-        ),
+        service.approveParcelByPlan({ order_id: 1, order_status: 2 } as any, 5),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -221,7 +227,12 @@ describe('ProjectApproveService', () => {
     });
 
     it('reject (target 0): เก็บ remark เดิมและ prefix [ปฏิเสธ]', async () => {
-      const order = { orderId: 1, orderStatus: 1, del: 0, remark: 'เดิม' } as any;
+      const order = {
+        orderId: 1,
+        orderStatus: 1,
+        del: 0,
+        remark: 'เดิม',
+      } as any;
       poRepo.findOne.mockResolvedValue(order);
       poRepo.save.mockResolvedValue(order);
       await service.approveParcelByPlan(
@@ -277,10 +288,7 @@ describe('ProjectApproveService', () => {
     it('ต้องอยู่สถานะ 3 ก่อน มิฉะนั้น throw', async () => {
       poRepo.findOne.mockResolvedValue({ orderId: 1, orderStatus: 2, del: 0 });
       await expect(
-        service.approveParcelBySupplie(
-          { order_id: 1, order_status: 4 },
-          5,
-        ),
+        service.approveParcelBySupplie({ order_id: 1, order_status: 4 }, 5),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -410,10 +418,7 @@ describe('ProjectApproveService', () => {
     it('ต้องอยู่สถานะ 4 ก่อน มิฉะนั้น throw', async () => {
       poRepo.findOne.mockResolvedValue({ orderId: 1, orderStatus: 3, del: 0 });
       await expect(
-        service.approveParcelByCeo(
-          { order_id: 1, order_status: 5 } as any,
-          5,
-        ),
+        service.approveParcelByCeo({ order_id: 1, order_status: 5 } as any, 5),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -954,7 +959,9 @@ describe('ProjectApproveService', () => {
       pdRepo.find.mockResolvedValue([
         { pcId: 100, suppId: 200, pcTotal: 5, del: 0 },
       ]);
-      suppliesRepo.find.mockResolvedValue([{ suppId: 200, suppName: 'กระดาษ A4' }]);
+      suppliesRepo.find.mockResolvedValue([
+        { suppId: 200, suppName: 'กระดาษ A4' },
+      ]);
       adminRepo.find.mockResolvedValue([
         { adminId: 11, name: 'ครู ก' },
         { adminId: 12, name: 'ครู ข' },
@@ -962,7 +969,10 @@ describe('ProjectApproveService', () => {
       // director (type 2) สำหรับลงนามท้ายเอกสาร
       adminRepo.findOne.mockResolvedValue({ adminId: 99, name: 'ผอ. ทดสอบ' });
       partnerRepo.findOne.mockResolvedValue({ pId: 7, pName: 'ร้านค้า ค' });
-      projectRepo.findOne.mockResolvedValue({ projId: 3, projName: 'โครงการจริง' });
+      projectRepo.findOne.mockResolvedValue({
+        projId: 3,
+        projName: 'โครงการจริง',
+      });
       schoolRepo.findOne.mockResolvedValue({
         scId: 5,
         scName: 'โรงเรียนทดสอบ',

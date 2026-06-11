@@ -20,14 +20,6 @@ export class SchoolClassroom {
   @Column({ name: 'class_id', type: 'int' })
   classId: number;
 
-  @Column({
-    name: 'is_open',
-    type: 'tinyint',
-    default: 1,
-    comment: '1 = เปิดสอน | 0 = ไม่เปิดสอน',
-  })
-  isOpen: number;
-
   @Column({ name: 'up_by', type: 'int', nullable: true })
   upBy: number | null;
 
@@ -39,4 +31,10 @@ export class SchoolClassroom {
 
   @UpdateDateColumn({ name: 'update_date', type: 'datetime', nullable: true })
   updateDate: Date | null;
+
+  // 1 = เปิดสอน | 0 = ไม่เปิดสอน
+  // ⚠️ ต้องประกาศ "ท้ายสุด" ให้ตรงลำดับคอลัมน์จริงใน DB (ถูก ADD ทีหลัง)
+  // ไม่งั้น TypeORM synchronize จะ DROP+ADD เพื่อ reposition ทุก boot จนค่าหาย
+  @Column({ name: 'is_open', type: 'int', default: 1 })
+  isOpen: number;
 }

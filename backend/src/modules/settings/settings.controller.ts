@@ -7,14 +7,23 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { SettingsService } from './settings.service';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { CreateSchoolPolicyDto } from './dto/create-school-policy.dto';
 import { UpdateSchoolPolicyDto } from './dto/update-school-policy.dto';
 import { CreateObecPolicyDto } from './dto/create-obec-policy.dto';
 import { UpdateObecPolicyDto } from './dto/update-obec-policy.dto';
 import { PageSizePipe } from '../../common/pipes/page-size.pipe';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
+@UseGuards(RolesGuard)
 @Controller('Settings')
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
@@ -31,18 +40,29 @@ export class SettingsController {
   }
 
   @Post('addSchoolPolicy')
+  @Roles(1, 2)
   @HttpCode(HttpStatus.OK)
-  addSchoolPolicy(@Body() payload: CreateSchoolPolicyDto) {
+  addSchoolPolicy(
+    @Body() payload: CreateSchoolPolicyDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
     return this.settingsService.addSchoolPolicy(payload);
   }
 
   @Post('updateSchoolPolicy')
+  @Roles(1, 2)
   @HttpCode(HttpStatus.OK)
-  updateSchoolPolicy(@Body() payload: UpdateSchoolPolicyDto) {
+  updateSchoolPolicy(
+    @Body() payload: UpdateSchoolPolicyDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    if (payload.sc_id !== undefined) assertSameSchool(user, payload.sc_id);
     return this.settingsService.updateSchoolPolicy(payload);
   }
 
   @Post('removeSchoolPolicy')
+  @Roles(1, 2)
   @HttpCode(HttpStatus.OK)
   removeSchoolPolicy(@Body() payload: { scp_id: number }) {
     return this.settingsService.removeSchoolPolicy(payload);
@@ -67,18 +87,21 @@ export class SettingsController {
   }
 
   @Post('addSaoPolicy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   addSaoPolicy(@Body() payload: any) {
     return this.settingsService.addSaoPolicy(payload);
   }
 
   @Post('updateSaoPolicy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   updateSaoPolicy(@Body() payload: any) {
     return this.settingsService.updateSaoPolicy(payload);
   }
 
   @Post('removeSaoPolicy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   removeSaoPolicy(@Body() payload: { id: number }) {
     return this.settingsService.removeSaoPolicy(payload);
@@ -103,18 +126,21 @@ export class SettingsController {
   }
 
   @Post('addMoePolicy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   addMoePolicy(@Body() payload: any) {
     return this.settingsService.addMoePolicy(payload);
   }
 
   @Post('updateMoePolicy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   updateMoePolicy(@Body() payload: any) {
     return this.settingsService.updateMoePolicy(payload);
   }
 
   @Post('removeMoePolicy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   removeMoePolicy(@Body() payload: { id: number }) {
     return this.settingsService.removeMoePolicy(payload);
@@ -131,18 +157,21 @@ export class SettingsController {
   }
 
   @Post('addObecPolicy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   addObecPolicy(@Body() payload: CreateObecPolicyDto) {
     return this.settingsService.addObecPolicy(payload);
   }
 
   @Post('updateObecPolicy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   updateObecPolicy(@Body() payload: UpdateObecPolicyDto) {
     return this.settingsService.updateObecPolicy(payload);
   }
 
   @Post('removeObecPolicy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   removeObecPolicy(@Body() payload: { id: number }) {
     return this.settingsService.removeObecPolicy(payload);
@@ -167,18 +196,21 @@ export class SettingsController {
   }
 
   @Post('addQuickWin')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   addQuickWin(@Body() payload: any) {
     return this.settingsService.addQuickWin(payload);
   }
 
   @Post('updateQuickWin')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   updateQuickWin(@Body() payload: any) {
     return this.settingsService.updateQuickWin(payload);
   }
 
   @Post('removeQuickWin')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   removeQuickWin(@Body() payload: { id: number }) {
     return this.settingsService.removeQuickWin(payload);

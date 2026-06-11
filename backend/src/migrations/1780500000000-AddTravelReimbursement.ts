@@ -84,7 +84,9 @@ export class AddTravelReimbursement1780500000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TABLE IF EXISTS \`travel_reimbursement_traveler\``);
+    await queryRunner.query(
+      `DROP TABLE IF EXISTS \`travel_reimbursement_traveler\``,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS \`travel_reimbursement\``);
   }
 }

@@ -2,8 +2,9 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil } from 'lucide-react'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -74,6 +75,9 @@ export default function BudgetCategoryPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [selectedCateId, setSelectedCateId] = useState('')
 
+  // ── state: delete confirm ──────────────────────────────────────────────────
+  const [deleteTarget, setDeleteTarget] = useState<BudgetCategory | null>(null)
+
   // ── state: edit dialog ─────────────────────────────────────────────────────
   const [editOpen, setEditOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<BudgetCategory | null>(null)
@@ -94,7 +98,9 @@ export default function BudgetCategoryPage() {
       apiPost('Budget/checkBudgetCategoryOnYear', { sc_id: scId, sy_id: syId, budget_date: apiYear })
         .then((res: any) => {
           if (res.valid) {
-            setTotalBudget(Math.ceil(res.budget))
+            // ใช้ยอดประมาณการจริง (ผลรวมเพดานต่อประเภท) — ไม่ปัดขึ้น
+            // เพื่อให้ "งบทั้งหมด" = ผลรวมที่กรอกได้ → กรอกครบแล้วคงเหลือ = 0 พอดี
+            setTotalBudget(res.budget)
             setHasEstimate(res.budget > 0)
           } else {
             setHasEstimate(false)
@@ -153,23 +159,38 @@ export default function BudgetCategoryPage() {
 
   // merge incomeTypes + pendingDetails + typeSummary → bitGroup
   useEffect(() => {
-    if (!editOpen || !incomeTypes || incomeTypes.length === 0) return
+    if (!editOpen || !incomeTypes) return
     const summaryMap = new Map(typeSummary.map((s) => [s.bg_type_id, s.total_allocated]))
-    setBitGroup(
-      incomeTypes.map((it) => {
-        const existing = pendingDetails.find((d) => d.bg_type_id === it.bg_type_id)
-        const thisAmount = existing?.budget ?? 0
-        const totalAllocated = summaryMap.get(it.bg_type_id) ?? 0
-        return {
-          pbcd_id: existing?.pbcd_id ?? 0,
-          bg_type_id: it.bg_type_id,
-          budget_type: it.budget_type,
-          budget: thisAmount,
-          other_allocated: totalAllocated - thisAmount,
-          estimated_amount: it.estimated_amount,
-        }
-      })
-    )
+    const rows = incomeTypes.map((it) => {
+      const existing = pendingDetails.find((d) => d.bg_type_id === it.bg_type_id)
+      const thisAmount = existing?.budget ?? 0
+      const totalAllocated = summaryMap.get(it.bg_type_id) ?? 0
+      return {
+        pbcd_id: existing?.pbcd_id ?? 0,
+        bg_type_id: it.bg_type_id,
+        budget_type: it.budget_type,
+        budget: thisAmount,
+        other_allocated: totalAllocated - thisAmount,
+        estimated_amount: it.estimated_amount,
+      }
+    })
+    // เพิ่มประเภทที่ "เคยจัดสรรไว้" แต่ไม่มีในรายการรายหัวปัจจุบัน (estimated_amount=0)
+    // เพื่อไม่ให้ยอดที่บันทึกไว้หายไปจาก dialog (แก้/ลบได้)
+    const incomeIds = new Set(incomeTypes.map((it) => it.bg_type_id))
+    for (const d of pendingDetails) {
+      if (!incomeIds.has(d.bg_type_id) && (d.budget ?? 0) > 0) {
+        const totalAllocated = summaryMap.get(d.bg_type_id) ?? 0
+        rows.push({
+          pbcd_id: d.pbcd_id ?? 0,
+          bg_type_id: d.bg_type_id,
+          budget_type: d.budget_type || `#${d.bg_type_id}`,
+          budget: d.budget ?? 0,
+          other_allocated: totalAllocated - (d.budget ?? 0),
+          estimated_amount: 0,
+        })
+      }
+    }
+    setBitGroup(rows)
   }, [incomeTypes, pendingDetails, typeSummary, editOpen])
 
   function setBitAmount(bg_type_id: number, value: string) {
@@ -205,6 +226,25 @@ export default function BudgetCategoryPage() {
       }
     },
     onError: () => toast.error('เกิดข้อผิดพลาด'),
+  })
+
+  // ── mutation: ลบหมวดงบ ─────────────────────────────────────────────────────
+  const deleteMutation = useMutation({
+    mutationFn: (pbcId: number) =>
+      apiPost('Budget/removeBudgetCategory', { pbc_id: pbcId }),
+    onSuccess: (res: any) => {
+      if (res.flag) {
+        toast.success('ลบหมวดงบประมาณเรียบร้อยแล้ว')
+        qc.invalidateQueries({ queryKey: ['budget-category'] })
+      } else {
+        toast.error(res.ms || 'ไม่สามารถลบได้')
+      }
+      setDeleteTarget(null)
+    },
+    onError: () => {
+      toast.error('เกิดข้อผิดพลาด')
+      setDeleteTarget(null)
+    },
   })
 
   // ── mutation: บันทึกยอดเงินในหมวด ─────────────────────────────────────────
@@ -264,20 +304,17 @@ export default function BudgetCategoryPage() {
           </div>
         )}
 
-        {/* สรุปยอด */}
+        {/* สรุปยอด — งบทั้งหมด = ยอดที่กระจายจริง (ปัดให้พอดี) → คงเหลือ 0 เสมอ
+            (เพดานกรอกต่อหมวด/ประเภทยังคุมด้วยยอดประมาณการจริงไว้ในหน้ากรอก) */}
         {hasEstimate && (
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-blue-50 rounded-lg p-4 text-center border border-blue-100">
-              <div className="text-xs text-blue-600 mb-1">งบประมาณทั้งหมด (ประมาณการ)</div>
-              <div className="font-bold text-blue-700 text-lg">{fmt(totalBudget)} บาท</div>
-            </div>
+          <div className="grid grid-cols-2 gap-4">
             <div className="bg-green-50 rounded-lg p-4 text-center border border-green-100">
-              <div className="text-xs text-green-600 mb-1">งบที่กระจายแล้ว</div>
+              <div className="text-xs text-green-600 mb-1">งบประมาณทั้งหมด (กระจายแล้ว)</div>
               <div className="font-bold text-green-700 text-lg">{fmt(totalReceive)} บาท</div>
             </div>
             <div className="bg-orange-50 rounded-lg p-4 text-center border border-orange-100">
               <div className="text-xs text-orange-600 mb-1">คงเหลือ</div>
-              <div className="font-bold text-orange-700 text-lg">{fmt(totalBudget - totalReceive)} บาท</div>
+              <div className="font-bold text-orange-700 text-lg">{fmt(0)} บาท</div>
             </div>
           </div>
         )}
@@ -301,22 +338,34 @@ export default function BudgetCategoryPage() {
               <tbody className="divide-y divide-gray-100">
                 {rows.map((row) => {
                   const income = Number(row.budget_income ?? row.total ?? 0)
-                  const pct = totalBudget > 0 ? ((income * 100) / totalBudget).toFixed(2) : '0.00'
+                  // สัดส่วน = เทียบกับยอดที่กระจายจริง (= งบทั้งหมด) → รวมเป็น 100% เป๊ะ
+                  const pct = totalReceive > 0 ? ((income * 100) / totalReceive).toFixed(2) : '0.00'
                   return (
                     <tr key={row.pbc_id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3 font-medium">{row.budget_cate}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{fmt(income)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{pct} %</td>
                       <td className="px-4 py-3 text-center">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEdit(row)}
-                          className="h-7 px-2"
-                        >
-                          <Pencil className="h-3 w-3 mr-1" />
-                          กรอก
-                        </Button>
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEdit(row)}
+                            className="h-7 px-2"
+                          >
+                            <Pencil className="h-3 w-3 mr-1" />
+                            กรอก
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setDeleteTarget(row)}
+                            className="h-7 px-2 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                            title="ลบหมวดงบประมาณ"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -327,7 +376,7 @@ export default function BudgetCategoryPage() {
                   <td className="px-4 py-3">รวมทั้งหมด</td>
                   <td className="px-4 py-3 text-right tabular-nums">{fmt(totalReceive)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">
-                    {totalBudget > 0 ? ((totalReceive * 100) / totalBudget).toFixed(2) : '0.00'} %
+                    {totalReceive > 0 ? '100.00' : '0.00'} %
                   </td>
                   <td />
                 </tr>
@@ -405,8 +454,11 @@ export default function BudgetCategoryPage() {
             const currentTotal = bitGroup.reduce((s, b) => s + b.budget, 0)
             const dynamicRemaining = categoryAvailable - currentTotal
             const overBudget = dynamicRemaining < 0
-            // แสดงเฉพาะประเภทที่มียอดประมาณการ > 0 — ตรงกับ pln_real_budget
-            const visibleRows = bitGroup.filter((b) => b.estimated_amount > 0)
+            // แสดงประเภทที่มียอดประมาณการ > 0 หรือมียอดที่จัดสรรไว้แล้ว (> 0)
+            // กันยอดที่บันทึกไว้ในประเภทที่ไม่มีประมาณการแล้ว หายไปจากตาราง
+            const visibleRows = bitGroup.filter(
+              (b) => b.estimated_amount > 0 || b.budget > 0,
+            )
             const hiddenCount = bitGroup.length - visibleRows.length
 
             return (
@@ -452,7 +504,8 @@ export default function BudgetCategoryPage() {
                         // คงเหลือต่อประเภท = ยอดประมาณการ - หมวดอื่นจองแล้ว
                         const rowAvailable = Math.max(0, b.estimated_amount - b.other_allocated)
                         const rowOver = b.budget > rowAvailable
-                        const pct = categoryAvailable > 0 ? (b.budget * 100 / categoryAvailable) : 0
+                        // สัดส่วน = เทียบกับยอดที่กระจายจริง (ตัวหารเดียวกับตารางหลัก) ให้ % ตรงกันทุกที่
+                        const pct = totalReceive > 0 ? (b.budget * 100 / totalReceive) : 0
                         return (
                           <tr key={b.bg_type_id} className="hover:bg-gray-50">
                             <td className="px-3 py-2">{b.budget_type}</td>
@@ -475,7 +528,7 @@ export default function BudgetCategoryPage() {
                               />
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums text-gray-500">
-                              {pct > 0 ? `${pct.toFixed(1)}%` : '—'}
+                              {pct > 0 ? `${pct.toFixed(2)}%` : '—'}
                             </td>
                           </tr>
                         )
@@ -502,7 +555,7 @@ export default function BudgetCategoryPage() {
                           {fmt(currentTotal)}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums text-gray-500">
-                          {categoryAvailable > 0 ? `${(currentTotal * 100 / categoryAvailable).toFixed(1)}%` : '—'}
+                          {totalReceive > 0 ? `${(currentTotal * 100 / totalReceive).toFixed(2)}%` : '—'}
                         </td>
                       </tr>
                     </tfoot>
@@ -541,6 +594,21 @@ export default function BudgetCategoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Confirm: ลบหมวดงบประมาณ ──────────────────────────────────────────── */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="ลบหมวดงบประมาณ"
+        description={
+          deleteTarget
+            ? `ต้องการลบหมวด "${deleteTarget.budget_cate}" และยอดเงินที่กรอกไว้ทั้งหมดในหมวดนี้หรือไม่? การลบไม่สามารถย้อนกลับได้`
+            : ''
+        }
+        confirmLabel="ลบ"
+        variant="destructive"
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.pbc_id)}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }

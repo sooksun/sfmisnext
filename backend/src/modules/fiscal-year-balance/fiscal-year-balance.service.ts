@@ -88,6 +88,14 @@ export class FiscalYearBalanceService {
       },
     });
 
+    // ปีงบที่ ผอ. ลงนามปิดแล้ว (is_final) ห้ามแก้ยอด — ต้องคงตามที่ลงนาม
+    if (bal && bal.isFinal === 1) {
+      return {
+        flag: false,
+        ms: `ปีงบประมาณ ${dto.budget_year} ถูกปิดและล็อกแล้ว ไม่สามารถแก้ไขยอดได้`,
+      };
+    }
+
     if (!bal) {
       bal = this.fybRepo.create({
         scId: dto.sc_id,
@@ -141,6 +149,15 @@ export class FiscalYearBalanceService {
     });
     if (balances.length === 0)
       return { flag: false, ms: 'ไม่พบข้อมูลยอดยกมา กรุณาบันทึกก่อน' };
+
+    // Guard: ปิดปีซ้ำไม่ได้ — การปิดซ้ำจะลบ+สร้างยอดยกมาปีถัดไปใหม่
+    // ซึ่งอาจทับข้อมูลที่ผู้ใช้แก้ไว้ และทำให้ snapshot การลงนามไม่ตรงความจริง
+    if (balances.every((b) => b.isFinal === 1)) {
+      return {
+        flag: false,
+        ms: `ปีงบประมาณ ${dto.budget_year} ถูกปิดไปแล้ว ไม่สามารถปิดซ้ำได้`,
+      };
+    }
 
     // Guard: ห้ามปิดปีงบถ้ายังมีลูกหนี้เงินยืม/ยืมข้ามประเภทค้างคืน (ต้องคืนภายในปีงบ)
     const [openLoans, openBorrows] = await Promise.all([

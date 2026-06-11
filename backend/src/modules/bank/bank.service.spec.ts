@@ -287,5 +287,33 @@ describe('BankService', () => {
       expect(existing.upBy).toBe(5);
       expect(budgetSchoolRepo.save).toHaveBeenCalled();
     });
+
+    it('binding ใหม่สืบทอด perhead จากแถวเดิมของ bg_type เดียวกัน (กันติ๊กกลับมาเอง)', async () => {
+      // findOne ครั้งที่ 1 (เช็ค existing binding ของบัญชีนี้) = null → สร้างใหม่
+      // findOne ครั้งที่ 2 (หา sibling ของ bg_type นี้) = แถวที่ผู้ใช้ตั้ง perhead=0
+      budgetSchoolRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ bgTypeSchoolId: 99, perhead: 0 });
+      const entity = {};
+      budgetSchoolRepo.create.mockReturnValue(entity);
+      budgetSchoolRepo.save.mockResolvedValue(entity);
+
+      await service.addBudgetSchool(dto);
+      const created = budgetSchoolRepo.create.mock.calls[0][0];
+      expect(created.perhead).toBe(0); // สืบทอด 0 ไม่ใช่ default 1
+    });
+
+    it('binding ใหม่ ไม่มี sibling → perhead default = 1', async () => {
+      budgetSchoolRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      const entity = {};
+      budgetSchoolRepo.create.mockReturnValue(entity);
+      budgetSchoolRepo.save.mockResolvedValue(entity);
+
+      await service.addBudgetSchool(dto);
+      const created = budgetSchoolRepo.create.mock.calls[0][0];
+      expect(created.perhead).toBe(1);
+    });
   });
 });

@@ -8,6 +8,10 @@ import { Partner } from '../general-db/entities/partner.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { FinancialAuditService } from '../financial-audit/financial-audit.service';
+import { CrossDomainGuardService } from '../cross-domain-guard/cross-domain-guard.service';
+import { DeleteLogService } from '../delete-log/delete-log.service';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 
 @Injectable()
 export class InvoiceService {
@@ -23,7 +27,59 @@ export class InvoiceService {
     @InjectRepository(BudgetIncomeType)
     private readonly budgetIncomeTypeRepository: Repository<BudgetIncomeType>,
     private readonly financialAuditService: FinancialAuditService,
+    private readonly crossDomainGuard: CrossDomainGuardService,
+    private readonly deleteLogService: DeleteLogService,
+    private readonly fundBalance: FundBalanceService,
+    private readonly regulatoryConfig: RegulatoryConfigService,
   ) {}
+
+  /**
+   * กันสร้าง/แก้ใบเบิกจนยอดรวมใบเบิกที่ยังไม่จ่ายของประเภทเงินนั้น "เกินยอดคงเหลือ"
+   *   - ยอดคงเหลือ (available) สะท้อนใบที่จ่ายแล้ว (FT) อยู่แล้ว
+   *   - committed = ผลรวมใบเบิกที่ยังไม่ถูกยกเลิก/ตีกลับ/ออกเช็ค (status ∉ 51,201,202)
+   *   → ป้องกันการตั้งเบิกหลายใบรวมกันเกินงบก่อนจะมีการออกเช็คใบใด (ปิดช่อง BUG-06)
+   * เปิด/ปิดด้วย regulatory config finance.block_overspend (เหมือนตอนออกเช็ค)
+   * คืน error string ถ้าเกิน, null ถ้าผ่าน
+   */
+  private async validateMoneyTypeBudget(params: {
+    scId: number;
+    syId: number;
+    bgTypeId: number;
+    amount: number;
+    excludeRwId?: number;
+  }): Promise<string | null> {
+    const { scId, syId, bgTypeId, amount, excludeRwId } = params;
+    if (!amount || amount <= 0 || !bgTypeId) return null;
+
+    const block = await this.regulatoryConfig.getThreshold(
+      scId,
+      'finance.block_overspend',
+    );
+    if (block < 1) return null;
+
+    const EPS = 0.005;
+    const available = await this.fundBalance.available(scId, syId, bgTypeId);
+
+    const qb = this.requestWithdrawRepository
+      .createQueryBuilder('rw')
+      .select('COALESCE(SUM(rw.amount),0)', 'committed')
+      .where('rw.sc_id = :scId', { scId })
+      .andWhere('rw.sy_id = :syId', { syId })
+      .andWhere('rw.bg_type_id = :bgTypeId', { bgTypeId })
+      .andWhere('rw.del = 0')
+      // ยังไม่จ่าย (202=ออกเช็ค จะมี FT หักยอดแล้ว) และไม่ถูกยกเลิก/ตีกลับ
+      .andWhere('rw.status NOT IN (:...done)', { done: [51, 201, 202] });
+    if (excludeRwId)
+      qb.andWhere('rw.rw_id <> :excludeRwId', { excludeRwId });
+    const row = await qb.getRawOne<{ committed: string }>();
+    const committed = Number(row?.committed ?? 0);
+
+    if (committed + amount > available + EPS) {
+      const baht = (n: number) => n.toLocaleString('th-TH');
+      return `ยอดเบิกรวมเกินยอดคงเหลือของประเภทเงินนี้ — คงเหลือ ${baht(available)} บาท, ตั้งเบิกค้างจ่ายแล้ว ${baht(committed)} บาท, ขอเบิกเพิ่ม ${baht(amount)} บาท`;
+    }
+    return null;
+  }
 
   /**
    * มูลหนี้จากพัสดุที่ "ตรวจรับแล้ว" และยังไม่ได้ตั้งเบิก — สำหรับ auto-fill หน้าขอเบิก
@@ -39,8 +95,9 @@ export class InvoiceService {
         ct.supplier_id                         AS p_id,
         p.p_name                               AS partner_name,
         COALESCE(ct.ct_total, ct.ct_amount, 0) AS amount,
-        po.bg_type_id                          AS bg_type_id,
-        bit.budget_type                        AS budget_type_name,
+        -- ประเภทงบ: ใช้ของ parcel_order ก่อน ถ้าไม่มีให้เชื่อมจากประเภทเงินที่เลือกไว้ในโครงการ
+        COALESCE(NULLIF(po.bg_type_id, 0), bit2.bg_type_id, 0) AS bg_type_id,
+        COALESCE(bit.budget_type, bit2.budget_type, proj.proj_budget_type) AS budget_type_name,
         po.project_id                          AS project_id,
         proj.proj_name                         AS project_name,
         MAX(insp.insp_date)                    AS insp_date
@@ -49,7 +106,8 @@ export class InvoiceService {
       LEFT JOIN sup_contract ct         ON ct.order_id = po.order_id AND ct.del = 0
       LEFT JOIN tb_partner p            ON p.p_id = ct.supplier_id
       LEFT JOIN pln_project proj        ON proj.proj_id = po.project_id
-      LEFT JOIN master_budget_income_type bit ON bit.bg_type_id = po.bg_type_id
+      LEFT JOIN master_budget_income_type bit  ON bit.bg_type_id = po.bg_type_id
+      LEFT JOIN master_budget_income_type bit2 ON bit2.budget_type = proj.proj_budget_type AND bit2.del = 0
       WHERE po.sc_id = ?
         AND insp.insp_result = 1
         AND insp.stock_posted = 1
@@ -60,12 +118,13 @@ export class InvoiceService {
         )
       GROUP BY po.order_id, ct.ct_id, ct.supplier_id, p.p_name,
                ct.ct_total, ct.ct_amount, po.bg_type_id, bit.budget_type,
+               bit2.bg_type_id, bit2.budget_type, proj.proj_budget_type,
                po.project_id, proj.proj_name
       ORDER BY insp_date DESC, po.order_id DESC
     `;
-    const rows = (await this.requestWithdrawRepository.manager.query(sql, [
+    const rows = await this.requestWithdrawRepository.manager.query(sql, [
       scId,
-    ])) as Record<string, unknown>[];
+    ]);
     return rows.map((r) => ({
       order_id: Number(r.order_id),
       ct_id: r.ct_id == null ? null : Number(r.ct_id),
@@ -97,11 +156,11 @@ export class InvoiceService {
           WHERE rw.tr_id = tr.tr_id AND rw.del = 0 AND rw.status NOT IN (51, 201)
         )
       ORDER BY tr.tr_id DESC`;
-    const rows = (await this.requestWithdrawRepository.manager.query(sql, [
+    const rows = await this.requestWithdrawRepository.manager.query(sql, [
       scId,
       syId,
       budgetYear,
-    ])) as Record<string, unknown>[];
+    ]);
     return rows.map((r) => ({
       tr_id: Number(r.tr_id),
       requester_id: r.requester_id == null ? 0 : Number(r.requester_id),
@@ -130,11 +189,11 @@ export class InvoiceService {
           WHERE rw.la_id = la.la_id AND rw.del = 0 AND rw.status NOT IN (51, 201)
         )
       ORDER BY la.la_id DESC`;
-    const rows = (await this.requestWithdrawRepository.manager.query(sql, [
+    const rows = await this.requestWithdrawRepository.manager.query(sql, [
       scId,
       syId,
       budgetYear,
-    ])) as Record<string, unknown>[];
+    ]);
     return rows.map((r) => ({
       la_id: Number(r.la_id),
       la_no: (r.la_no as string) ?? '',
@@ -349,10 +408,10 @@ export class InvoiceService {
 
     // ── ค่าเดินทาง (tr_id) ────────────────────────────────────────────────
     if (trId && trId > 0) {
-      const rows = (await this.requestWithdrawRepository.manager.query(
+      const rows = await this.requestWithdrawRepository.manager.query(
         'SELECT grand_total FROM travel_reimbursement WHERE tr_id = ? AND sc_id = ? AND del = 0 LIMIT 1',
         [trId, scId],
-      )) as Array<{ grand_total: number | null }>;
+      );
       const grand = rows?.[0]?.grand_total;
       if (grand != null && amount > Number(grand) + EPS) {
         return `ยอดเบิกเกินมูลหนี้ค่าเดินทาง (มูลหนี้ ${baht(Number(grand))} บาท, ขอเบิก ${baht(amount)} บาท)`;
@@ -361,10 +420,10 @@ export class InvoiceService {
 
     // ── เงินยืม (la_id) ───────────────────────────────────────────────────
     if (laId && laId > 0) {
-      const rows = (await this.requestWithdrawRepository.manager.query(
+      const rows = await this.requestWithdrawRepository.manager.query(
         'SELECT COALESCE(approve_amount, amount) AS amt FROM loan_agreement WHERE la_id = ? AND sc_id = ? AND del = 0 LIMIT 1',
         [laId, scId],
-      )) as Array<{ amt: number | null }>;
+      );
       const cap = rows?.[0]?.amt;
       if (cap != null && amount > Number(cap) + EPS) {
         return `ยอดเบิกเกินวงเงินยืมที่อนุมัติ (อนุมัติ ${baht(Number(cap))} บาท, ขอเบิก ${baht(amount)} บาท)`;
@@ -385,6 +444,27 @@ export class InvoiceService {
     });
     if (limitError) {
       return { flag: false, ms: limitError };
+    }
+
+    // ── G3: ห้ามตั้งเบิกก่อนตรวจรับพัสดุครบ (เฉพาะที่ผูกคำสั่งซื้อ) ──────────
+    const inspectionError =
+      await this.crossDomainGuard.checkPayBeforeInspection({
+        scId: dto.sc_id,
+        orderId: dto.order_id,
+      });
+    if (inspectionError) {
+      return { flag: false, ms: inspectionError };
+    }
+
+    // ── BUG-06: กันตั้งเบิกรวมเกินยอดคงเหลือประเภทเงิน (ก่อนถึงขั้นออกเช็ค) ──
+    const budgetError = await this.validateMoneyTypeBudget({
+      scId: dto.sc_id,
+      syId: dto.sy_id,
+      bgTypeId: dto.bg_type_id,
+      amount: dto.amount,
+    });
+    if (budgetError) {
+      return { flag: false, ms: budgetError };
     }
 
     // ── ตรวจสอบเงินยืมค้างชำระ ─────────────────────────────────────────────
@@ -419,7 +499,7 @@ export class InvoiceService {
 
     const invoice = this.requestWithdrawRepository.create({
       scId: dto.sc_id,
-      noDoc: dto.no_doc,
+      noDoc: dto.no_doc ?? null,
       paymentType: dto.payment_type ?? 0,
       bgTypeId: dto.bg_type_id,
       rwType: dto.rw_type,
@@ -440,6 +520,7 @@ export class InvoiceService {
         ? new Date(dto.offer_check_date)
         : null,
       checkNoDoc: dto.check_no_doc || null,
+      baId: dto.ba_id ?? null,
       typeOfferCheck: dto.type_offer_check ?? 0,
       status: dto.status ?? 0,
       remark: dto.remark || null,
@@ -473,6 +554,18 @@ export class InvoiceService {
       return { flag: false, ms: 'ไม่พบข้อมูลขอเบิก' };
     }
 
+    // BUG-06: กันแก้ใบเบิกจนยอดรวมค้างจ่ายเกินยอดคงเหลือ (ไม่นับตัวเอง)
+    const budgetError = await this.validateMoneyTypeBudget({
+      scId: dto.sc_id,
+      syId: dto.sy_id ?? invoice.syId,
+      bgTypeId: dto.bg_type_id ?? invoice.bgTypeId,
+      amount: dto.amount ?? Number(invoice.amount),
+      excludeRwId: dto.rw_id,
+    });
+    if (budgetError) {
+      return { flag: false, ms: budgetError };
+    }
+
     if (dto.no_doc !== undefined) invoice.noDoc = dto.no_doc;
     if (dto.payment_type !== undefined) invoice.paymentType = dto.payment_type;
     if (dto.bg_type_id !== undefined) invoice.bgTypeId = dto.bg_type_id;
@@ -501,6 +594,7 @@ export class InvoiceService {
         ? new Date(dto.offer_check_date)
         : null;
     if (dto.check_no_doc !== undefined) invoice.checkNoDoc = dto.check_no_doc;
+    if (dto.ba_id !== undefined) invoice.baId = dto.ba_id;
     if (dto.type_offer_check !== undefined)
       invoice.typeOfferCheck = dto.type_offer_check;
     if (dto.status !== undefined) invoice.status = dto.status;
@@ -758,11 +852,30 @@ export class InvoiceService {
     return { flag: true, ms: 'บันทึกข้อมูลสำเร็จ' };
   }
 
-  async deleteInvoice(rwId: number, scId: number, upBy?: number) {
+  async deleteInvoice(
+    rwId: number,
+    scId: number,
+    upBy?: number,
+    reason?: string,
+  ) {
+    // ลบรายการขอเบิกต้องมีเหตุผลประกอบเสมอ (audit trail)
+    if (!reason || !String(reason).trim()) {
+      return { flag: false, ms: 'กรุณาระบุเหตุผลการลบใบเบิก' };
+    }
+
     const invoice = await this.requestWithdrawRepository.findOne({
       where: { rwId, scId, del: 0 },
     });
     if (!invoice) return { flag: false, ms: 'ไม่พบข้อมูลใบเบิก' };
+
+    // ห้ามลบใบเบิกที่ออกเช็คจ่ายเงินไปแล้ว — ต้องใช้ "ยกเลิกเช็ค" เพื่อ
+    // reverse รายการเงิน + ย้อนเอกสารต้นเรื่องอย่างถูกต้อง
+    if (invoice.status === 202) {
+      return {
+        flag: false,
+        ms: 'ใบเบิกนี้ออกเช็คจ่ายเงินแล้ว กรุณาใช้เมนูยกเลิกเช็คแทน',
+      };
+    }
 
     // ห้ามลบถ้าวันที่ขอเบิกถูกลงนามแล้ว
     const dateStr = invoice.dateRequest
@@ -787,6 +900,23 @@ export class InvoiceService {
     if (upBy !== undefined) invoice.upBy = upBy;
     invoice.updateDate = new Date();
     await this.requestWithdrawRepository.save(invoice);
+
+    await this.deleteLogService.log({
+      table: 'request_withdraw',
+      rowId: rwId,
+      reason: `ลบใบเบิก: ${reason}`,
+      deletedBy: upBy ?? '',
+      scId,
+      snapshot: {
+        rw_id: invoice.rwId,
+        no_doc: invoice.noDoc,
+        amount: invoice.amount,
+        bg_type_id: invoice.bgTypeId,
+        status: invoice.status,
+        detail: invoice.detail,
+      },
+    });
+
     return { flag: true, ms: 'ลบข้อมูลใบเบิกเรียบร้อยแล้ว' };
   }
 }

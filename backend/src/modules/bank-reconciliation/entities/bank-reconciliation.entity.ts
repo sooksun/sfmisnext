@@ -38,13 +38,16 @@ export class BankReconciliation {
   /** ยอดตาม bank statement (ป้อนเอง) */
   @Column({ name: 'bank_statement_balance', type: 'float', default: 0 })
   bankStatementBalance: number;
-  /** ยอดปรับปรุงสุทธิ (คำนวณจาก items) */
+  /** ยอดปรับปรุงสุทธิฝั่งธนาคาร = (+เงินฝากระหว่างทาง) − (เช็คค้างขึ้น) */
   @Column({ name: 'adjustment_total', type: 'float', default: 0 })
   adjustmentTotal: number;
-  /** ยอดสมุดหลังปรับ = book_balance + adjustment_total */
+  /**
+   * ยอดเงินฝากธนาคารหลังปรับปรุง = bank_statement_balance + adjustment_total
+   * (เก็บในคอลัมน์ชื่อเดิม adjusted_book_balance เพื่อความเข้ากันได้ — ความหมายคือ "ยอดธนาคารหลังปรับ")
+   */
   @Column({ name: 'adjusted_book_balance', type: 'float', default: 0 })
   adjustedBookBalance: number;
-  /** ผลต่าง = adjusted_book_balance - bank_statement_balance (ควร = 0) */
+  /** ผลต่าง = adjusted_book_balance (ยอดธนาคารหลังปรับ) − book_balance (ควร = 0) */
   @Column({ name: 'difference', type: 'float', default: 0 }) difference: number;
   /** ตรงกันแล้วหรือยัง */
   @Column({ name: 'is_balanced', type: 'tinyint', default: 0 })

@@ -3,6 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SmpDepositEntry } from './entities/smp-deposit-entry.entity';
 import { DocCounterService } from '../doc-counter/doc-counter.service';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Injectable()
 export class SmpDepositService {
@@ -124,9 +128,11 @@ export class SmpDepositService {
       note: string;
       up_by: number;
     }>,
+    user?: JwtUser,
   ) {
     const entry = await this.repo.findOne({ where: { sdeId, del: 0 } });
     if (!entry) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user) assertSameSchool(user, entry.scId);
     if (dto.entry_type !== undefined) entry.entryType = dto.entry_type;
     if (dto.doc_no !== undefined) entry.docNo = dto.doc_no;
     if (dto.doc_date !== undefined) entry.docDate = dto.doc_date;
@@ -142,9 +148,10 @@ export class SmpDepositService {
     return { flag: true, ms: 'แก้ไขรายการเรียบร้อยแล้ว' };
   }
 
-  async removeEntry(sdeId: number, upBy: number) {
+  async removeEntry(sdeId: number, upBy: number, user?: JwtUser) {
     const entry = await this.repo.findOne({ where: { sdeId, del: 0 } });
     if (!entry) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user) assertSameSchool(user, entry.scId);
     entry.del = 1;
     entry.upBy = upBy;
     await this.repo.save(entry);

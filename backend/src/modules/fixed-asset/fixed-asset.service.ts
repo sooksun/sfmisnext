@@ -5,6 +5,10 @@ import { FixedAsset } from './entities/fixed-asset.entity';
 import { FixedAssetDepreciation } from './entities/fixed-asset-depreciation.entity';
 import { AddFixedAssetDto } from './dto/add-fixed-asset.dto';
 import { UpdateFixedAssetDto } from './dto/update-fixed-asset.dto';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const CATEGORY_NAMES: Record<number, string> = {
   1: 'ครุภัณฑ์สำนักงาน',
@@ -115,9 +119,10 @@ export class FixedAssetService {
     };
   }
 
-  async get(faId: number) {
+  async get(faId: number, user?: JwtUser) {
     const fa = await this.faRepo.findOne({ where: { faId, del: 0 } });
     if (!fa) return null;
+    if (user) assertSameSchool(user, fa.scId);
     const history = await this.fadRepo.find({
       where: { faId, del: 0 },
       order: { budgetYear: 'ASC' },
@@ -178,11 +183,12 @@ export class FixedAssetService {
     return { flag: true, ms: `บันทึกครุภัณฑ์ ${faCode} เรียบร้อยแล้ว` };
   }
 
-  async update(dto: UpdateFixedAssetDto) {
+  async update(dto: UpdateFixedAssetDto, user?: JwtUser) {
     const fa = await this.faRepo.findOne({
       where: { faId: dto.fa_id, del: 0 },
     });
     if (!fa) return { flag: false, ms: 'ไม่พบครุภัณฑ์' };
+    if (user) assertSameSchool(user, fa.scId);
     if (fa.status === 4)
       return { flag: false, ms: 'ครุภัณฑ์นี้ถูกจำหน่ายแล้ว ไม่สามารถแก้ไขได้' };
 
@@ -214,9 +220,16 @@ export class FixedAssetService {
     return { flag: true, ms: 'แก้ไขครุภัณฑ์เรียบร้อยแล้ว' };
   }
 
-  async changeStatus(faId: number, status: number, note: string, upBy: number) {
+  async changeStatus(
+    faId: number,
+    status: number,
+    note: string,
+    upBy: number,
+    user?: JwtUser,
+  ) {
     const fa = await this.faRepo.findOne({ where: { faId, del: 0 } });
     if (!fa) return { flag: false, ms: 'ไม่พบครุภัณฑ์' };
+    if (user) assertSameSchool(user, fa.scId);
     fa.status = status;
     if (note) fa.note = note;
     fa.upBy = upBy;
@@ -224,9 +237,10 @@ export class FixedAssetService {
     return { flag: true, ms: 'เปลี่ยนสถานะเรียบร้อยแล้ว' };
   }
 
-  async remove(faId: number, upBy: number) {
+  async remove(faId: number, upBy: number, user?: JwtUser) {
     const fa = await this.faRepo.findOne({ where: { faId, del: 0 } });
     if (!fa) return { flag: false, ms: 'ไม่พบครุภัณฑ์' };
+    if (user) assertSameSchool(user, fa.scId);
     fa.del = 1;
     fa.upBy = upBy;
     await this.faRepo.save(fa);

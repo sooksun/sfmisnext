@@ -4,8 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { AlertTriangle, Plus, Pencil, Trash2, TrendingDown } from 'lucide-react'
+import { AlertTriangle, Plus, Pencil, Trash2, TrendingDown, Printer } from 'lucide-react'
 import { toast } from 'sonner'
+import { openPrintWindow } from '@/lib/print-utils'
+import { officialTreasuryRevenueRegister } from '@/lib/official-forms'
 import { PageHeader } from '@/components/shared/page-header'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { DataTable } from '@/components/shared/data-table'
@@ -89,7 +91,7 @@ const REVENUE_FULL_NAMES: Record<number, string> = {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function GovRevenuePage() {
-  const { scId, adminId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const { scId, adminId, syId, budgetYear: budgetYearRaw, scName } = useAppContext()
   const budgetYear = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
   const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
@@ -146,6 +148,16 @@ export default function GovRevenuePage() {
     queryFn: () =>
       apiGet<SummaryItem[]>(`GovRevenue/monthlySummary/${scId}/${syId}/${apiYear}`),
     enabled,
+  })
+
+  // ตรวจจับเงินอุดหนุนเหลือจ่ายเกิน 2 ปีงบประมาณ (auto) → ต้องนำส่งคลัง
+  const { data: expiredSubsidy } = useQuery({
+    queryKey: ['prev-balance-expired', scId, syId, budgetYear],
+    queryFn: () =>
+      apiGet<{ data: { money_type_name: string | null; source_budget_year: string | null; amount: number }[]; total: number }>(
+        `PlanPrevBalance/expiredForTreasury/${scId}/${syId}/${budgetYear}`,
+      ),
+    enabled: scId > 0 && syId > 0,
   })
 
   const rows: GovRevenueRow[] = listData?.data ?? []
@@ -266,6 +278,44 @@ export default function GovRevenuePage() {
   function handleTabChange(tabValue: number) {
     setActiveTab(tabValue)
     setPage(0)
+  }
+
+  // พิมพ์แบบฟอร์ม "ทะเบียนคุมการรับและนำส่งเงินรายได้แผ่นดิน" (ตย.17)
+  // รวมรายการประเภท 1+2 (ดอกเบี้ย) และ 3 (เงินอุดหนุนเหลือจ่ายเกิน 2 ปี) — ตามแบบราชการ
+  async function handlePrint() {
+    try {
+      const types = [1, 2, 3]
+      const results = await Promise.all(
+        types.map((t) =>
+          apiGet<GovRevenueListResponse>(`GovRevenue/loadEntries/${scId}/${syId}/${apiYear}/${t}`),
+        ),
+      )
+      const all = results.flatMap((r) => r.data ?? [])
+      if (all.length === 0) {
+        toast.error('ยังไม่มีรายการสำหรับพิมพ์')
+        return
+      }
+      all.sort((a, b) => (a.doc_date ?? '').localeCompare(b.doc_date ?? ''))
+      const formRows = all.map((e) => {
+        const isInterest = e.revenue_type === 1 || e.revenue_type === 2
+        const recv = e.entry_type === 1 ? e.amount : 0
+        const remit = e.entry_type === 2 ? e.amount : 0
+        return {
+          date: e.doc_date,
+          docNo: e.doc_no,
+          detail: [e.revenue_type_name, e.detail].filter(Boolean).join(' — '),
+          intReceive: isInterest ? recv : 0,
+          intRemit: isInterest ? remit : 0,
+          subReceive: isInterest ? 0 : recv,
+          subRemit: isInterest ? 0 : remit,
+          note: e.note,
+        }
+      })
+      const body = officialTreasuryRevenueRegister({ scName, budgetYear, rows: formRows })
+      openPrintWindow({ title: `ทะเบียนคุมรายได้แผ่นดิน_${budgetYear}`, body, paper: 'A4 landscape' })
+    } catch {
+      toast.error('โหลดข้อมูลเพื่อพิมพ์ไม่สำเร็จ')
+    }
   }
 
   // ── Columns ───────────────────────────────────────────────────────────────
@@ -432,11 +482,43 @@ export default function GovRevenuePage() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-auto min-w-0">
-      <PageHeader title="ทะเบียนคุมการรับและนำส่งเงินรายได้แผ่นดิน" />
+      <PageHeader
+        title="ทะเบียนคุมการรับและนำส่งเงินรายได้แผ่นดิน"
+        actions={
+          <Button variant="outline" onClick={handlePrint} className="gap-1.5">
+            <Printer className="h-4 w-4" />
+            พิมพ์แบบฟอร์ม
+          </Button>
+        }
+      />
 
       <div className="p-4 space-y-4">
         {/* ── แจ้งเตือนรอบดอกเบี้ย (30 มิ.ย./30 ธ.ค.) → นำส่งรายได้แผ่นดิน ── */}
         <InterestReminderPanel />
+
+        {/* ── Auto-detect: เงินอุดหนุนเหลือจ่ายเกิน 2 ปีงบประมาณ → นำส่งคลัง ── */}
+        {expiredSubsidy && expiredSubsidy.total > 0 && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="flex items-start gap-2 font-semibold">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                ตรวจพบเงินอุดหนุนเหลือจ่ายเกิน 2 ปีงบประมาณ รวม{' '}
+                <strong>{showNumber(expiredSubsidy.total)} บาท</strong> — ต้องนำส่งคลังเป็นรายได้แผ่นดิน
+              </span>
+            </div>
+            <ul className="mt-1.5 ml-6 list-disc space-y-0.5 text-xs">
+              {expiredSubsidy.data.map((d, i) => (
+                <li key={i}>
+                  {d.money_type_name ?? 'ไม่ระบุประเภท'}
+                  {d.source_budget_year ? ` (ปีงบ ${d.source_budget_year})` : ''} — {showNumber(d.amount)} บาท
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-xs text-amber-600">
+              บันทึกการนำส่งที่แท็บ &quot;เงินเหลือจ่ายเกิน 2 ปี&quot; ด้านล่าง (เลือกประเภทรายการ &quot;นำส่งคลัง&quot;)
+            </p>
+          </div>
+        )}
 
         {/* ── Summary Cards ──────────────────────────────────────────────── */}
         {summaryData && summaryData.length > 0 && (

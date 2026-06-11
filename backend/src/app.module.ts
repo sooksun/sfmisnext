@@ -52,7 +52,10 @@ import { DayCloseCheckModule } from './modules/day-close-check/day-close-check.m
 import { AiModule } from './modules/ai/ai.module';
 import { DeleteLogModule } from './modules/delete-log/delete-log.module';
 import { BudgetRequestModule } from './modules/budget-request/budget-request.module';
+import { CashCommitteeModule } from './modules/cash-committee/cash-committee.module';
+import { DepositRegisterModule } from './modules/deposit-register/deposit-register.module';
 import { OpeningBalanceModule } from './modules/opening-balance/opening-balance.module';
+import { PlanPrevBalanceModule } from './modules/plan-prev-balance/plan-prev-balance.module';
 import { FixedAssetModule } from './modules/fixed-asset/fixed-asset.module';
 import { ContractSecurityModule } from './modules/contract-security/contract-security.module';
 import { BudgetTransferModule } from './modules/budget-transfer/budget-transfer.module';
@@ -63,9 +66,12 @@ import { InvoicePreAuditModule } from './modules/invoice-pre-audit/invoice-pre-a
 import { PlanTraceModule } from './modules/plan-trace/plan-trace.module';
 import { IntraBankTransferModule } from './modules/intra-bank-transfer/intra-bank-transfer.module';
 import { SupplieRequestModule } from './modules/supplie-request/supplie-request.module';
+import { SchoolResetModule } from './modules/school-reset/school-reset.module';
 import { RegulatoryConfigModule } from './modules/regulatory-config/regulatory-config.module';
+import { CrossDomainGuardModule } from './modules/cross-domain-guard/cross-domain-guard.module';
 import { FundBorrowingModule } from './modules/fund-borrowing/fund-borrowing.module';
 import { FundBalanceModule } from './modules/fund-balance/fund-balance.module';
+import { AttachmentModule } from './modules/attachment/attachment.module';
 
 @Module({
   imports: [
@@ -145,7 +151,10 @@ import { FundBalanceModule } from './modules/fund-balance/fund-balance.module';
     AiModule,
     DeleteLogModule,
     BudgetRequestModule,
+    CashCommitteeModule,
+    DepositRegisterModule,
     OpeningBalanceModule,
+    PlanPrevBalanceModule,
     FixedAssetModule,
     ContractSecurityModule,
     BudgetTransferModule,
@@ -155,10 +164,13 @@ import { FundBalanceModule } from './modules/fund-balance/fund-balance.module';
     InvoicePreAuditModule,
     PlanTraceModule,
     IntraBankTransferModule,
+    SchoolResetModule,
     SupplieRequestModule,
     RegulatoryConfigModule,
     FundBorrowingModule,
     FundBalanceModule,
+    CrossDomainGuardModule,
+    AttachmentModule,
   ],
   controllers: [AppController],
   providers: [

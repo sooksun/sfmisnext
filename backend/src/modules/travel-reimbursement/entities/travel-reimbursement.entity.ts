@@ -22,8 +22,14 @@ export class TravelReimbursement {
   budgetYear: string | null;
 
   // ── ผู้ขอเบิก / ผู้เดินทาง (หลัก) ─────────────────────────────────────────
-  @Column({ name: 'requester_id', type: 'int', default: 0 }) requesterId: number;
-  @Column({ name: 'requester_name', type: 'varchar', length: 200, nullable: true })
+  @Column({ name: 'requester_id', type: 'int', default: 0 })
+  requesterId: number;
+  @Column({
+    name: 'requester_name',
+    type: 'varchar',
+    length: 200,
+    nullable: true,
+  })
   requesterName: string | null;
   @Column({
     name: 'requester_position',
@@ -36,19 +42,39 @@ export class TravelReimbursement {
   affiliation: string | null;
   @Column({ name: 'province', type: 'varchar', length: 100, nullable: true })
   province: string | null;
-  @Column({ name: 'at_office', type: 'varchar', length: 255, nullable: true, comment: 'ที่ทำการ' })
+  @Column({
+    name: 'at_office',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+    comment: 'ที่ทำการ',
+  })
   atOffice: string | null;
 
   // ── อ้างอิงคำสั่ง/บันทึกอนุมัติเดินทาง ────────────────────────────────────
-  @Column({ name: 'order_ref', type: 'varchar', length: 200, nullable: true, comment: 'ตามคำสั่ง/บันทึก ที่' })
+  @Column({
+    name: 'order_ref',
+    type: 'varchar',
+    length: 200,
+    nullable: true,
+    comment: 'ตามคำสั่ง/บันทึก ที่',
+  })
   orderRef: string | null;
   @Column({ name: 'order_date', type: 'date', nullable: true })
   orderDate: string | null;
 
   // ── การเดินทาง ────────────────────────────────────────────────────────────
-  @Column({ type: 'text', nullable: true, comment: 'เดินทางไปปฏิบัติราชการ (วัตถุประสงค์/สถานที่)' })
+  @Column({
+    type: 'text',
+    nullable: true,
+    comment: 'เดินทางไปปฏิบัติราชการ (วัตถุประสงค์/สถานที่)',
+  })
   purpose: string | null;
-  @Column({ type: 'text', nullable: true, comment: 'พร้อมด้วย (ผู้ร่วมเดินทาง)' })
+  @Column({
+    type: 'text',
+    nullable: true,
+    comment: 'พร้อมด้วย (ผู้ร่วมเดินทาง)',
+  })
   companions: string | null;
   @Column({
     name: 'depart_from',
@@ -57,16 +83,29 @@ export class TravelReimbursement {
     comment: '1=บ้านพัก|2=สำนักงาน|3=ประเทศไทย',
   })
   departFrom: number;
-  @Column({ name: 'depart_date', type: 'date', nullable: true }) departDate: string | null;
-  @Column({ name: 'depart_time', type: 'varchar', length: 10, nullable: true }) departTime: string | null;
-  @Column({ name: 'return_date', type: 'date', nullable: true }) returnDate: string | null;
-  @Column({ name: 'return_time', type: 'varchar', length: 10, nullable: true }) returnTime: string | null;
+  @Column({ name: 'depart_date', type: 'date', nullable: true }) departDate:
+    | string
+    | null;
+  @Column({ name: 'depart_time', type: 'varchar', length: 10, nullable: true })
+  departTime: string | null;
+  @Column({ name: 'return_date', type: 'date', nullable: true }) returnDate:
+    | string
+    | null;
+  @Column({ name: 'return_time', type: 'varchar', length: 10, nullable: true })
+  returnTime: string | null;
   @Column({ name: 'total_days', type: 'float', default: 0 }) totalDays: number;
-  @Column({ name: 'total_hours', type: 'float', default: 0 }) totalHours: number;
+  @Column({ name: 'total_hours', type: 'float', default: 0 })
+  totalHours: number;
 
   // ── ประเภทเงิน + เชื่อมเงินยืม ────────────────────────────────────────────
-  @Column({ name: 'money_type_id', type: 'int', default: 0 }) moneyTypeId: number;
-  @Column({ name: 'money_type_name', type: 'varchar', length: 200, nullable: true })
+  @Column({ name: 'money_type_id', type: 'int', default: 0 })
+  moneyTypeId: number;
+  @Column({
+    name: 'money_type_name',
+    type: 'varchar',
+    length: 200,
+    nullable: true,
+  })
   moneyTypeName: string | null;
   @Column({
     name: 'la_id',
@@ -77,28 +116,74 @@ export class TravelReimbursement {
   laId: number | null;
 
   // ── ยอดเบิก (สรุปจาก travelers) ───────────────────────────────────────────
-  @Column({ name: 'allowance_total', type: 'float', default: 0, comment: 'ค่าเบี้ยเลี้ยง' })
+  @Column({
+    name: 'allowance_total',
+    type: 'float',
+    default: 0,
+    comment: 'ค่าเบี้ยเลี้ยง',
+  })
   allowanceTotal: number;
-  @Column({ name: 'lodging_total', type: 'float', default: 0, comment: 'ค่าเช่าที่พัก' })
+  @Column({
+    name: 'lodging_total',
+    type: 'float',
+    default: 0,
+    comment: 'ค่าเช่าที่พัก',
+  })
   lodgingTotal: number;
-  @Column({ name: 'transport_total', type: 'float', default: 0, comment: 'ค่าพาหนะ' })
+  @Column({
+    name: 'transport_total',
+    type: 'float',
+    default: 0,
+    comment: 'ค่าพาหนะ',
+  })
   transportTotal: number;
-  @Column({ name: 'other_total', type: 'float', default: 0, comment: 'ค่าใช้จ่ายอื่น' })
+  @Column({
+    name: 'other_total',
+    type: 'float',
+    default: 0,
+    comment: 'ค่าใช้จ่ายอื่น',
+  })
   otherTotal: number;
-  @Column({ name: 'grand_total', type: 'float', default: 0 }) grandTotal: number;
-  @Column({ name: 'evidence_count', type: 'int', default: 0, comment: 'จำนวนหลักฐานแนบ (ฉบับ)' })
+  @Column({ name: 'grand_total', type: 'float', default: 0 })
+  grandTotal: number;
+  @Column({
+    name: 'evidence_count',
+    type: 'int',
+    default: 0,
+    comment: 'จำนวนหลักฐานแนบ (ฉบับ)',
+  })
   evidenceCount: number;
 
   // ── workflow อนุมัติ ──────────────────────────────────────────────────────
-  @Column({ name: 'verify_by', type: 'int', nullable: true }) verifyBy: number | null;
-  @Column({ name: 'verify_name', type: 'varchar', length: 200, nullable: true }) verifyName: string | null;
-  @Column({ name: 'verify_date', type: 'date', nullable: true }) verifyDate: string | null;
-  @Column({ name: 'approve_by', type: 'int', nullable: true }) approveBy: number | null;
-  @Column({ name: 'approve_name', type: 'varchar', length: 200, nullable: true }) approveName: string | null;
-  @Column({ name: 'approve_date', type: 'date', nullable: true }) approveDate: string | null;
+  @Column({ name: 'verify_by', type: 'int', nullable: true }) verifyBy:
+    | number
+    | null;
+  @Column({ name: 'verify_name', type: 'varchar', length: 200, nullable: true })
+  verifyName: string | null;
+  @Column({ name: 'verify_date', type: 'date', nullable: true }) verifyDate:
+    | string
+    | null;
+  @Column({ name: 'approve_by', type: 'int', nullable: true }) approveBy:
+    | number
+    | null;
+  @Column({
+    name: 'approve_name',
+    type: 'varchar',
+    length: 200,
+    nullable: true,
+  })
+  approveName: string | null;
+  @Column({ name: 'approve_date', type: 'date', nullable: true }) approveDate:
+    | string
+    | null;
 
   // ── การจ่ายเงิน (ใบสำคัญจ่าย บค.) ─────────────────────────────────────────
-  @Column({ name: 'receipt_date', type: 'date', nullable: true, comment: 'วันที่จ่าย/รับเงิน' })
+  @Column({
+    name: 'receipt_date',
+    type: 'date',
+    nullable: true,
+    comment: 'วันที่จ่าย/รับเงิน',
+  })
   receiptDate: string | null;
   @Column({
     name: 'type_offer_check',
@@ -107,11 +192,27 @@ export class TravelReimbursement {
     comment: 'ช่องทางจ่าย 1=เงินสด(บค.)|2=เช็ค/ธนาคาร(บจ.)',
   })
   typeOfferCheck: number;
-  @Column({ name: 'bc_no', type: 'varchar', length: 45, nullable: true, comment: 'เลขที่ใบสำคัญจ่าย บค./บจ.' })
+  @Column({
+    name: 'bc_no',
+    type: 'varchar',
+    length: 45,
+    nullable: true,
+    comment: 'เลขที่ใบสำคัญจ่าย บค./บจ.',
+  })
   bcNo: string | null;
-  @Column({ name: 'ft_pay_id', type: 'int', nullable: true, comment: 'FT จ่ายเงิน (type=-1)' })
+  @Column({
+    name: 'ft_pay_id',
+    type: 'int',
+    nullable: true,
+    comment: 'FT จ่ายเงิน (type=-1)',
+  })
   ftPayId: number | null;
-  @Column({ name: 'ft_return_id', type: 'int', nullable: true, comment: 'FT คืนเงินสด (กรณีเชื่อมเงินยืมและจ่ายจริง<ยืม)' })
+  @Column({
+    name: 'ft_return_id',
+    type: 'int',
+    nullable: true,
+    comment: 'FT คืนเงินสด (กรณีเชื่อมเงินยืมและจ่ายจริง<ยืม)',
+  })
   ftReturnId: number | null;
 
   @Column({

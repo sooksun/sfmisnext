@@ -54,8 +54,14 @@ describe('ReportBookbankService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReportBookbankService,
-        { provide: getRepositoryToken(FinancialTransactions), useValue: ftRepo },
-        { provide: getRepositoryToken(BudgetIncomeTypeSchool), useValue: bitsRepo },
+        {
+          provide: getRepositoryToken(FinancialTransactions),
+          useValue: ftRepo,
+        },
+        {
+          provide: getRepositoryToken(BudgetIncomeTypeSchool),
+          useValue: bitsRepo,
+        },
         { provide: getRepositoryToken(PlnReceive), useValue: prRepo },
         { provide: getRepositoryToken(RequestWithdraw), useValue: rwRepo },
         { provide: getRepositoryToken(OpeningBalance), useValue: obRepo },
@@ -73,10 +79,7 @@ describe('ReportBookbankService', () => {
   });
 
   it('คัด bgTypeId ที่เป็น null/<=0 ออก แล้วถ้าว่างคืน []', async () => {
-    bitsRepo.find.mockResolvedValue([
-      { bgTypeId: null },
-      { bgTypeId: 0 },
-    ]);
+    bitsRepo.find.mockResolvedValue([{ bgTypeId: null }, { bgTypeId: 0 }]);
     const result = await service.loadReportRegisterBookbank(10, 1, 3, '2569');
     expect(result).toEqual([]);
   });
@@ -159,7 +162,9 @@ describe('ReportBookbankService', () => {
     const qb = makeQb([makeFt({ ftId: 1, type: -1, amount: 500, rwId: 9 })]);
     ftRepo.createQueryBuilder.mockReturnValue(qb);
     prRepo.find.mockResolvedValue([]);
-    rwRepo.find.mockResolvedValue([{ rwId: 9, noDoc: 'D-009', detail: 'ค่าน้ำ' }]);
+    rwRepo.find.mockResolvedValue([
+      { rwId: 9, noDoc: 'D-009', detail: 'ค่าน้ำ' },
+    ]);
     obRepo.find.mockResolvedValue([]);
 
     const [row] = await service.loadReportRegisterBookbank(10, 1, 3, '2569');
@@ -175,7 +180,9 @@ describe('ReportBookbankService', () => {
     ]);
     ftRepo.createQueryBuilder.mockReturnValue(qb);
     prRepo.find.mockResolvedValue([]);
-    rwRepo.find.mockResolvedValue([{ rwId: 9, noDoc: 'WHT-1', detail: 'ภาษี' }]);
+    rwRepo.find.mockResolvedValue([
+      { rwId: 9, noDoc: 'WHT-1', detail: 'ภาษี' },
+    ]);
     obRepo.find.mockResolvedValue([]);
 
     const [row] = await service.loadReportRegisterBookbank(10, 1, 3, '2569');
@@ -201,7 +208,9 @@ describe('ReportBookbankService', () => {
 
   it('createDate null → trans_date เป็น empty string', async () => {
     bitsRepo.find.mockResolvedValue([{ bgTypeId: 2 }]);
-    const qb = makeQb([makeFt({ ftId: 1, createDate: null, updateDate: null })]);
+    const qb = makeQb([
+      makeFt({ ftId: 1, createDate: null, updateDate: null }),
+    ]);
     ftRepo.createQueryBuilder.mockReturnValue(qb);
     prRepo.find.mockResolvedValue([]);
     rwRepo.find.mockResolvedValue([]);

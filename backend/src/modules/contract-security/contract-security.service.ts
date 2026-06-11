@@ -6,6 +6,10 @@ import { ContractPenalty } from './entities/contract-penalty.entity';
 import { SmpDepositEntry } from '../smp-deposit/entities/smp-deposit-entry.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const TYPE_NAMES: Record<number, string> = {
   1: 'หลักประกันซอง',
@@ -71,11 +75,17 @@ export class ContractSecurityService {
     return { id: bt ? bt.bgTypeId : null, name: bt ? bt.budgetType : null };
   }
 
-  async loadByContract(ctId: number) {
+  async loadByContract(ctId: number, user?: JwtUser) {
     const items = await this.secRepo.find({
       where: { ctId, del: 0 },
       order: { csId: 'ASC' },
     });
+    // Multi-tenant guard: หลักประกันต้องเป็นของโรงเรียนผู้ใช้
+    if (user) {
+      for (const s of items) {
+        if (s.scId != null) assertSameSchool(user, s.scId);
+      }
+    }
     return items.map((s) => ({
       cs_id: s.csId,
       ct_id: s.ctId,
@@ -160,17 +170,21 @@ export class ContractSecurityService {
     return { flag: true, ms: `บันทึกหลักประกันเรียบร้อยแล้ว${extraMs}` };
   }
 
-  async returnSecurity(dto: {
-    cs_id: number;
-    return_date: string;
-    return_evidence_no?: string;
-    note?: string;
-    up_by: number;
-  }) {
+  async returnSecurity(
+    dto: {
+      cs_id: number;
+      return_date: string;
+      return_evidence_no?: string;
+      note?: string;
+      up_by: number;
+    },
+    user?: JwtUser,
+  ) {
     const s = await this.secRepo.findOne({
       where: { csId: dto.cs_id, del: 0 },
     });
     if (!s) return { flag: false, ms: 'ไม่พบรายการหลักประกัน' };
+    if (user && s.scId != null) assertSameSchool(user, s.scId);
     if (s.status !== 1)
       return { flag: false, ms: 'หลักประกันนี้ไม่ได้อยู่ในสถานะถือครอง' };
 
@@ -215,15 +229,19 @@ export class ContractSecurityService {
     await this.smpRepo.save(withdraw);
   }
 
-  async confiscateSecurity(dto: {
-    cs_id: number;
-    note?: string;
-    up_by: number;
-  }) {
+  async confiscateSecurity(
+    dto: {
+      cs_id: number;
+      note?: string;
+      up_by: number;
+    },
+    user?: JwtUser,
+  ) {
     const s = await this.secRepo.findOne({
       where: { csId: dto.cs_id, del: 0 },
     });
     if (!s) return { flag: false, ms: 'ไม่พบรายการหลักประกัน' };
+    if (user && s.scId != null) assertSameSchool(user, s.scId);
     s.status = 3;
     if (dto.note) s.note = dto.note;
     s.upBy = dto.up_by;
@@ -231,9 +249,10 @@ export class ContractSecurityService {
     return { flag: true, ms: 'บันทึกการยึดหลักประกันเรียบร้อยแล้ว' };
   }
 
-  async removeSecurity(csId: number, upBy: number) {
+  async removeSecurity(csId: number, upBy: number, user?: JwtUser) {
     const s = await this.secRepo.findOne({ where: { csId, del: 0 } });
     if (!s) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user && s.scId != null) assertSameSchool(user, s.scId);
     if (s.status === 2)
       return { flag: false, ms: 'หลักประกันที่คืนแล้วลบไม่ได้' };
     s.del = 1;
@@ -295,9 +314,11 @@ export class ContractSecurityService {
     cpId: number,
     collectedDate: string,
     upBy: number,
+    user?: JwtUser,
   ) {
     const p = await this.penRepo.findOne({ where: { cpId, del: 0 } });
     if (!p) return { flag: false, ms: 'ไม่พบค่าปรับ' };
+    if (user && p.scId != null) assertSameSchool(user, p.scId);
     p.status = 3;
     p.collectedDate = collectedDate;
     p.upBy = upBy;
@@ -305,9 +326,15 @@ export class ContractSecurityService {
     return { flag: true, ms: 'บันทึกการรับชำระค่าปรับเรียบร้อย' };
   }
 
-  async waivePenalty(cpId: number, reason: string, upBy: number) {
+  async waivePenalty(
+    cpId: number,
+    reason: string,
+    upBy: number,
+    user?: JwtUser,
+  ) {
     const p = await this.penRepo.findOne({ where: { cpId, del: 0 } });
     if (!p) return { flag: false, ms: 'ไม่พบค่าปรับ' };
+    if (user && p.scId != null) assertSameSchool(user, p.scId);
     p.status = 4;
     p.waivedReason = reason;
     p.upBy = upBy;
@@ -315,11 +342,17 @@ export class ContractSecurityService {
     return { flag: true, ms: 'ยกเว้นค่าปรับเรียบร้อย' };
   }
 
-  async loadPenalties(ctId: number) {
+  async loadPenalties(ctId: number, user?: JwtUser) {
     const items = await this.penRepo.find({
       where: { ctId, del: 0 },
       order: { cpId: 'DESC' },
     });
+    // Multi-tenant guard: ค่าปรับต้องเป็นของโรงเรียนผู้ใช้
+    if (user) {
+      for (const p of items) {
+        if (p.scId != null) assertSameSchool(user, p.scId);
+      }
+    }
     return items.map((p) => ({
       cp_id: p.cpId,
       ct_id: p.ctId,

@@ -7,9 +7,13 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { SettingsService } from './settings.service';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
+@UseGuards(RolesGuard)
 @Controller('B_settings')
 export class BSettingsController {
   constructor(private readonly settingsService: SettingsService) {}
@@ -34,18 +38,21 @@ export class BSettingsController {
   }
 
   @Post('add_sao')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   addSao(@Body() payload: any) {
     return this.settingsService.addSao(payload);
   }
 
   @Post('update_sao')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   updateSao(@Body() payload: any) {
     return this.settingsService.updateSao(payload);
   }
 
   @Post('remove_sao')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   removeSao(@Body() payload: any) {
     return this.settingsService.removeSao(payload);
@@ -71,18 +78,21 @@ export class BSettingsController {
   }
 
   @Post('add_sao_policy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   addSaoPolicy(@Body() payload: any) {
     return this.settingsService.addSaoPolicy(payload);
   }
 
   @Post('update_sao_policy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   updateSaoPolicy(@Body() payload: any) {
     return this.settingsService.updateSaoPolicy(payload);
   }
 
   @Post('remove_sao_policy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   removeSaoPolicy(@Body() payload: any) {
     return this.settingsService.removeSaoPolicy(payload);
@@ -108,18 +118,21 @@ export class BSettingsController {
   }
 
   @Post('add_moe_policy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   addMoePolicy(@Body() payload: any) {
     return this.settingsService.addMoePolicy(payload);
   }
 
   @Post('update_moe_policy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   updateMoePolicy(@Body() payload: any) {
     return this.settingsService.updateMoePolicy(payload);
   }
 
   @Post('remove_moe_policy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   removeMoePolicy(@Body() payload: any) {
     return this.settingsService.removeMoePolicy(payload);
@@ -145,18 +158,21 @@ export class BSettingsController {
   }
 
   @Post('add_obec_policy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   addObecPolicy(@Body() payload: any) {
     return this.settingsService.addObecPolicy(payload);
   }
 
   @Post('update_obec_policy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   updateObecPolicy(@Body() payload: any) {
     return this.settingsService.updateObecPolicy(payload);
   }
 
   @Post('remove_obec_policy')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   removeObecPolicy(@Body() payload: any) {
     return this.settingsService.removeObecPolicy(payload);
@@ -182,18 +198,21 @@ export class BSettingsController {
   }
 
   @Post('add_quick_win')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   addQuickWin(@Body() payload: any) {
     return this.settingsService.addQuickWin(payload);
   }
 
   @Post('update_quick_win')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   updateQuickWin(@Body() payload: any) {
     return this.settingsService.updateQuickWin(payload);
   }
 
   @Post('remove_quick_win')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   removeQuickWin(@Body() payload: any) {
     return this.settingsService.removeQuickWin(payload);
@@ -219,18 +238,21 @@ export class BSettingsController {
   }
 
   @Post('add_classroom_budget')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   addClassroomBudget(@Body() payload: any) {
     return this.settingsService.addClassroomBudget(payload);
   }
 
   @Post('update_classroom_budget')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   updateClassroomBudget(@Body() payload: any) {
     return this.settingsService.updateClassroomBudget(payload);
   }
 
   @Post('remove_classroom_budget')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   removeClassroomBudget(@Body() payload: any) {
     return this.settingsService.removeClassroomBudget(payload);
@@ -256,18 +278,21 @@ export class BSettingsController {
   }
 
   @Post('add_budget_income_type')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   addBudgetIncomeType(@Body() payload: any) {
     return this.settingsService.addBudgetIncomeType(payload);
   }
 
   @Post('update_budget_income_type')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   updateBudgetIncomeType(@Body() payload: any) {
     return this.settingsService.updateBudgetIncomeType(payload);
   }
 
   @Post('remove_budget_income_type')
+  @Roles(1)
   @HttpCode(HttpStatus.OK)
   removeBudgetIncomeType(@Body() payload: any) {
     return this.settingsService.removeBudgetIncomeType(payload);

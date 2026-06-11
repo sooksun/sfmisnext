@@ -20,14 +20,6 @@ export class BudgetIncomeTypeSchool {
   @Column({ name: 'bg_type_id', type: 'int', nullable: true })
   bgTypeId: number | null;
 
-  @Column({
-    name: 'perhead',
-    type: 'tinyint',
-    default: 1,
-    comment: '1 = กำหนดเงินต่อหัวได้ | 0 = ห้ามกำหนดรายหัว',
-  })
-  perhead: number;
-
   @Column({ name: 'up_by', type: 'int', nullable: true })
   upBy: number | null;
 
@@ -39,4 +31,10 @@ export class BudgetIncomeTypeSchool {
 
   @UpdateDateColumn({ name: 'update_date', type: 'datetime', nullable: true })
   updateDate: Date | null;
+
+  // 1 = กำหนดเงินต่อหัวได้ | 0 = ห้ามกำหนดรายหัว
+  // ⚠️ ต้องประกาศ "ท้ายสุด" ให้ตรงลำดับคอลัมน์จริงใน DB (ถูก ADD ทีหลัง)
+  // ไม่งั้น TypeORM synchronize จะ DROP+ADD เพื่อ reposition ทุก boot จนค่าหาย
+  @Column({ name: 'perhead', type: 'int', default: 1 })
+  perhead: number;
 }

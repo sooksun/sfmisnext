@@ -10,6 +10,7 @@ import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { PlnRealBudget } from '../policy/entities/pln-real-budget.entity';
 import { TbExpenses } from './entities/tb-expenses.entity';
 import { StudentModule } from '../student/student.module';
+import { PlanPrevBalanceModule } from '../plan-prev-balance/plan-prev-balance.module';
 
 @Module({
   imports: [
@@ -24,6 +25,8 @@ import { StudentModule } from '../student/student.module';
     ]),
     // ดึงยอดประมาณการสดจากการคำนวณรายหัว (StudentService.getPerheadTotal)
     StudentModule,
+    // เงินเหลือจ่ายปีเก่า — บวกเข้าวงเงินรวม (หน้า 1.6/1.7)
+    PlanPrevBalanceModule,
   ],
   controllers: [BudgetController],
   providers: [BudgetService],

@@ -329,7 +329,8 @@ export class UnifiedRegisterService {
           bank -= amt;
           debtor += amt;
           expenses += amt;
-          docNo = docNo ?? loan?.laNo ?? null;
+          // ที่เอกสาร = เลขที่เงินยืม บย.{N}/{พ.ศ.} (อ้างอิงสัญญายืมเสมอ)
+          docNo = loan?.laNo ?? docNo ?? null;
           detail = loan
             ? `${loan.borrowerName ?? ''} ยืมเงิน${loan.purpose ? `เพื่อ${loan.purpose}` : ''}`.trim()
             : 'จ่ายเงินยืม';
@@ -340,6 +341,8 @@ export class UnifiedRegisterService {
           payDebtor = -amt;
           payVoucher = amt;
           debtor -= amt;
+          // ที่เอกสาร = เลขที่เงินยืม บย.{N}/{พ.ศ.} (อ้างอิงสัญญายืมเสมอ)
+          docNo = loan?.laNo ?? docNo ?? null;
           detail = loan
             ? `${loan.borrowerName ?? ''} ส่งใช้หลักฐานเงินยืม`.trim()
             : 'ส่งใช้ใบสำคัญเงินยืม';
@@ -352,6 +355,8 @@ export class UnifiedRegisterService {
           cash += amt;
           debtor -= amt;
           revenue += amt;
+          // ที่เอกสาร = เลขที่เงินยืม บย.{N}/{พ.ศ.} (อ้างอิงสัญญายืมเสมอ)
+          docNo = loan?.laNo ?? docNo ?? null;
           detail = loan
             ? `${loan.borrowerName ?? ''} ส่งใช้เงินสดล้างหนี้เงินยืม`.trim()
             : 'ส่งคืนเงินสดเงินยืม';

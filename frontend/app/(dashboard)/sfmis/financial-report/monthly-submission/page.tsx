@@ -38,6 +38,7 @@ interface SubmissionRecord {
 interface AlertData {
   hasAlert: boolean
   overdue_months: string[]
+  submit_day: number
 }
 
 interface MonthlyAuditStatus {
@@ -312,6 +313,7 @@ export default function MonthlySubmissionPage() {
   // ─── Derived ────────────────────────────────────────────────────────────────
 
   const overdueCount = alertData?.overdue_months?.length ?? 0
+  const submitDay = alertData?.submit_day ?? 15 // วันกำหนดส่งจาก config (default 15)
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
@@ -324,7 +326,7 @@ export default function MonthlySubmissionPage() {
         <div className="mx-4 mt-3 flex items-center gap-2 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
           <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
           <span>
-            มี <strong>{overdueCount} เดือน</strong> ที่ยังไม่ส่งรายงาน (เกินกำหนดวันที่ 5 ของเดือนถัดไป)
+            มี <strong>{overdueCount} เดือน</strong> ที่ยังไม่ส่งรายงาน (เกินกำหนดวันที่ {submitDay} ของเดือนถัดไป)
           </span>
         </div>
       )}
@@ -395,6 +397,7 @@ export default function MonthlySubmissionPage() {
               confirming={confirmMutation.isPending}
               scId={scId}
               syId={syId}
+              submitDay={submitDay}
               onSignMonthly={(month) => signMonthlyMutation.mutate(month)}
               signingMonthly={signMonthlyMutation.isPending}
             />
@@ -423,6 +426,7 @@ interface DetailPanelProps {
   // G10 monthly sign-off
   scId: number
   syId: number
+  submitDay: number
   onSignMonthly: (month: string) => void
   signingMonthly: boolean
 }
@@ -442,6 +446,7 @@ function DetailPanel({
   confirming,
   scId,
   syId,
+  submitDay,
   onSignMonthly,
   signingMonthly,
 }: DetailPanelProps) {
@@ -475,7 +480,7 @@ function DetailPanel({
       {record.isOverdue && record.status < 2 && (
         <div className="flex items-center gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          เกินกำหนดส่ง (ควรส่งภายในวันที่ 5 ของเดือนถัดไป)
+          เกินกำหนดส่ง (ควรส่งภายในวันที่ {submitDay} ของเดือนถัดไป)
         </div>
       )}
 

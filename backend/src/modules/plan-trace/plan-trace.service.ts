@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 function toNum(v: any): number {
   return v == null ? 0 : Number(v);
@@ -11,7 +15,7 @@ export class PlanTraceService {
   constructor(@InjectDataSource() private readonly ds: DataSource) {}
 
   /** ติดตามเส้นทาง: แผน → โครงการ → ใบขอซื้อ → เช็ค/ใบสำคัญ — สำหรับ 1 โครงการ */
-  async traceByProject(projectId: number) {
+  async traceByProject(projectId: number, user?: JwtUser) {
     const project = await this.ds.query(
       `SELECT p.proj_id AS project_id, p.proj_name AS project_name, p.sc_id,
               sy.budget_year, p.proj_budget AS total_budget, p.proj_status AS status
@@ -21,6 +25,9 @@ export class PlanTraceService {
       [projectId],
     );
     if (!project.length) return { flag: false, ms: 'ไม่พบโครงการ' };
+
+    // กัน cross-tenant: โครงการต้องเป็นของโรงเรียนเดียวกับ JWT user
+    if (user) assertSameSchool(user, Number(project[0].sc_id));
 
     const orders = await this.ds.query(
       `SELECT order_id, project_id, budgets AS order_total, order_status, method_type, order_date

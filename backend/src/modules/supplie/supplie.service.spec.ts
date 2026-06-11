@@ -46,26 +46,41 @@ describe('SupplieService', () => {
 
   beforeEach(async () => {
     receiveOrderRepo = { find: jest.fn(), findOne: jest.fn(), save: jest.fn() };
-    receiveDetailRepo = { find: jest.fn() };
+    receiveDetailRepo = { find: jest.fn().mockResolvedValue([]) };
     parcelOrderRepo = { find: jest.fn(), findOne: jest.fn(), save: jest.fn() };
     parcelDetailRepo = { find: jest.fn() };
     suppliesRepo = { find: jest.fn().mockResolvedValue([]) };
     txRepo = { createQueryBuilder: jest.fn().mockReturnValue(makeTxQb(null)) };
     adminRepo = { find: jest.fn() };
-    inspectionRepo = { findOne: jest.fn() };
+    inspectionRepo = {
+      findOne: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
+    };
     dataSource = { transaction: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SupplieService,
-        { provide: getRepositoryToken(ReceiveParcelOrder), useValue: receiveOrderRepo },
-        { provide: getRepositoryToken(ReceiveParcelDetail), useValue: receiveDetailRepo },
+        {
+          provide: getRepositoryToken(ReceiveParcelOrder),
+          useValue: receiveOrderRepo,
+        },
+        {
+          provide: getRepositoryToken(ReceiveParcelDetail),
+          useValue: receiveDetailRepo,
+        },
         { provide: getRepositoryToken(ParcelOrder), useValue: parcelOrderRepo },
-        { provide: getRepositoryToken(ParcelDetail), useValue: parcelDetailRepo },
+        {
+          provide: getRepositoryToken(ParcelDetail),
+          useValue: parcelDetailRepo,
+        },
         { provide: getRepositoryToken(Supplies), useValue: suppliesRepo },
         { provide: getRepositoryToken(TransactionSupplies), useValue: txRepo },
         { provide: getRepositoryToken(Admin), useValue: adminRepo },
-        { provide: getRepositoryToken(SupInspection), useValue: inspectionRepo },
+        {
+          provide: getRepositoryToken(SupInspection),
+          useValue: inspectionRepo,
+        },
         { provide: DataSource, useValue: dataSource },
       ],
     }).compile();
@@ -87,7 +102,14 @@ describe('SupplieService', () => {
 
     it('map column names + add=false', async () => {
       receiveOrderRepo.find.mockResolvedValue([
-        { receiveId: 1, scId: 5, orderId: 7, title: 'รับพัสดุ', receiveStatus: 1, del: 0 },
+        {
+          receiveId: 1,
+          scId: 5,
+          orderId: 7,
+          title: 'รับพัสดุ',
+          receiveStatus: 1,
+          del: 0,
+        },
       ]);
       const [row] = await service.loadReceive(5, 3);
       expect(row.receive_id).toBe(1);
@@ -100,7 +122,13 @@ describe('SupplieService', () => {
   describe('loadSubProject', () => {
     it('filter order status=7 (จัดซื้อ) และ batch-load details (กัน N+1)', async () => {
       parcelOrderRepo.find.mockResolvedValue([
-        { orderId: 1, projectId: 2, details: 'd', resources: null, budgets: 5000 },
+        {
+          orderId: 1,
+          projectId: 2,
+          details: 'd',
+          resources: null,
+          budgets: 5000,
+        },
       ]);
       parcelDetailRepo.find.mockResolvedValue([
         { orderId: 1, suppId: 5, pcTotal: 10, del: 0 },
@@ -108,7 +136,11 @@ describe('SupplieService', () => {
       const result = await service.loadSubProject(5, 2569);
       expect(parcelOrderRepo.find).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ orderStatus: 7, del: 0, acadYear: 2569 }),
+          where: expect.objectContaining({
+            orderStatus: 7,
+            del: 0,
+            acadYear: 2569,
+          }),
         }),
       );
       expect(result.parcel_order[0].data_detail).toEqual([
@@ -137,7 +169,14 @@ describe('SupplieService', () => {
   describe('loadGetUserTeacher', () => {
     it('filter scId + del=0 และ map field', async () => {
       adminRepo.find.mockResolvedValue([
-        { adminId: 1, name: 'ครู ก', username: 'k', email: 'a@b', type: 2, scId: 5 },
+        {
+          adminId: 1,
+          name: 'ครู ก',
+          username: 'k',
+          email: 'a@b',
+          type: 2,
+          scId: 5,
+        },
       ]);
       const [row] = await service.loadGetUserTeacher(5);
       expect(adminRepo.find).toHaveBeenCalledWith(
@@ -154,18 +193,25 @@ describe('SupplieService', () => {
       suppliesRepo.find.mockResolvedValue([
         { suppId: 5, suppNo: 'S-1', suppName: 'กระดาษ', scId: 1, del: 0 },
       ]);
-      txRepo.createQueryBuilder.mockReturnValue(makeTxQb({ transBalance: 100 }));
+      txRepo.createQueryBuilder.mockReturnValue(
+        makeTxQb({ transBalance: 100 }),
+      );
       receiveDetailRepo.find.mockResolvedValue([
         { suppId: 5, rpTotal: 30, del: 0 },
       ]);
-      const result = await service.loadStockSupplie({ sc_id: 1, receive_id: 9 } as any);
+      const result = await service.loadStockSupplie({
+        sc_id: 1,
+        receive_id: 9,
+      } as any);
       // balance 100 - received 30 = 70
       expect(result[0].balance_stock).toBe(70);
     });
 
     it('ไม่มี receive_id → balance_stock = balance เต็ม', async () => {
       suppliesRepo.find.mockResolvedValue([{ suppId: 5, scId: 1, del: 0 }]);
-      txRepo.createQueryBuilder.mockReturnValue(makeTxQb({ transBalance: 100 }));
+      txRepo.createQueryBuilder.mockReturnValue(
+        makeTxQb({ transBalance: 100 }),
+      );
       const result = await service.loadStockSupplie({ sc_id: 1 } as any);
       expect(receiveDetailRepo.find).not.toHaveBeenCalled();
       expect(result[0].balance_stock).toBe(100);
@@ -275,7 +321,10 @@ describe('SupplieService', () => {
         receive_date: '2026-05-01',
         cart: [{ supp_id: 5, receive: 10 }],
       } as any);
-      expect(em.create).toHaveBeenCalledWith(ReceiveParcelOrder, expect.anything());
+      expect(em.create).toHaveBeenCalledWith(
+        ReceiveParcelOrder,
+        expect.anything(),
+      );
       expect(result).toEqual({ flag: true });
     });
 
@@ -313,8 +362,16 @@ describe('SupplieService', () => {
     });
 
     it('inspection ลงสต็อกแล้ว (stockPosted=1) → ลบไม่ได้ (M5)', async () => {
-      receiveOrderRepo.findOne.mockResolvedValue({ receiveId: 1, orderId: 7, del: 0 });
-      inspectionRepo.findOne.mockResolvedValue({ orderId: 7, stockPosted: 1, del: 0 });
+      receiveOrderRepo.findOne.mockResolvedValue({
+        receiveId: 1,
+        orderId: 7,
+        del: 0,
+      });
+      inspectionRepo.findOne.mockResolvedValue({
+        orderId: 7,
+        stockPosted: 1,
+        del: 0,
+      });
       const result = await service.removeReceiveParcel(1);
       expect(result.flag).toBe(false);
       expect(result.ms).toContain('ลงสต็อกแล้ว');
@@ -422,8 +479,13 @@ describe('SupplieService', () => {
     });
 
     it('confirmWithDrawParcel (alias) → เรียก confirmReceiveParcel', async () => {
-      const spy = jest.spyOn(service, 'confirmReceiveParcel').mockResolvedValue({ flag: true } as any);
-      await service.confirmWithDrawParcel({ order: { receive_id: 1 }, detail: [] } as any);
+      const spy = jest
+        .spyOn(service, 'confirmReceiveParcel')
+        .mockResolvedValue({ flag: true } as any);
+      await service.confirmWithDrawParcel({
+        order: { receive_id: 1 },
+        detail: [],
+      } as any);
       expect(spy).toHaveBeenCalled();
     });
   });

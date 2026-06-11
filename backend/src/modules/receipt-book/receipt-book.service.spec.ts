@@ -128,7 +128,9 @@ describe('ReceiptBookService', () => {
 
     it('มีเล่มปีงบก่อนหน้ายัง active → block (ห้ามข้ามปีงบ)', async () => {
       rbRepo.findOne.mockResolvedValue(null); // ไม่มี active ปีนี้
-      rbRepo.find.mockResolvedValue([{ rbId: 8, budgetYear: '2568', status: 1 }]);
+      rbRepo.find.mockResolvedValue([
+        { rbId: 8, budgetYear: '2568', status: 1 },
+      ]);
       const result = await service.addBook(dto);
       expect(result.flag).toBe(false);
       expect(result.ms).toContain('2568');
@@ -149,7 +151,9 @@ describe('ReceiptBookService', () => {
 
     it('เล่มปีงบใหม่กว่า/เท่ากันที่ active อยู่ ไม่ถือเป็น stale → ผ่าน', async () => {
       rbRepo.findOne.mockResolvedValue(null);
-      rbRepo.find.mockResolvedValue([{ rbId: 8, budgetYear: '2570', status: 1 }]);
+      rbRepo.find.mockResolvedValue([
+        { rbId: 8, budgetYear: '2570', status: 1 },
+      ]);
       const result = await service.addBook(dto);
       expect(result.flag).toBe(true);
     });
@@ -275,7 +279,10 @@ describe('ReceiptBookService', () => {
       rbRepo.findOne.mockResolvedValue(book);
       rbRepo.save.mockResolvedValue(book);
 
-      const result = await service.advanceCurrent({ ...dto, new_current_no: 101 });
+      const result = await service.advanceCurrent({
+        ...dto,
+        new_current_no: 101,
+      });
       expect(book.status).toBe(2);
       expect(book.closedDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(result.flag).toBe(true);

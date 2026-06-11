@@ -5,6 +5,11 @@ import { GovRevenueEntry } from './entities/gov-revenue-entry.entity';
 import { AddGovRevenueDto } from './dto/add-gov-revenue.dto';
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 import { DocCounterService } from '../doc-counter/doc-counter.service';
+import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const REVENUE_TYPE_NAMES: Record<number, string> = {
   1: 'ดอกเบี้ยเงินฝาก (เงินอุดหนุน)',
@@ -18,9 +23,34 @@ export class GovRevenueService {
   constructor(
     @InjectRepository(GovRevenueEntry)
     private readonly entryRepo: Repository<GovRevenueEntry>,
+    @InjectRepository(OpeningBalance)
+    private readonly openingRepo: Repository<OpeningBalance>,
     private readonly regulatoryConfig: RegulatoryConfigService,
     private readonly docCounter: DocCounterService,
   ) {}
+
+  private isExplicitCarryForward(entry: GovRevenueEntry): boolean {
+    const docNo = (entry.docNo ?? '').trim();
+    const detail = (entry.detail ?? '').trim();
+    return docNo === 'ยกมา' || detail.startsWith('ยอดยกมา');
+  }
+
+  /** ยอดยกมาเงินรายได้แผ่นดินไม่มีมิติประเภทย่อย จึงแสดงในแท็บดอกเบี้ยอุดหนุน */
+  private async openingCarryForward(
+    scId: number,
+    syId: number,
+  ): Promise<number> {
+    const existingEntries = await this.entryRepo.find({
+      where: { scId, syId, del: 0 },
+    });
+    if (existingEntries.some((entry) => this.isExplicitCarryForward(entry))) {
+      return 0;
+    }
+    const rows = await this.openingRepo.find({
+      where: { scId, syId, moneyTypeId: 10, del: 0 },
+    });
+    return rows.reduce((sum, row) => sum + Number(row.amount), 0);
+  }
 
   /** บวกวันทำการ (ข้ามเสาร์-อาทิตย์) */
   private addBusinessDays(from: Date, days: number): Date {
@@ -48,7 +78,9 @@ export class GovRevenueService {
       order: { docDate: 'ASC', greId: 'ASC' },
     });
 
-    let balance = 0;
+    const carryForward =
+      revenueType === 1 ? await this.openingCarryForward(scId, syId) : 0;
+    let balance = carryForward;
     const rows = entries.map((e) => {
       if (e.entryType === 1) balance += e.amount;
       else balance -= e.amount;
@@ -74,7 +106,7 @@ export class GovRevenueService {
       };
     });
 
-    return { data: rows, count: rows.length };
+    return { data: rows, count: rows.length, carry_forward: carryForward };
   }
 
   /**
@@ -95,14 +127,17 @@ export class GovRevenueService {
       alert_threshold: number;
     }[] = [];
 
+    const openingCarryForward = await this.openingCarryForward(scId, syId);
     for (const rt of [1, 2, 3, 4]) {
       const entries = await this.entryRepo.find({
         where: { scId, syId, budgetYear, revenueType: rt, del: 0 },
       });
 
-      const totalIn = entries
-        .filter((e) => e.entryType === 1)
-        .reduce((s, e) => s + e.amount, 0);
+      const totalIn =
+        entries
+          .filter((e) => e.entryType === 1)
+          .reduce((s, e) => s + e.amount, 0) +
+        (rt === 1 ? openingCarryForward : 0);
       const totalOut = entries
         .filter((e) => e.entryType === 2)
         .reduce((s, e) => s + e.amount, 0);
@@ -165,11 +200,14 @@ export class GovRevenueService {
     const entries = await this.entryRepo.find({
       where: { scId, syId, del: 0 },
     });
+    const openingCarryForward = await this.openingCarryForward(scId, syId);
     const byType = INTEREST_TYPES.map((rt) => {
       const list = entries.filter((e) => e.revenueType === rt);
-      const received = list
-        .filter((e) => e.entryType === 1)
-        .reduce((s, e) => s + Number(e.amount), 0);
+      const received =
+        list
+          .filter((e) => e.entryType === 1)
+          .reduce((s, e) => s + Number(e.amount), 0) +
+        (rt === 1 ? openingCarryForward : 0);
       const remitted = list
         .filter((e) => e.entryType === 2)
         .reduce((s, e) => s + Number(e.amount), 0);
@@ -285,7 +323,58 @@ export class GovRevenueService {
     return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
   }
 
+  /**
+   * ยอดคงค้างที่ยังไม่นำส่ง ของประเภทรายได้นั้น (รับ − นำส่ง)
+   *   ใช้กันบันทึก "นำส่ง" (entry_type=2) เกินยอดที่รับเข้ามาจริง → ยอดค้างติดลบ
+   *   excludeGreId ใช้ตอน update เพื่อไม่นับรายการตัวเอง
+   */
+  private async outstanding(
+    scId: number,
+    syId: number,
+    budgetYear: string | null,
+    revenueType: number,
+    excludeGreId?: number,
+  ): Promise<number> {
+    const list = await this.entryRepo.find({
+      where: {
+        scId,
+        syId,
+        budgetYear: budgetYear ?? undefined,
+        revenueType,
+        del: 0,
+      },
+    });
+    let received = 0;
+    let remitted = 0;
+    for (const e of list) {
+      if (excludeGreId && e.greId === excludeGreId) continue;
+      if (e.entryType === 1) received += Number(e.amount);
+      else if (e.entryType === 2) remitted += Number(e.amount);
+    }
+    if (revenueType === 1) {
+      received += await this.openingCarryForward(scId, syId);
+    }
+    return received - remitted;
+  }
+
   async addEntry(dto: AddGovRevenueDto) {
+    // กันบันทึก "นำส่ง" (entry_type=2) เกินยอดคงค้างที่รับเข้ามา → ยอดค้างติดลบ
+    if (dto.entry_type === 2) {
+      const EPS = 0.005;
+      const left = await this.outstanding(
+        dto.sc_id,
+        dto.sy_id,
+        dto.budget_year,
+        dto.revenue_type,
+      );
+      if (Number(dto.amount) > left + EPS) {
+        return {
+          flag: false,
+          ms: `นำส่งเกินยอดคงค้าง — คงค้าง ${left.toLocaleString('th-TH')} บาท, นำส่ง ${Number(dto.amount).toLocaleString('th-TH')} บาท`,
+        };
+      }
+    }
+
     // ออกเลขที่เอกสารอัตโนมัติ บง. (ถ้าไม่ได้ระบุ)
     let docNo = dto.doc_no ?? null;
     if (!docNo) {
@@ -314,9 +403,35 @@ export class GovRevenueService {
     return { flag: true, ms: 'บันทึกรายการเรียบร้อยแล้ว' };
   }
 
-  async updateEntry(greId: number, dto: Partial<AddGovRevenueDto>) {
+  async updateEntry(
+    greId: number,
+    dto: Partial<AddGovRevenueDto>,
+    user?: JwtUser,
+  ) {
     const entry = await this.entryRepo.findOne({ where: { greId, del: 0 } });
     if (!entry) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user) assertSameSchool(user, entry.scId);
+
+    // กันแก้ไขให้ "นำส่ง" เกินยอดคงค้าง (ไม่นับยอดของรายการตัวเอง)
+    const nextType = dto.entry_type ?? entry.entryType;
+    const nextAmount = dto.amount ?? Number(entry.amount);
+    const nextRevType = dto.revenue_type ?? entry.revenueType;
+    if (nextType === 2) {
+      const EPS = 0.005;
+      const left = await this.outstanding(
+        entry.scId,
+        entry.syId,
+        entry.budgetYear,
+        nextRevType,
+        greId,
+      );
+      if (Number(nextAmount) > left + EPS) {
+        return {
+          flag: false,
+          ms: `นำส่งเกินยอดคงค้าง — คงค้าง ${left.toLocaleString('th-TH')} บาท, นำส่ง ${Number(nextAmount).toLocaleString('th-TH')} บาท`,
+        };
+      }
+    }
 
     if (dto.revenue_type !== undefined) entry.revenueType = dto.revenue_type;
     if (dto.entry_type !== undefined) entry.entryType = dto.entry_type;
@@ -331,9 +446,10 @@ export class GovRevenueService {
     return { flag: true, ms: 'แก้ไขรายการเรียบร้อยแล้ว' };
   }
 
-  async removeEntry(greId: number, upBy: number) {
+  async removeEntry(greId: number, upBy: number, user?: JwtUser) {
     const entry = await this.entryRepo.findOne({ where: { greId, del: 0 } });
     if (!entry) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user) assertSameSchool(user, entry.scId);
     entry.del = 1;
     entry.upBy = upBy;
     await this.entryRepo.save(entry);

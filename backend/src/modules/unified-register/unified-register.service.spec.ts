@@ -14,9 +14,15 @@ import { LoanAgreement } from '../loan-agreement/entities/loan-agreement.entity'
 function makeQb(opts: { rawMany?: unknown[]; many?: unknown[] } = {}) {
   const qb: Record<string, jest.Mock> = {};
   const chain = () => qb as any;
-  ['select', 'addSelect', 'where', 'andWhere', 'groupBy', 'orderBy', 'addOrderBy'].forEach(
-    (m) => (qb[m] = jest.fn().mockReturnValue(chain())),
-  );
+  [
+    'select',
+    'addSelect',
+    'where',
+    'andWhere',
+    'groupBy',
+    'orderBy',
+    'addOrderBy',
+  ].forEach((m) => (qb[m] = jest.fn().mockReturnValue(chain())));
   qb['getRawMany'] = jest.fn().mockResolvedValue(opts.rawMany ?? []);
   qb['getMany'] = jest.fn().mockResolvedValue(opts.many ?? []);
   return qb;
@@ -47,7 +53,10 @@ describe('UnifiedRegisterService', () => {
       providers: [
         UnifiedRegisterService,
         { provide: getRepositoryToken(BudgetIncomeType), useValue: bitRepo },
-        { provide: getRepositoryToken(FinancialTransactions), useValue: ftRepo },
+        {
+          provide: getRepositoryToken(FinancialTransactions),
+          useValue: ftRepo,
+        },
         { provide: getRepositoryToken(PlnReceive), useValue: prRepo },
         { provide: getRepositoryToken(PlnReceiveDetail), useValue: prdRepo },
         { provide: getRepositoryToken(RequestWithdraw), useValue: rwRepo },
@@ -87,9 +96,7 @@ describe('UnifiedRegisterService', () => {
     });
 
     it('ข้าม budget type ที่ไม่มีรายการและไม่มียอดยกมา', async () => {
-      bitRepo.find.mockResolvedValue([
-        { bgTypeId: 1, budgetType: 'ว่าง' },
-      ]);
+      bitRepo.find.mockResolvedValue([{ bgTypeId: 1, budgetType: 'ว่าง' }]);
       obRepo.find.mockResolvedValue([]);
       ftRepo.createQueryBuilder.mockReturnValue(makeQb({ rawMany: [] }));
 
@@ -98,7 +105,9 @@ describe('UnifiedRegisterService', () => {
     });
 
     it('รวม budget type ที่ไม่มีรายการ แต่มียอดยกมา (carry !== 0)', async () => {
-      bitRepo.find.mockResolvedValue([{ bgTypeId: 1, budgetType: 'มียอดยกมา' }]);
+      bitRepo.find.mockResolvedValue([
+        { bgTypeId: 1, budgetType: 'มียอดยกมา' },
+      ]);
       obRepo.find.mockResolvedValue([{ moneyTypeId: 1, amount: 500 }]);
       ftRepo.createQueryBuilder.mockReturnValue(makeQb({ rawMany: [] }));
 
@@ -136,13 +145,30 @@ describe('UnifiedRegisterService', () => {
   // ─── getRegisterDetail ──────────────────────────────────────────────────────
   describe('getRegisterDetail', () => {
     it('คำนวณ running balance เริ่มจากยอดยกมา + รายรับ - รายจ่าย', async () => {
-      bitRepo.findOne.mockResolvedValue({ bgTypeId: 1, budgetType: 'เงินอุดหนุน' });
+      bitRepo.findOne.mockResolvedValue({
+        bgTypeId: 1,
+        budgetType: 'เงินอุดหนุน',
+      });
       obRepo.find.mockResolvedValue([{ moneyTypeId: 1, amount: 1000 }]);
       ftRepo.createQueryBuilder.mockReturnValue(
         makeQb({
           many: [
-            { ftId: 1, type: 1, amount: 500, prId: 0, rwId: 0, createDate: null },
-            { ftId: 2, type: -1, amount: 200, prId: 0, rwId: 0, createDate: null },
+            {
+              ftId: 1,
+              type: 1,
+              amount: 500,
+              prId: 0,
+              rwId: 0,
+              createDate: null,
+            },
+            {
+              ftId: 2,
+              type: -1,
+              amount: 200,
+              prId: 0,
+              rwId: 0,
+              createDate: null,
+            },
           ],
         }),
       );
@@ -203,7 +229,16 @@ describe('UnifiedRegisterService', () => {
       bitRepo.findOne.mockResolvedValue({ bgTypeId: 1, budgetType: 'x' });
       ftRepo.createQueryBuilder.mockReturnValue(
         makeQb({
-          many: [{ ftId: 1, type: 1, amount: 500, prId: 7, rwId: 0, createDate: null }],
+          many: [
+            {
+              ftId: 1,
+              type: 1,
+              amount: 500,
+              prId: 7,
+              rwId: 0,
+              createDate: null,
+            },
+          ],
         }),
       );
       prRepo.findOne.mockResolvedValue({
@@ -224,10 +259,23 @@ describe('UnifiedRegisterService', () => {
       bitRepo.findOne.mockResolvedValue({ bgTypeId: 1, budgetType: 'x' });
       ftRepo.createQueryBuilder.mockReturnValue(
         makeQb({
-          many: [{ ftId: 1, type: 1, amount: 500, prId: 7, rwId: 0, createDate: null }],
+          many: [
+            {
+              ftId: 1,
+              type: 1,
+              amount: 500,
+              prId: 7,
+              rwId: 0,
+              createDate: null,
+            },
+          ],
         }),
       );
-      prRepo.findOne.mockResolvedValue({ prId: 7, prNo: 'PR-7', receiveMoneyType: 1 });
+      prRepo.findOne.mockResolvedValue({
+        prId: 7,
+        prNo: 'PR-7',
+        receiveMoneyType: 1,
+      });
       receiptRepo.findOne.mockResolvedValue(null);
       prdRepo.find.mockResolvedValue([]);
 
@@ -240,7 +288,16 @@ describe('UnifiedRegisterService', () => {
       bitRepo.findOne.mockResolvedValue({ bgTypeId: 1, budgetType: 'x' });
       ftRepo.createQueryBuilder.mockReturnValue(
         makeQb({
-          many: [{ ftId: 1, type: -1, amount: 300, prId: 0, rwId: 9, createDate: null }],
+          many: [
+            {
+              ftId: 1,
+              type: -1,
+              amount: 300,
+              prId: 0,
+              rwId: 9,
+              createDate: null,
+            },
+          ],
         }),
       );
       rwRepo.findOne.mockResolvedValue({
@@ -270,7 +327,14 @@ describe('UnifiedRegisterService', () => {
       const qb = makeQb({ many: [] });
       ftRepo.createQueryBuilder.mockReturnValue(qb);
 
-      await service.getRegisterDetail(1, 1, 3, '2569', '2026-05-01', '2026-05-31');
+      await service.getRegisterDetail(
+        1,
+        1,
+        3,
+        '2569',
+        '2026-05-01',
+        '2026-05-31',
+      );
       expect(qb.andWhere).toHaveBeenCalledWith(
         'ft.create_date >= :fromDate',
         expect.objectContaining({ fromDate: expect.any(Date) }),
@@ -285,7 +349,10 @@ describe('UnifiedRegisterService', () => {
   // ─── getSchoolRevenueReport (form-030) ──────────────────────────────────────
   describe('getSchoolRevenueReport', () => {
     it('จัดหมวดรายรับ (heuristic) + รายจ่าย (expense_type) และคำนวณ carry_forward', async () => {
-      bitRepo.findOne.mockResolvedValue({ bgTypeId: 1, budgetType: 'เงินรายได้' });
+      bitRepo.findOne.mockResolvedValue({
+        bgTypeId: 1,
+        budgetType: 'เงินรายได้',
+      });
       obRepo.find.mockResolvedValue([{ moneyTypeId: 1, amount: 1000 }]);
       ftRepo.createQueryBuilder.mockReturnValue(
         makeQb({
@@ -326,7 +393,9 @@ describe('UnifiedRegisterService', () => {
       bitRepo.findOne.mockResolvedValue({ bgTypeId: 1, budgetType: 'x' });
       obRepo.find.mockResolvedValue([]);
       ftRepo.createQueryBuilder.mockReturnValue(
-        makeQb({ many: [{ ftId: 1, type: -1, amount: 700, prId: 0, rwId: 8 }] }),
+        makeQb({
+          many: [{ ftId: 1, type: -1, amount: 700, prId: 0, rwId: 8 }],
+        }),
       );
       prdRepo.find.mockResolvedValue([]);
       rwRepo.find.mockResolvedValue([{ rwId: 8, expenseType: null }]);
@@ -339,9 +408,13 @@ describe('UnifiedRegisterService', () => {
       bitRepo.findOne.mockResolvedValue({ bgTypeId: 1, budgetType: 'x' });
       obRepo.find.mockResolvedValue([]);
       ftRepo.createQueryBuilder.mockReturnValue(
-        makeQb({ many: [{ ftId: 1, type: 1, amount: 1200, prId: 3, rwId: 0 }] }),
+        makeQb({
+          many: [{ ftId: 1, type: 1, amount: 1200, prId: 3, rwId: 0 }],
+        }),
       );
-      prdRepo.find.mockResolvedValue([{ prId: 3, prdDetail: 'ค่าเช่าที่ราชพัสดุ' }]);
+      prdRepo.find.mockResolvedValue([
+        { prId: 3, prdDetail: 'ค่าเช่าที่ราชพัสดุ' },
+      ]);
       rwRepo.find.mockResolvedValue([]);
 
       const result = await service.getSchoolRevenueReport(1, 3, '2569', 1);

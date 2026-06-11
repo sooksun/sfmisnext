@@ -186,7 +186,9 @@ describe('FundBorrowingService', () => {
         .mockResolvedValueOnce({ budgetType: 'เงินอุดหนุน' })
         .mockResolvedValueOnce({ budgetType: 'เรียนฟรี' });
       stubAvailable(500, 0, 0); // คงเหลือ 500 < 1000
-      await expect(service.addBorrowing(baseDto)).rejects.toThrow(/ไม่พอให้ยืม/);
+      await expect(service.addBorrowing(baseDto)).rejects.toThrow(
+        /ไม่พอให้ยืม/,
+      );
     });
 
     it('happy path → สร้าง FT คู่ + fund_borrowing status=1 คืน flag:true', async () => {

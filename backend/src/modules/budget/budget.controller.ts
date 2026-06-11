@@ -16,6 +16,7 @@ import { AddPlnBudgetCategoryDto } from './dto/add-pln-budget-category.dto';
 import { AddNewBudgetCategoryDto } from './dto/add-new-budget-category.dto';
 import { UpdateEstimateDto } from './dto/update-estimate.dto';
 import { AddEstimateAcadyearDto } from './dto/add-estimate-acadyear.dto';
+import { ConfirmEstimateAcadyearDto } from './dto/confirm-estimate-acadyear.dto';
 import { UpdateRealBudgetDto } from './dto/update-real-budget.dto';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -157,6 +158,20 @@ export class BudgetController {
     return this.budgetService.addNewBudgetCategory(payload);
   }
 
+  @Post('removeBudgetCategory')
+  @HttpCode(HttpStatus.OK)
+  removeBudgetCategory(
+    @Body() body: { pbc_id: number },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.budgetService.removePLNBudgetCategory(
+      body.pbc_id,
+      user.sc_id,
+      user.type,
+      user.admin_id,
+    );
+  }
+
   @Post('updateEstimate')
   @HttpCode(HttpStatus.OK)
   updateEstimate(
@@ -174,6 +189,32 @@ export class BudgetController {
   ) {
     assertSameSchool(user, payload.sc_id);
     return this.budgetService.addEstimateAcadyear(payload);
+  }
+
+  @Get('loadEstimateAcadyearStatus/:sc_id/:sy_id/:budget_year')
+  @HttpCode(HttpStatus.OK)
+  loadEstimateAcadyearStatus(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @Param('sy_id', ParseIntPipe) syId: number,
+    @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
+    return this.budgetService.loadEstimateAcadyearStatus(
+      scId,
+      syId,
+      budgetYear,
+    );
+  }
+
+  @Post('confirmEstimateAcadyear')
+  @HttpCode(HttpStatus.OK)
+  confirmEstimateAcadyear(
+    @Body() payload: ConfirmEstimateAcadyearDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
+    return this.budgetService.confirmEstimateAcadyear(payload);
   }
 
   @Post('updateRealBudget')

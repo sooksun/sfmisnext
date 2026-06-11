@@ -21,6 +21,11 @@ import { SetBudgetAllocationDto } from './dto/set-budget-allocation.dto';
 import { SetPerheadRateDto } from './dto/set-perhead-rate.dto';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @UseGuards(RolesGuard)
 @Roles(1, 2, 3, 6)
@@ -36,7 +41,9 @@ export class StudentController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
     @Param('page_size', ParseIntPipe) pageSize: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.studentService.loadStudent(
       syId,
       budgetYear,
@@ -48,14 +55,18 @@ export class StudentController {
 
   @Post('addStudent')
   @HttpCode(HttpStatus.OK)
-  addStudent(@Body() payload: AddStudentDto) {
+  addStudent(@Body() payload: AddStudentDto, @CurrentUser() user: JwtUser) {
+    assertSameSchool(user, payload.sc_id);
     return this.studentService.addStudent(payload);
   }
 
   @Post('updateStudent')
   @HttpCode(HttpStatus.OK)
-  updateStudent(@Body() payload: UpdateStudentDto) {
-    return this.studentService.updateStudent(payload);
+  updateStudent(
+    @Body() payload: UpdateStudentDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.studentService.updateStudent(payload, user);
   }
 
   @Get('loadClassroom')
@@ -66,19 +77,31 @@ export class StudentController {
 
   @Post('checkSendRecord')
   @HttpCode(HttpStatus.OK)
-  checkSendRecord(@Body() payload: CheckSendRecordDto) {
+  checkSendRecord(
+    @Body() payload: CheckSendRecordDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
     return this.studentService.checkSendRecord(payload);
   }
 
   @Post('confirmSendRecord')
   @HttpCode(HttpStatus.OK)
-  confirmSendRecord(@Body() payload: ConfirmSendRecordDto) {
+  confirmSendRecord(
+    @Body() payload: ConfirmSendRecordDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
     return this.studentService.confirmSendRecord(payload);
   }
 
   @Post('checkClassOnYear')
   @HttpCode(HttpStatus.OK)
-  checkClassOnYear(@Body() payload: CheckClassOnYearDto) {
+  checkClassOnYear(
+    @Body() payload: CheckClassOnYearDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
     return this.studentService.checkClassOnYear(payload);
   }
 
@@ -87,7 +110,9 @@ export class StudentController {
   loadCalculatePerhead(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('year', ParseIntPipe) year: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.studentService.loadCalculatePerhead(scId, year);
   }
 
@@ -108,13 +133,19 @@ export class StudentController {
   loadBudgetAllocation(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.studentService.loadBudgetAllocation(scId, syId);
   }
 
   @Post('setBudgetAllocation')
   @HttpCode(HttpStatus.OK)
-  setBudgetAllocation(@Body() payload: SetBudgetAllocationDto) {
+  setBudgetAllocation(
+    @Body() payload: SetBudgetAllocationDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
     return this.studentService.setBudgetAllocation(payload);
   }
 
@@ -123,20 +154,30 @@ export class StudentController {
   loadPerheadRateSetting(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.studentService.loadPerheadRateSetting(scId, syId);
   }
 
   @Post('setPerheadRate')
   @HttpCode(HttpStatus.OK)
-  setPerheadRate(@Body() payload: SetPerheadRateDto) {
+  setPerheadRate(
+    @Body() payload: SetPerheadRateDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, payload.sc_id);
     return this.studentService.setPerheadRate(payload);
   }
 
   // ── ตั้งค่าว่าประเภทเงินใดกำหนดเงินต่อหัวได้ ────────────────────────────────
   @Get('loadPerheadBudgetTypes/:sc_id')
   @HttpCode(HttpStatus.OK)
-  loadPerheadBudgetTypes(@Param('sc_id', ParseIntPipe) scId: number) {
+  loadPerheadBudgetTypes(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
     return this.studentService.loadPerheadBudgetTypes(scId);
   }
 
@@ -149,14 +190,20 @@ export class StudentController {
       up_by?: number;
       items: { bg_type_school_id: number; perhead: number }[];
     },
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, payload.sc_id);
     return this.studentService.setPerheadBudgetTypes(payload);
   }
 
   // ── ชั้นที่เปิดสอนของโรงเรียน ────────────────────────────────────────────────
   @Get('loadSchoolClassrooms/:sc_id')
   @HttpCode(HttpStatus.OK)
-  loadSchoolClassrooms(@Param('sc_id', ParseIntPipe) scId: number) {
+  loadSchoolClassrooms(
+    @Param('sc_id', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
     return this.studentService.loadSchoolClassrooms(scId);
   }
 
@@ -169,7 +216,9 @@ export class StudentController {
       up_by?: number;
       items: { class_id: number; is_open: number }[];
     },
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, payload.sc_id);
     return this.studentService.setSchoolClassrooms(payload);
   }
 }

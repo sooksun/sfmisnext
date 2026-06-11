@@ -1,10 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SchoolYear } from '../school-year/entities/school-year.entity';
 import { Partner } from '../general-db/entities/partner.entity';
 import { BudgetIncomeType } from './entities/budget-income-type.entity';
 import { PlnRealBudget } from './entities/pln-real-budget.entity';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Injectable()
 export class PolicyService {
@@ -172,7 +176,7 @@ export class PolicyService {
     }
   }
 
-  async updateRealBudget(payload: Record<string, unknown>) {
+  async updateRealBudget(payload: Record<string, unknown>, user?: JwtUser) {
     try {
       const prbId = Number(payload.prb_id ?? 0);
       if (!prbId) return { flag: false, ms: 'ไม่พบรหัสรายการ' };
@@ -181,6 +185,7 @@ export class PolicyService {
         where: { prbId, del: 0 },
       });
       if (!row) return { flag: false, ms: 'ไม่พบรายการที่ต้องการแก้ไข' };
+      if (user) assertSameSchool(user, row.scId);
 
       row.bgTypeId = Number(payload.bg_type_id ?? row.bgTypeId);
       row.receivetype = Number(payload.receivetype ?? row.receivetype);
@@ -200,12 +205,13 @@ export class PolicyService {
       await this.plnRealBudgetRepository.save(row);
       return { flag: true, ms: 'บันทึกเรียบร้อยแล้ว' };
     } catch (err) {
+      if (err instanceof ForbiddenException) throw err;
       this.logger.error('updateRealBudget error:', err);
       return { flag: false, ms: 'บันทึกไม่สำเร็จ' };
     }
   }
 
-  async removeRealBudget(payload: Record<string, unknown>) {
+  async removeRealBudget(payload: Record<string, unknown>, user?: JwtUser) {
     try {
       const prbId = Number(payload.prb_id ?? 0);
       if (!prbId) return { flag: false, ms: 'ไม่พบรหัสรายการ' };
@@ -214,6 +220,7 @@ export class PolicyService {
         where: { prbId, del: 0 },
       });
       if (!row) return { flag: false, ms: 'ไม่พบรายการที่ต้องการลบ' };
+      if (user) assertSameSchool(user, row.scId);
 
       row.del = 1;
       row.updateDate = new Date();
@@ -222,6 +229,7 @@ export class PolicyService {
       await this.plnRealBudgetRepository.save(row);
       return { flag: true, ms: 'ลบเรียบร้อยแล้ว' };
     } catch (err) {
+      if (err instanceof ForbiddenException) throw err;
       this.logger.error('removeRealBudget error:', err);
       return { flag: false, ms: 'ลบไม่สำเร็จ' };
     }

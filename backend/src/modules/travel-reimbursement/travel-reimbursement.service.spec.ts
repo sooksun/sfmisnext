@@ -52,7 +52,9 @@ describe('TravelReimbursementService', () => {
     };
     trTxRepo = {
       create: jest.fn().mockImplementation((e) => e),
-      save: jest.fn().mockImplementation((e) => Promise.resolve({ trId: 1, ...e })),
+      save: jest
+        .fn()
+        .mockImplementation((e) => Promise.resolve({ trId: 1, ...e })),
     };
     trtTxRepo = {
       create: jest.fn().mockImplementation((e) => e),
@@ -89,10 +91,14 @@ describe('TravelReimbursementService', () => {
     };
     const trtRepo = { find: jest.fn().mockResolvedValue([]) };
     const adminRepo = {
-      findOne: jest.fn().mockResolvedValue({ adminId: 9, name: 'ครูสมชาย', position: 3 }),
+      findOne: jest
+        .fn()
+        .mockResolvedValue({ adminId: 9, name: 'ครูสมชาย', position: 3 }),
     };
     const budgetTypeRepo = {
-      findOne: jest.fn().mockResolvedValue({ bgTypeId: 5, budgetType: 'เงินรายได้สถานศึกษา' }),
+      findOne: jest
+        .fn()
+        .mockResolvedValue({ bgTypeId: 5, budgetType: 'เงินรายได้สถานศึกษา' }),
     };
     const laRepo = { find: jest.fn().mockResolvedValue([]) };
 
@@ -100,27 +106,56 @@ describe('TravelReimbursementService', () => {
       providers: [
         TravelReimbursementService,
         { provide: getRepositoryToken(TravelReimbursement), useValue: trRepo },
-        { provide: getRepositoryToken(TravelReimbursementTraveler), useValue: trtRepo },
+        {
+          provide: getRepositoryToken(TravelReimbursementTraveler),
+          useValue: trtRepo,
+        },
         { provide: getRepositoryToken(Admin), useValue: adminRepo },
-        { provide: getRepositoryToken(BudgetIncomeType), useValue: budgetTypeRepo },
+        {
+          provide: getRepositoryToken(BudgetIncomeType),
+          useValue: budgetTypeRepo,
+        },
         { provide: getRepositoryToken(LoanAgreement), useValue: laRepo },
-        { provide: getRepositoryToken(FinancialTransactions), useValue: ftRepo },
-        { provide: DocCounterService, useValue: { issueWithin: jest.fn().mockResolvedValue({ seq: 7, formatted: 'บค.7/2569' }) } },
+        {
+          provide: getRepositoryToken(FinancialTransactions),
+          useValue: ftRepo,
+        },
+        {
+          provide: DocCounterService,
+          useValue: {
+            issueWithin: jest
+              .fn()
+              .mockResolvedValue({ seq: 7, formatted: 'บค.7/2569' }),
+          },
+        },
         { provide: DataSource, useValue: dataSource },
         {
           provide: FundBalanceService,
           useValue: {
-            available: jest.fn().mockImplementation(() => Promise.resolve(totalAvailable)),
-            availableInTx: jest.fn().mockImplementation(() => Promise.resolve(totalAvailable)),
-            availableCash: jest.fn().mockImplementation(() => Promise.resolve(cashAvailable)),
-            availableCashInTx: jest.fn().mockImplementation(() => Promise.resolve(cashAvailable)),
+            available: jest
+              .fn()
+              .mockImplementation(() => Promise.resolve(totalAvailable)),
+            availableInTx: jest
+              .fn()
+              .mockImplementation(() => Promise.resolve(totalAvailable)),
+            availableCash: jest
+              .fn()
+              .mockImplementation(() => Promise.resolve(cashAvailable)),
+            availableCashInTx: jest
+              .fn()
+              .mockImplementation(() => Promise.resolve(cashAvailable)),
           },
         },
-        { provide: RegulatoryConfigService, useValue: { getThreshold: jest.fn().mockResolvedValue(1) } },
+        {
+          provide: RegulatoryConfigService,
+          useValue: { getThreshold: jest.fn().mockResolvedValue(1) },
+        },
       ],
     }).compile();
 
-    service = module.get<TravelReimbursementService>(TravelReimbursementService);
+    service = module.get<TravelReimbursementService>(
+      TravelReimbursementService,
+    );
   });
 
   it('ยื่นขอเบิก → รวมยอดจาก travelers + สถานะ 10 (รอตรวจสอบ)', async () => {
@@ -131,7 +166,13 @@ describe('TravelReimbursementService', () => {
       requester_id: 9,
       money_type_id: 5,
       travelers: [
-        { name: 'ครูสมชาย', allowance: 720, lodging: 1200, transport: 500, other: 0 },
+        {
+          name: 'ครูสมชาย',
+          allowance: 720,
+          lodging: 1200,
+          transport: 500,
+          other: 0,
+        },
       ],
       up_by: 9,
     } as any);
@@ -143,13 +184,29 @@ describe('TravelReimbursementService', () => {
 
   it('จ่ายตรง (ไม่เชื่อมเงินยืม) → FT -1 เงินสด(บค.) ตามยอดรวม', async () => {
     currentTr = {
-      trId: 1, scId: 1, syId: 3, budgetYear: '2569',
-      moneyTypeId: 5, laId: null, grandTotal: 2420, status: 12,
+      trId: 1,
+      scId: 1,
+      syId: 3,
+      budgetYear: '2569',
+      moneyTypeId: 5,
+      laId: null,
+      grandTotal: 2420,
+      status: 12,
     };
-    const res = await service.disburse({ tr_id: 1, receipt_date: '2026-06-05', type_offer_check: 1, up_by: 9 });
+    const res = await service.disburse({
+      tr_id: 1,
+      receipt_date: '2026-06-05',
+      type_offer_check: 1,
+      up_by: 9,
+    });
     expect(res.flag).toBe(true);
     expect(savedFts).toHaveLength(1);
-    expect(savedFts[0]).toMatchObject({ type: -1, bgTypeId: 5, amount: 2420, moneyChannel: 1 });
+    expect(savedFts[0]).toMatchObject({
+      type: -1,
+      bgTypeId: 5,
+      amount: 2420,
+      moneyChannel: 1,
+    });
     const savedTr = trTxRepo.save.mock.calls[0][0];
     expect(savedTr.status).toBe(2);
     expect(savedTr.bcNo).toBe('บค.7/2569');
@@ -158,22 +215,52 @@ describe('TravelReimbursementService', () => {
   it('จ่ายเงินสดเกินยอดเงินสดคงเหลือ → block (ไม่สร้าง FT)', async () => {
     cashAvailable = 1000; // เงินสด 1,000 แต่จ่าย 2,420
     currentTr = {
-      trId: 1, scId: 1, syId: 3, budgetYear: '2569',
-      moneyTypeId: 5, laId: null, grandTotal: 2420, status: 12,
+      trId: 1,
+      scId: 1,
+      syId: 3,
+      budgetYear: '2569',
+      moneyTypeId: 5,
+      laId: null,
+      grandTotal: 2420,
+      status: 12,
     };
-    const res = await service.disburse({ tr_id: 1, receipt_date: '2026-06-05', type_offer_check: 1, up_by: 9 });
+    const res = await service.disburse({
+      tr_id: 1,
+      receipt_date: '2026-06-05',
+      type_offer_check: 1,
+      up_by: 9,
+    });
     expect(res.flag).toBe(false);
     expect(res.ms).toContain('เงินสด');
     expect(savedFts).toHaveLength(0);
   });
 
   it('เชื่อมเงินยืม จ่ายจริง < ยืม → ส่งใช้ + คืนเงินสด (FT +1) ปิดเงินยืม', async () => {
-    currentLoan = { laId: 50, laNo: 'บย.1/2569', scId: 1, syId: 3, moneyTypeId: 5, amount: 3000, status: 1 };
-    currentTr = {
-      trId: 1, scId: 1, syId: 3, budgetYear: '2569',
-      moneyTypeId: 5, laId: 50, grandTotal: 2420, status: 12,
+    currentLoan = {
+      laId: 50,
+      laNo: 'บย.1/2569',
+      scId: 1,
+      syId: 3,
+      moneyTypeId: 5,
+      amount: 3000,
+      status: 1,
     };
-    const res = await service.disburse({ tr_id: 1, receipt_date: '2026-06-05', type_offer_check: 1, up_by: 9 });
+    currentTr = {
+      trId: 1,
+      scId: 1,
+      syId: 3,
+      budgetYear: '2569',
+      moneyTypeId: 5,
+      laId: 50,
+      grandTotal: 2420,
+      status: 12,
+    };
+    const res = await service.disburse({
+      tr_id: 1,
+      receipt_date: '2026-06-05',
+      type_offer_check: 1,
+      up_by: 9,
+    });
     expect(res.flag).toBe(true);
     // ไม่จ่ายเงินใหม่ (เงินออกตอนยืมแล้ว) → มีแต่ FT คืนเงินสด 580
     expect(savedFts).toHaveLength(1);
@@ -184,12 +271,31 @@ describe('TravelReimbursementService', () => {
   });
 
   it('เชื่อมเงินยืม จ่ายจริง > ยืม → ปิดเงินยืม + เบิกเพิ่มส่วนต่าง (FT -1)', async () => {
-    currentLoan = { laId: 50, laNo: 'บย.1/2569', scId: 1, syId: 3, moneyTypeId: 5, amount: 2000, status: 1 };
-    currentTr = {
-      trId: 1, scId: 1, syId: 3, budgetYear: '2569',
-      moneyTypeId: 5, laId: 50, grandTotal: 2420, status: 12,
+    currentLoan = {
+      laId: 50,
+      laNo: 'บย.1/2569',
+      scId: 1,
+      syId: 3,
+      moneyTypeId: 5,
+      amount: 2000,
+      status: 1,
     };
-    const res = await service.disburse({ tr_id: 1, receipt_date: '2026-06-05', type_offer_check: 1, up_by: 9 });
+    currentTr = {
+      trId: 1,
+      scId: 1,
+      syId: 3,
+      budgetYear: '2569',
+      moneyTypeId: 5,
+      laId: 50,
+      grandTotal: 2420,
+      status: 12,
+    };
+    const res = await service.disburse({
+      tr_id: 1,
+      receipt_date: '2026-06-05',
+      type_offer_check: 1,
+      up_by: 9,
+    });
     expect(res.flag).toBe(true);
     // เบิกเพิ่ม 420 (FT -1) ; ปิดเงินยืมด้วย voucher=2000
     expect(savedFts).toHaveLength(1);

@@ -9,6 +9,10 @@ import {
   SubmitDto,
   ConfirmDto,
 } from './dto/monthly-submission.dto';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const DEFAULT_CHECKLIST = [
   { id: 1, label: 'รายงานเงินคงเหลือประจำวัน' },
@@ -166,11 +170,12 @@ export class MonthlySubmissionService {
     return { flag: true, ms: 'บันทึกเรียบร้อยแล้ว' };
   }
 
-  async submitMonth(dto: SubmitDto) {
+  async submitMonth(dto: SubmitDto, user?: JwtUser) {
     const record = await this.msRepo.findOne({
       where: { msId: dto.ms_id, del: 0 },
     });
     if (!record) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user) assertSameSchool(user, record.scId);
     if (record.status === 3)
       return { flag: false, ms: 'ยืนยันแล้ว ไม่สามารถแก้ไขได้' };
 
@@ -192,11 +197,12 @@ export class MonthlySubmissionService {
     return { flag: true, ms: 'ส่งรายงานเรียบร้อยแล้ว' };
   }
 
-  async confirmSubmission(dto: ConfirmDto) {
+  async confirmSubmission(dto: ConfirmDto, user?: JwtUser) {
     const record = await this.msRepo.findOne({
       where: { msId: dto.ms_id, del: 0 },
     });
     if (!record) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user) assertSameSchool(user, record.scId);
     if (record.status === 3) return { flag: false, ms: 'ยืนยันแล้ว' };
 
     record.status = 3;
@@ -229,6 +235,7 @@ export class MonthlySubmissionService {
     return {
       hasAlert: overdueMonths.length > 0,
       overdue_months: overdueMonths,
+      submit_day: submitDay, // วันกำหนดส่งของเดือนถัดไป (finance.monthly_submit_day)
     };
   }
 }

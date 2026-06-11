@@ -8,7 +8,8 @@ import {
 } from 'typeorm';
 
 @Index(['scId', 'del'])
-@Index(['scId', 'faCode'])
+// เลขครุภัณฑ์ห้ามซ้ำในโรงเรียนเดียวกัน (DB-level — เดิมกันที่ application เท่านั้น)
+@Index('uidx_fa_code', ['scId', 'faCode'], { unique: true })
 @Entity('tb_fixed_asset')
 export class FixedAsset {
   @PrimaryGeneratedColumn({ name: 'fa_id' })

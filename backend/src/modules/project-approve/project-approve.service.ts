@@ -21,6 +21,7 @@ import { Unit } from '../general-db/entities/unit.entity';
 import { Project } from '../project/entities/project.entity';
 import { School } from '../school/entities/school.entity';
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
+import { CrossDomainGuardService } from '../cross-domain-guard/cross-domain-guard.service';
 import { checkMethodCompliance } from './procurement-rules.util';
 
 // สถานะที่ถือว่า "ยกเลิก/ไม่อนุมัติ" — ไม่นับในยอดที่ใช้ไป
@@ -54,6 +55,7 @@ export class ProjectApproveService {
     @InjectRepository(School)
     private readonly schoolRepository: Repository<School>,
     private readonly regulatoryConfig: RegulatoryConfigService,
+    private readonly crossDomainGuard: CrossDomainGuardService,
   ) {}
 
   /**
@@ -227,7 +229,9 @@ export class ProjectApproveService {
     const details = await this.parcelDetailRepository.find({
       where: { orderId, del: 0 },
     });
-    const suppIds = details.map((d) => d.suppId).filter((x): x is number => !!x);
+    const suppIds = details
+      .map((d) => d.suppId)
+      .filter((x): x is number => !!x);
     const supplies = suppIds.length
       ? await this.suppliesRepository.find({ where: { suppId: In(suppIds) } })
       : [];
@@ -253,7 +257,9 @@ export class ProjectApproveService {
       .map((x) => Number(x))
       .filter((x) => x > 0);
     const admins = committeeIds.length
-      ? await this.adminRepository.find({ where: { adminId: In(committeeIds) } })
+      ? await this.adminRepository.find({
+          where: { adminId: In(committeeIds) },
+        })
       : [];
     const committee = committeeIds.map(
       (id) => admins.find((a) => a.adminId === id)?.name ?? '',
@@ -393,6 +399,16 @@ export class ProjectApproveService {
       2,
       'การเงิน',
     );
+
+    // G1: การเงินอนุมัติ = จุดก่อหนี้ — ห้ามผลรวมคำสั่งซื้อเกินงบโครงการ
+    if (dto.order_status !== 0) {
+      await this.crossDomainGuard.assertProjectNotOvercommitted({
+        scId,
+        projectId: order.projectId,
+        newAmount: Number(order.budgets ?? 0),
+        excludeOrderId: order.orderId,
+      });
+    }
 
     if (dto.remark) order.remarkCfBusiness = dto.remark;
     if (dto.order_status === 0) {
@@ -700,6 +716,16 @@ export class ProjectApproveService {
       };
     }
 
+    // G1: ถ้าแก้วงเงินคำสั่งซื้อ ตรวจไม่ให้ผลรวมของโครงการเกินงบ (ก่อนบันทึก)
+    if (dto.budgets !== undefined) {
+      await this.crossDomainGuard.assertProjectNotOvercommitted({
+        scId,
+        projectId: order.projectId,
+        newAmount: Number(dto.budgets ?? 0),
+        excludeOrderId: order.orderId,
+      });
+    }
+
     if (dto.project_type !== undefined) order.projectType = dto.project_type;
     if (dto.method_type !== undefined) order.methodType = dto.method_type;
     if (dto.method_reason !== undefined) order.methodReason = dto.method_reason;
@@ -944,14 +970,14 @@ export class ProjectApproveService {
   }
 
   async loadDirector(scId: number) {
-    // Load admin users with type = 8 (หัวหน้าการเงิน) or type = 2 (ผู้อำนวยการ)
+    // รายชื่อบุคลากรที่เลือกเป็น "กรรมการตรวจรับ" ได้
+    //   type 2 = ผู้อำนวยการ/ผู้ดูแลโรงเรียน, 8 = หัวหน้าการเงิน, 3 = ครู/เจ้าหน้าที่
     const directors = await this.adminRepository
       .createQueryBuilder('admin')
       .where('admin.scId = :scId', { scId })
       .andWhere('admin.del = :del', { del: 0 })
-      .andWhere('(admin.type = :type1 OR admin.type = :type2)', {
-        type1: 8,
-        type2: 2,
+      .andWhere('admin.type IN (:...committeeTypes)', {
+        committeeTypes: [2, 3, 8],
       })
       .orderBy('admin.adminId', 'ASC')
       .getMany();

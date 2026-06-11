@@ -7,6 +7,11 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { DayCloseCheckService } from './day-close-check.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('DayCloseCheck')
 export class DayCloseCheckController {
@@ -22,7 +27,9 @@ export class DayCloseCheckController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('check_date') checkDate: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.dayCloseCheckService.runDayCloseCheck(scId, syId, checkDate);
   }
 
@@ -36,7 +43,9 @@ export class DayCloseCheckController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('ref_type') refType: string,
     @Param('ref_id', ParseIntPipe) refId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.dayCloseCheckService.getTimeline(scId, refType, refId);
   }
 }

@@ -29,10 +29,25 @@ describe('StudentService', () => {
     };
     submitRepo = { findOne: jest.fn(), save: jest.fn() };
     classroomRepo = { find: jest.fn() };
-    classroomBudgetRepo = { find: jest.fn(), findOne: jest.fn(), create: jest.fn(), save: jest.fn() };
+    classroomBudgetRepo = {
+      find: jest.fn(),
+      findOne: jest.fn(),
+      create: jest.fn(),
+      save: jest.fn(),
+    };
     budgetTypeRepo = { find: jest.fn() };
-    budgetTypeSchoolRepo = { find: jest.fn(), findOne: jest.fn(), create: jest.fn(), save: jest.fn() };
-    schoolClassroomRepo = { find: jest.fn().mockResolvedValue([]), findOne: jest.fn(), create: jest.fn((x) => x), save: jest.fn() };
+    budgetTypeSchoolRepo = {
+      find: jest.fn(),
+      findOne: jest.fn(),
+      create: jest.fn(),
+      save: jest.fn(),
+    };
+    schoolClassroomRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
+      create: jest.fn((x) => x),
+      save: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -42,12 +57,18 @@ describe('StudentService', () => {
           provide: getRepositoryToken(SubmittingStudentRecords),
           useValue: submitRepo,
         },
-        { provide: getRepositoryToken(MasterClassroom), useValue: classroomRepo },
+        {
+          provide: getRepositoryToken(MasterClassroom),
+          useValue: classroomRepo,
+        },
         {
           provide: getRepositoryToken(MasterClassroomBudget),
           useValue: classroomBudgetRepo,
         },
-        { provide: getRepositoryToken(BudgetIncomeType), useValue: budgetTypeRepo },
+        {
+          provide: getRepositoryToken(BudgetIncomeType),
+          useValue: budgetTypeRepo,
+        },
         {
           provide: getRepositoryToken(BudgetIncomeTypeSchool),
           useValue: budgetTypeSchoolRepo,
@@ -378,7 +399,14 @@ describe('StudentService', () => {
   describe('loadCalculatePerhead', () => {
     it('คำนวณ total = stCount * amount และ totalprice รวม', async () => {
       studentRepo.find.mockResolvedValue([
-        { stId: 1, classId: 10, stCount: 20, scId: 5, syId: 3, budgetYear: '2569' },
+        {
+          stId: 1,
+          classId: 10,
+          stCount: 20,
+          scId: 5,
+          syId: 3,
+          budgetYear: '2569',
+        },
       ]);
       classroomRepo.find.mockResolvedValue([{ classId: 10, classLev: 'ป.1' }]);
       budgetTypeSchoolRepo.find.mockResolvedValue([{ bgTypeId: 1 }]);
@@ -745,8 +773,18 @@ describe('StudentService', () => {
       ]);
       const result = await service.loadPerheadBudgetTypes(5);
       expect(result).toEqual([
-        { bg_type_school_id: 1, bg_type_id: 10, budget_type: 'เงินอุดหนุนรายหัว', perhead: 1 },
-        { bg_type_school_id: 2, bg_type_id: 20, budget_type: 'เงินรายได้สถานศึกษา', perhead: 0 },
+        {
+          bg_type_school_id: 1,
+          bg_type_id: 10,
+          budget_type: 'เงินอุดหนุนรายหัว',
+          perhead: 1,
+        },
+        {
+          bg_type_school_id: 2,
+          bg_type_id: 20,
+          budget_type: 'เงินรายได้สถานศึกษา',
+          perhead: 0,
+        },
       ]);
     });
 
@@ -755,24 +793,53 @@ describe('StudentService', () => {
       const result = await service.loadPerheadBudgetTypes(5);
       expect(result).toEqual([]);
     });
+
+    it('dedup หลายแถวต่อ bg_type_id (ผูกหลายบัญชี) → 1 รายการ/type, perhead=0 ถ้ามีแถวใดเป็น 0', async () => {
+      // type 10 มี 2 แถว (perhead 1 และ 0) → ต้องถือเป็น 0 (ไม่กำหนด)
+      // type 20 มี 2 แถว (perhead 1 และ 1) → 1
+      budgetTypeSchoolRepo.find.mockResolvedValue([
+        { bgTypeSchoolId: 1, bgTypeId: 10, perhead: 1 },
+        { bgTypeSchoolId: 5, bgTypeId: 10, perhead: 0 },
+        { bgTypeSchoolId: 2, bgTypeId: 20, perhead: 1 },
+        { bgTypeSchoolId: 6, bgTypeId: 20, perhead: 1 },
+      ]);
+      budgetTypeRepo.find.mockResolvedValue([
+        { bgTypeId: 10, budgetType: 'A' },
+        { bgTypeId: 20, budgetType: 'B' },
+      ]);
+      const result = await service.loadPerheadBudgetTypes(5);
+      expect(result).toHaveLength(2); // dedup
+      const t10 = result.find((r) => r.bg_type_id === 10);
+      const t20 = result.find((r) => r.bg_type_id === 20);
+      expect(t10?.perhead).toBe(0); // มีแถว 0 → 0
+      expect(t20?.perhead).toBe(1);
+    });
   });
 
   describe('setPerheadBudgetTypes', () => {
-    it('อัปเดต perhead (truthy→1, falsy→0) เฉพาะแถวของโรงเรียน', async () => {
-      const row: any = { bgTypeSchoolId: 1, scId: 5, perhead: 1, del: 0 };
-      budgetTypeSchoolRepo.findOne.mockResolvedValue(row);
-      budgetTypeSchoolRepo.save.mockResolvedValue(row);
+    it('อัปเดต perhead "ทุกแถว" ของ bg_type เดียวกัน (ทุกบัญชีธนาคาร)', async () => {
+      const ref: any = { bgTypeSchoolId: 1, scId: 5, bgTypeId: 10, perhead: 1 };
+      const rows: any[] = [
+        { bgTypeSchoolId: 1, scId: 5, bgTypeId: 10, perhead: 1, del: 0 },
+        { bgTypeSchoolId: 7, scId: 5, bgTypeId: 10, perhead: 1, del: 0 },
+      ];
+      budgetTypeSchoolRepo.findOne.mockResolvedValue(ref);
+      budgetTypeSchoolRepo.find.mockResolvedValue(rows);
+      budgetTypeSchoolRepo.save.mockImplementation((r: any) => Promise.resolve(r));
       const result = await service.setPerheadBudgetTypes({
         sc_id: 5,
         up_by: 9,
         items: [{ bg_type_school_id: 1, perhead: 0 }],
       });
-      expect(row.perhead).toBe(0);
-      expect(row.upBy).toBe(9);
+      // ทุกแถวของ type 10 ต้องเป็น 0 (กันแถวอื่นค้าง 1 แล้วติ๊กกลับมาเอง)
+      expect(rows[0].perhead).toBe(0);
+      expect(rows[1].perhead).toBe(0);
+      expect(rows[0].upBy).toBe(9);
+      expect(budgetTypeSchoolRepo.save).toHaveBeenCalledTimes(2);
       expect(result.flag).toBe(true);
     });
 
-    it('ไม่พบแถว → ข้ามไป (ยังคืน flag: true)', async () => {
+    it('ไม่พบแถวอ้างอิง → ข้ามไป (ยังคืน flag: true)', async () => {
       budgetTypeSchoolRepo.findOne.mockResolvedValue(null);
       const result = await service.setPerheadBudgetTypes({
         sc_id: 5,
@@ -791,9 +858,7 @@ describe('StudentService', () => {
         { classId: 2, classLev: 'ป.2' },
         { classId: 3, classLev: 'ป.3' },
       ]);
-      schoolClassroomRepo.find.mockResolvedValue([
-        { classId: 2, isOpen: 0 },
-      ]);
+      schoolClassroomRepo.find.mockResolvedValue([{ classId: 2, isOpen: 0 }]);
       const result = await service.loadSchoolClassrooms(5);
       expect(result).toEqual([
         { class_id: 1, class_lev: 'ป.1', is_open: 1 },

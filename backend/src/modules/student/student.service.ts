@@ -15,6 +15,10 @@ import { SetBudgetAllocationDto } from './dto/set-budget-allocation.dto';
 import { SetPerheadRateDto } from './dto/set-perhead-rate.dto';
 import { BudgetIncomeTypeSchool } from '../bank/entities/budget-income-type-school.entity';
 import { SchoolClassroom } from './entities/school-classroom.entity';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 interface ClassroomBudgetPayload {
   class_id: number;
@@ -232,7 +236,7 @@ export class StudentService {
     }));
   }
 
-  async updateStudent(payload: UpdateStudentDto) {
+  async updateStudent(payload: UpdateStudentDto, user?: JwtUser) {
     const student = await this.studentRepository.findOne({
       where: { stId: payload.st_id, del: 0 },
     });
@@ -240,6 +244,8 @@ export class StudentService {
     if (!student) {
       return { flag: false, ms: 'ไม่พบข้อมูลนักเรียน' };
     }
+
+    if (user) assertSameSchool(user, student.scId);
 
     if (payload.st_count !== undefined) {
       student.stCount = payload.st_count;
@@ -720,11 +726,18 @@ export class StudentService {
       this.logger.debug('Existing allocations:', existing.length);
 
       // เก็บค่า perhead เดิมของแต่ละ bg_type_id ไว้ก่อนลบ
-      // เพื่อไม่ให้การตั้งค่า "ประเภทเงินที่กำหนดรายหัวได้" (หน้า 1.3) ถูกรีเซ็ตเป็น 1
+      // เพื่อไม่ให้การตั้งค่า "ประเภทเงินที่กำหนดรายหัวได้" ถูกรีเซ็ตเป็น 1
+      // กรณีมีหลายแถวต่อ bg_type_id (ผูกหลายบัญชี) ถ้ามีแถวใดเป็น 0 ให้ถือเป็น 0
+      // (เคารพเจตนา "ไม่กำหนด" ของผู้ใช้ — กันติ๊กกลับมาเอง)
       const perheadByType = new Map<number, number>();
       for (const item of existing) {
         if (item.bgTypeId != null) {
-          perheadByType.set(item.bgTypeId, item.perhead ?? 1);
+          const ph = item.perhead ?? 1;
+          const cur = perheadByType.get(item.bgTypeId);
+          perheadByType.set(
+            item.bgTypeId,
+            cur === undefined ? ph : Math.min(cur, ph),
+          );
         }
       }
 
@@ -919,10 +932,16 @@ export class StudentService {
 
   // ── ตั้งค่าประเภทเงินที่กำหนดเงินต่อหัวได้ ────────────────────────────────────
   // คืนประเภทเงินที่โรงเรียนเลือกใช้ พร้อม flag perhead (1=กำหนดรายหัวได้)
+  //
+  // หมายเหตุสำคัญ: budget_income_type_school มีได้ "หลายแถวต่อ bg_type_id"
+  // (1 แถวต่อบัญชีธนาคารที่ผูกไว้ — ba_id ต่างกัน) perhead เป็นคุณสมบัติของ
+  // "ประเภทเงิน" ไม่ใช่ของบัญชี ดังนั้นต้อง dedup เป็น 1 รายการต่อ bg_type_id
+  // และถือว่า "ไม่กำหนด" (perhead=0) ถ้ามีแถวใดแถวหนึ่งของประเภทนั้นตั้งเป็น 0
+  // (กันอาการติ๊กกลับมาเองเมื่ออัปเดตแค่บางแถว)
   async loadPerheadBudgetTypes(scId: number) {
     const schoolTypes = await this.budgetIncomeTypeSchoolRepository.find({
       where: { scId, del: 0 },
-      order: { bgTypeId: 'ASC' },
+      order: { bgTypeId: 'ASC', bgTypeSchoolId: 'ASC' },
     });
     const ids = schoolTypes
       .map((s) => s.bgTypeId)
@@ -935,11 +954,31 @@ export class StudentService {
     const name = (id: number | null) =>
       masters.find((m) => m.bgTypeId === id)?.budgetType ?? '';
 
-    return schoolTypes.map((s) => ({
-      bg_type_school_id: s.bgTypeSchoolId,
-      bg_type_id: s.bgTypeId,
-      budget_type: name(s.bgTypeId),
-      perhead: s.perhead ?? 1,
+    // dedup ตาม bg_type_id — เก็บแถวแรกเป็นตัวแทน + perhead = 0 ถ้ามีแถวใดเป็น 0
+    const byType = new Map<
+      number,
+      { bg_type_school_id: number; bg_type_id: number; perhead: number }
+    >();
+    for (const s of schoolTypes) {
+      if (s.bgTypeId == null) continue;
+      const cur = byType.get(s.bgTypeId);
+      const ph = s.perhead ?? 1;
+      if (!cur) {
+        byType.set(s.bgTypeId, {
+          bg_type_school_id: s.bgTypeSchoolId,
+          bg_type_id: s.bgTypeId,
+          perhead: ph,
+        });
+      } else if (ph === 0) {
+        cur.perhead = 0; // ถ้ามีแถวใดตั้งไม่กำหนด → ถือว่าไม่กำหนด
+      }
+    }
+
+    return Array.from(byType.values()).map((v) => ({
+      bg_type_school_id: v.bg_type_school_id,
+      bg_type_id: v.bg_type_id,
+      budget_type: name(v.bg_type_id),
+      perhead: v.perhead,
     }));
   }
 
@@ -950,14 +989,22 @@ export class StudentService {
   }) {
     try {
       for (const it of payload.items ?? []) {
-        const row = await this.budgetIncomeTypeSchoolRepository.findOne({
+        // หา bg_type_id จากแถวตัวแทนที่ frontend ส่งมา
+        const ref = await this.budgetIncomeTypeSchoolRepository.findOne({
           where: {
             bgTypeSchoolId: it.bg_type_school_id,
             scId: payload.sc_id,
             del: 0,
           },
         });
-        if (row) {
+        if (!ref || ref.bgTypeId == null) continue;
+
+        // อัปเดต perhead ให้ "ทุกแถว" ของประเภทเงินนี้ (ทุกบัญชีธนาคาร) ตรงกัน
+        // กันอาการแถวอื่น (ba_id อื่น) ค้าง perhead=1 แล้วติ๊กกลับมาเอง
+        const rows = await this.budgetIncomeTypeSchoolRepository.find({
+          where: { scId: payload.sc_id, bgTypeId: ref.bgTypeId, del: 0 },
+        });
+        for (const row of rows) {
           row.perhead = it.perhead ? 1 : 0;
           if (payload.up_by !== undefined) row.upBy = payload.up_by;
           row.updateDate = new Date();

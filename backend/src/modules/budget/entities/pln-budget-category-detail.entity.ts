@@ -17,7 +17,8 @@ export class PlnBudgetCategoryDetail {
   @Column({ name: 'pbc_id', type: 'int', nullable: true })
   pbcId: number | null;
 
-  @Column({ type: 'int', default: 0 })
+  // ยอดงบประมาณมีทศนิยมได้ (ให้ตรงกับ pln_budget_category.total ที่เป็น float)
+  @Column({ type: 'float', precision: 15, scale: 2, default: 0 })
   budget: number;
 
   @Column({ name: 'budget_year', type: 'int', nullable: true })

@@ -5,6 +5,10 @@ import { WithholdingCertificate } from './entities/withholding-certificate.entit
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { Partner } from '../general-db/entities/partner.entity';
 import { calcWithholding } from '../../common/utils/withholding.util';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Injectable()
 export class RegistrationCertificateService {
@@ -135,21 +139,27 @@ export class RegistrationCertificateService {
     return { flag: true, ms: 'บันทึกเรียบร้อยแล้ว' };
   }
 
-  async updateWithholdingCertificate(dto: {
-    wc_id: number;
-    sc_id?: number;
-    wc_no?: string;
-    of_id?: number;
-    wc_rank?: number;
-    cer_date?: string;
-    status?: number;
-    del?: number;
-    up_by?: number;
-  }) {
+  async updateWithholdingCertificate(
+    dto: {
+      wc_id: number;
+      sc_id?: number;
+      wc_no?: string;
+      of_id?: number;
+      wc_rank?: number;
+      cer_date?: string;
+      status?: number;
+      del?: number;
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
     const cert = await this.withholdingCertificateRepository.findOne({
       where: { wcId: dto.wc_id, del: 0 },
     });
     if (!cert) return { flag: false, ms: 'ไม่พบข้อมูล' };
+
+    // Multi-tenant guard: record ต้องเป็นของโรงเรียนผู้ใช้ (super admin ข้ามได้)
+    if (user && cert.scId != null) assertSameSchool(user, cert.scId);
 
     // H6: ห้ามแก้ไขหนังสือรับรองที่ออกแล้ว (status=101)
     if (cert.status === 101 && dto.del !== 1) {
@@ -232,13 +242,15 @@ export class RegistrationCertificateService {
     ];
     const budgetTypeMap = new Map<number, string>();
     if (bgTypeIds.length > 0) {
-      const bts = (await this.requestWithdrawRepository.manager.query(
+      const bts = await this.requestWithdrawRepository.manager.query(
         `SELECT bg_type_id, budget_type FROM master_budget_income_type WHERE bg_type_id IN (${bgTypeIds
           .map(() => '?')
           .join(',')})`,
         bgTypeIds,
-      )) as { bg_type_id: number; budget_type: string }[];
-      bts.forEach((b) => budgetTypeMap.set(Number(b.bg_type_id), b.budget_type));
+      );
+      bts.forEach((b) =>
+        budgetTypeMap.set(Number(b.bg_type_id), b.budget_type),
+      );
     }
 
     return certificates.map((cert) => {

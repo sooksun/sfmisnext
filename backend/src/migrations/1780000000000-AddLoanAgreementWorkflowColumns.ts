@@ -78,9 +78,7 @@ export class AddLoanAgreementWorkflowColumns1780000000000
     const have = await this.existing(queryRunner);
     for (const col of this.columns) {
       if (!have.has(col.name)) {
-        await queryRunner.query(
-          `ALTER TABLE \`loan_agreement\` ${col.ddl}`,
-        );
+        await queryRunner.query(`ALTER TABLE \`loan_agreement\` ${col.ddl}`);
       }
     }
   }

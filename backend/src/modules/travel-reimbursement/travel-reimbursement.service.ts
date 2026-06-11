@@ -12,6 +12,10 @@ import { LoanReturnEvidence } from '../loan-agreement/entities/loan-return-evide
 import { DocCounterService } from '../doc-counter/doc-counter.service';
 import { FundBalanceService } from '../fund-balance/fund-balance.service';
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const STATUS = {
   PENDING_VERIFY: 10, // รอตรวจสอบ (เจ้าหน้าที่การเงิน)
@@ -114,7 +118,12 @@ export class TravelReimbursementService {
     };
   }
 
-  async loadTravelers(trId: number) {
+  async loadTravelers(trId: number, user?: JwtUser) {
+    // Multi-tenant guard: ผู้ร่วมเดินทางต้องเป็นของใบขอเบิกในโรงเรียนผู้ใช้
+    if (user) {
+      const tr = await this.trRepo.findOne({ where: { trId, del: 0 } });
+      if (tr && tr.scId != null) assertSameSchool(user, tr.scId);
+    }
     const rows = await this.trtRepo.find({
       where: { trId, del: 0 },
       order: { seq: 'ASC' },
@@ -144,7 +153,8 @@ export class TravelReimbursementService {
     if (admin) {
       requesterName = admin.name ?? admin.username ?? null;
       if (!requesterPosition)
-        requesterPosition = admin.position != null ? String(admin.position) : null;
+        requesterPosition =
+          admin.position != null ? String(admin.position) : null;
     }
 
     let moneyTypeName: string | null = null;
@@ -181,7 +191,9 @@ export class TravelReimbursementService {
     const lodgingTotal = r2(norm.reduce((s, t) => s + t.lodging, 0));
     const transportTotal = r2(norm.reduce((s, t) => s + t.transport, 0));
     const otherTotal = r2(norm.reduce((s, t) => s + t.other, 0));
-    const grandTotal = r2(allowanceTotal + lodgingTotal + transportTotal + otherTotal);
+    const grandTotal = r2(
+      allowanceTotal + lodgingTotal + transportTotal + otherTotal,
+    );
 
     if (grandTotal <= 0) {
       return { flag: false, ms: 'กรุณาระบุค่าใช้จ่ายอย่างน้อย 1 รายการ' };
@@ -240,15 +252,21 @@ export class TravelReimbursementService {
     });
   }
 
-  async verify(dto: {
-    tr_id: number;
-    verify_by: number;
-    verify_name?: string;
-    verify_date: string;
-    up_by?: number;
-  }) {
-    const tr = await this.trRepo.findOne({ where: { trId: dto.tr_id, del: 0 } });
+  async verify(
+    dto: {
+      tr_id: number;
+      verify_by: number;
+      verify_name?: string;
+      verify_date: string;
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
+    const tr = await this.trRepo.findOne({
+      where: { trId: dto.tr_id, del: 0 },
+    });
     if (!tr) return { flag: false, ms: 'ไม่พบใบขอเบิกค่าเดินทาง' };
+    if (user && tr.scId != null) assertSameSchool(user, tr.scId);
     if (tr.status !== STATUS.PENDING_VERIFY)
       return {
         flag: false,
@@ -263,15 +281,21 @@ export class TravelReimbursementService {
     return { flag: true, ms: 'ตรวจสอบเรียบร้อยแล้ว (รออนุมัติ)' };
   }
 
-  async approve(dto: {
-    tr_id: number;
-    approve_by: number;
-    approve_name?: string;
-    approve_date: string;
-    up_by?: number;
-  }) {
-    const tr = await this.trRepo.findOne({ where: { trId: dto.tr_id, del: 0 } });
+  async approve(
+    dto: {
+      tr_id: number;
+      approve_by: number;
+      approve_name?: string;
+      approve_date: string;
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
+    const tr = await this.trRepo.findOne({
+      where: { trId: dto.tr_id, del: 0 },
+    });
     if (!tr) return { flag: false, ms: 'ไม่พบใบขอเบิกค่าเดินทาง' };
+    if (user && tr.scId != null) assertSameSchool(user, tr.scId);
     if (tr.status !== STATUS.PENDING_APPROVE)
       return {
         flag: false,
@@ -293,14 +317,20 @@ export class TravelReimbursementService {
    *      จ่ายจริง > ยืม → ปิดเงินยืม + เบิกเพิ่มส่วนต่าง (FT -1, บค.)
    *  - กรณีไม่เชื่อมเงินยืม: จ่ายเต็มจำนวนเป็น บค. (FT -1)
    */
-  async disburse(dto: {
-    tr_id: number;
-    receipt_date: string;
-    type_offer_check?: number; // 1=เงินสด(บค.) 2=เช็ค(บจ.)
-    up_by?: number;
-  }) {
-    const tr = await this.trRepo.findOne({ where: { trId: dto.tr_id, del: 0 } });
+  async disburse(
+    dto: {
+      tr_id: number;
+      receipt_date: string;
+      type_offer_check?: number; // 1=เงินสด(บค.) 2=เช็ค(บจ.)
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
+    const tr = await this.trRepo.findOne({
+      where: { trId: dto.tr_id, del: 0 },
+    });
     if (!tr) return { flag: false, ms: 'ไม่พบใบขอเบิกค่าเดินทาง' };
+    if (user && tr.scId != null) assertSameSchool(user, tr.scId);
     if (tr.status !== STATUS.PENDING_PAY)
       return {
         flag: false,
@@ -469,9 +499,10 @@ export class TravelReimbursementService {
     });
   }
 
-  async cancel(trId: number, note: string, upBy: number) {
+  async cancel(trId: number, note: string, upBy: number, user?: JwtUser) {
     const tr = await this.trRepo.findOne({ where: { trId, del: 0 } });
     if (!tr) return { flag: false, ms: 'ไม่พบใบขอเบิกค่าเดินทาง' };
+    if (user && tr.scId != null) assertSameSchool(user, tr.scId);
     if (tr.status === STATUS.PAID)
       return { flag: false, ms: 'ไม่สามารถยกเลิกใบที่จ่ายเงินแล้ว' };
     if (tr.status === STATUS.CANCELLED)

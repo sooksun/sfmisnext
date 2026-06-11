@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OpeningBalance } from './entities/opening-balance.entity';
+import { FiscalYearBalance } from '../fiscal-year-balance/entities/fiscal-year-balance.entity';
 import {
   AddOpeningBalanceDto,
   UpdateOpeningBalanceDto,
@@ -16,7 +17,31 @@ export class OpeningBalanceService {
   constructor(
     @InjectRepository(OpeningBalance)
     private readonly repo: Repository<OpeningBalance>,
+    @InjectRepository(FiscalYearBalance)
+    private readonly fybRepo: Repository<FiscalYearBalance>,
   ) {}
+
+  /**
+   * ยอดยกมาของปี Y มาจากการปิดปี Y-1 — ถ้าปี Y-1 ถูก ผอ. ลงนามปิดแล้ว
+   * (is_final=1) ห้ามเพิ่ม/แก้/ลบยอดยกมาของปี Y อีก เพื่อให้ตรงกับที่ลงนาม
+   */
+  private async assertYearNotLocked(
+    scId: number,
+    budgetYear: string | null | undefined,
+  ) {
+    if (!budgetYear || !Number(budgetYear)) return null;
+    const prevYear = String(Number(budgetYear) - 1);
+    const finalized = await this.fybRepo.count({
+      where: { scId, budgetYear: prevYear, isFinal: 1, del: 0 },
+    });
+    if (finalized > 0) {
+      return {
+        flag: false,
+        ms: `ยอดยกมาปี ${budgetYear} ถูกล็อกแล้ว (ปีงบ ${prevYear} ปิดปีและลงนามแล้ว) — หากต้องแก้ไขให้ติดต่อผู้ดูแลระบบ`,
+      };
+    }
+    return null;
+  }
 
   async loadOpeningBalances(scId: number, syId: number, budgetYear: string) {
     return this.repo.find({
@@ -26,6 +51,9 @@ export class OpeningBalanceService {
   }
 
   async addOpeningBalance(dto: AddOpeningBalanceDto) {
+    const locked = await this.assertYearNotLocked(dto.sc_id, dto.budget_year);
+    if (locked) return locked;
+
     const entity = this.repo.create({
       scId: dto.sc_id,
       syId: dto.sy_id,
@@ -48,6 +76,8 @@ export class OpeningBalanceService {
     const ob = await this.repo.findOne({ where: { obId: dto.ob_id, del: 0 } });
     if (!ob) return { flag: false, ms: 'ไม่พบยอดยกมา' };
     assertSameSchool(user, ob.scId);
+    const locked = await this.assertYearNotLocked(ob.scId, ob.budgetYear);
+    if (locked) return locked;
     await this.repo.update(
       { obId: dto.ob_id },
       {
@@ -64,6 +94,8 @@ export class OpeningBalanceService {
     const ob = await this.repo.findOne({ where: { obId, del: 0 } });
     if (!ob) return { flag: false, ms: 'ไม่พบยอดยกมา' };
     assertSameSchool(user, ob.scId);
+    const locked = await this.assertYearNotLocked(ob.scId, ob.budgetYear);
+    if (locked) return locked;
     await this.repo.update({ obId }, { del: 1, upBy });
     return { flag: true, ms: 'ลบสำเร็จ' };
   }

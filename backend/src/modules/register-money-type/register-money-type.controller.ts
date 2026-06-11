@@ -12,6 +12,11 @@ import {
 import { RegisterMoneyTypeService } from './register-money-type.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @UseGuards(RolesGuard)
 @Roles(1, 2, 5, 8)
@@ -34,7 +39,9 @@ export class RegisterMoneyTypeController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('syId', ParseIntPipe) syId: number,
     @Param('year') year: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.registerMoneyTypeService.loadRegisterControlMoneyType(
       bgTypeId,
       scId,
@@ -49,7 +56,9 @@ export class RegisterMoneyTypeController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('syId', ParseIntPipe) syId: number,
     @Param('year') year: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.registerMoneyTypeService.whtRemitReminder(scId, syId, year);
   }
 
@@ -67,7 +76,9 @@ export class RegisterMoneyTypeController {
       ba_id?: number;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, Number(dto.sc_id));
     return this.registerMoneyTypeService.depositCash(dto);
   }
 
@@ -78,7 +89,9 @@ export class RegisterMoneyTypeController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('syId', ParseIntPipe) syId: number,
     @Param('year') year: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.registerMoneyTypeService.loadRegisterControlMoneyType(
       bgTypeId,
       scId,

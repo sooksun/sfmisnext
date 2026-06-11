@@ -63,6 +63,11 @@ export class CompleteIntraBankTransferDto {
   @IsNotEmpty()
   completed_date: string;
 
+  // ปีการศึกษา/งบ ปัจจุบัน — ใช้ลงทะเบียนคุมเงินฝากธนาคาร auto-sync ให้ตรงปี
+  @IsOptional()
+  @IsInt()
+  sy_id?: number;
+
   @IsOptional()
   @IsInt()
   @Min(1)

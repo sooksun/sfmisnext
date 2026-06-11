@@ -15,7 +15,12 @@ describe('DocCounterService', () => {
   let queryRunner: jest.Mocked<any>;
 
   beforeEach(async () => {
-    repo = { find: jest.fn(), findOne: jest.fn(), create: jest.fn(), save: jest.fn() };
+    repo = {
+      find: jest.fn(),
+      findOne: jest.fn(),
+      create: jest.fn(),
+      save: jest.fn(),
+    };
     qrManager = { findOne: jest.fn(), create: jest.fn(), save: jest.fn() };
     queryRunner = {
       manager: qrManager,
@@ -74,7 +79,13 @@ describe('DocCounterService', () => {
   // ─── issueWithin (atomic ภายใน transaction ที่มีอยู่) ────────────────────────
   describe('issueWithin', () => {
     it('row มีอยู่ → เพิ่ม lastNo +1 และคืน formatted', async () => {
-      const row = { dcId: 1, scId: 1, budgetYear: '2569', docType: 'BC', lastNo: 11 };
+      const row = {
+        dcId: 1,
+        scId: 1,
+        budgetYear: '2569',
+        docType: 'BC',
+        lastNo: 11,
+      };
       qrManager.findOne.mockResolvedValue(row);
       qrManager.save.mockResolvedValue(row);
 
@@ -176,7 +187,9 @@ describe('DocCounterService', () => {
       const result = await service.loadCounters(1, '2569');
       expect(result.count).toBe(Object.keys(DOC_TYPE_PREFIX).length);
       // ทุก row last_no=0, next_no=1
-      expect(result.data.every((d) => d.last_no === 0 && d.next_no === 1)).toBe(true);
+      expect(result.data.every((d) => d.last_no === 0 && d.next_no === 1)).toBe(
+        true,
+      );
     });
 
     it('row ที่มีใน DB → ใช้ค่า lastNo จริง, next_no=last+1', async () => {

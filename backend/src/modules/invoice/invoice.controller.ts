@@ -137,10 +137,15 @@ export class InvoiceController {
   @Post('deleteInvoice')
   @HttpCode(HttpStatus.OK)
   deleteInvoice(
-    @Body() body: { rw_id: number; up_by?: number },
+    @Body() body: { rw_id: number; up_by?: number; reason?: string },
     @CurrentUser('sc_id') scId: number,
   ) {
-    return this.invoiceService.deleteInvoice(body.rw_id, scId, body.up_by);
+    return this.invoiceService.deleteInvoice(
+      body.rw_id,
+      scId,
+      body.up_by,
+      body.reason,
+    );
   }
 
   @Get('loadConfirmInvoice/:sc_id/:permission/:sy_id')

@@ -7,6 +7,11 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ReportBookbankService } from './report-bookbank.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('ReportRegisterBookbank')
 export class ReportBookbankController {
@@ -19,7 +24,9 @@ export class ReportBookbankController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('syId', ParseIntPipe) syId: number,
     @Param('year') year: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.reportBookbankService.loadReportRegisterBookbank(
       baId,
       scId,

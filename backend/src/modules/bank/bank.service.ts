@@ -8,6 +8,10 @@ import { AddBankAccountDto } from './dto/add-bank-account.dto';
 import { AddBudgetSchoolDto } from './dto/add-budget-school.dto';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { DeleteLogService } from '../delete-log/delete-log.service';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Injectable()
 export class BankService {
@@ -109,7 +113,7 @@ export class BankService {
     return { flag: true };
   }
 
-  async updateBankAccount(dto: AddBankAccountDto) {
+  async updateBankAccount(dto: AddBankAccountDto, user?: JwtUser) {
     if (!dto.ba_id) {
       return { flag: false, ms: 'ไม่พบ ba_id' };
     }
@@ -121,6 +125,8 @@ export class BankService {
     if (!account) {
       return { flag: false, ms: 'ไม่พบข้อมูลบัญชีธนาคาร' };
     }
+
+    if (user) assertSameSchool(user, account.scId);
 
     account.bId = dto.b_id;
     account.baName = dto.ba_name;
@@ -136,6 +142,7 @@ export class BankService {
     baId: number,
     reason?: string,
     upBy?: string | number,
+    user?: JwtUser,
   ) {
     const account = await this.bankAccountRepository.findOne({
       where: { baId, del: 0 },
@@ -144,6 +151,8 @@ export class BankService {
     if (!account) {
       return { flag: false, ms: 'ไม่พบข้อมูลบัญชีธนาคาร' };
     }
+
+    if (user) assertSameSchool(user, account.scId);
 
     const snapshot = { ...account };
     account.del = 1;
@@ -180,10 +189,18 @@ export class BankService {
       return { flag: true };
     }
 
+    // สืบทอดค่า perhead จากแถวเดิมของประเภทเงินเดียวกัน (ถ้ามี) แทนการใช้ default=1
+    // กันอาการ: ผูกประเภทเงินกับบัญชีใหม่ แล้วได้แถว perhead=1 ทับค่าที่ผู้ใช้ตั้ง 0 ไว้
+    // → ทำให้หน้า "ตั้งค่าเงินรายหัว" ติ๊กกลับมาเอง
+    const sibling = await this.budgetIncomeTypeSchoolRepository.findOne({
+      where: { scId: dto.sc_id, bgTypeId: dto.bg_type_id, del: 0 },
+    });
+
     const binding = this.budgetIncomeTypeSchoolRepository.create({
       scId: dto.sc_id,
       baId: dto.ba_id,
       bgTypeId: dto.bg_type_id,
+      perhead: sibling ? sibling.perhead : 1,
       upBy: dto.up_by || null,
     });
 

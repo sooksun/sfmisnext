@@ -3,6 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CashKeepingRecord } from './entities/cash-keeping-record.entity';
 import { Admin } from '../admin/entities/admin.entity';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 // ── เกณฑ์การนำเงินสดฝากธนาคาร (ระเบียบกระทรวงการคลังว่าด้วยการรับ-จ่าย-เก็บรักษาเงิน
 //    และการนำเงินส่งคลัง พ.ศ. 2562 — "นำส่ง/ฝากโดยเร็ว") ──────────────────────────
@@ -136,17 +140,21 @@ export class CashKeepingService {
     return { flag: true, ms: 'บันทึกการรับเงินเพื่อเก็บรักษาเรียบร้อยแล้ว' };
   }
 
-  async returnRecord(dto: {
-    ckr_id: number;
-    returned_date: string;
-    returned_amount: number;
-    return_note?: string;
-    up_by?: number;
-  }) {
+  async returnRecord(
+    dto: {
+      ckr_id: number;
+      returned_date: string;
+      returned_amount: number;
+      return_note?: string;
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
     const record = await this.ckrRepo.findOne({
       where: { ckrId: dto.ckr_id, del: 0 },
     });
     if (!record) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user) assertSameSchool(user, record.scId);
     if (record.status === 2) return { flag: false, ms: 'บันทึกการส่งคืนแล้ว' };
 
     record.status = 2;
@@ -158,9 +166,10 @@ export class CashKeepingService {
     return { flag: true, ms: 'บันทึกการส่งคืนเงินเรียบร้อยแล้ว' };
   }
 
-  async removeRecord(ckrId: number, upBy: number) {
+  async removeRecord(ckrId: number, upBy: number, user?: JwtUser) {
     const record = await this.ckrRepo.findOne({ where: { ckrId, del: 0 } });
     if (!record) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user) assertSameSchool(user, record.scId);
     if (record.status === 2)
       return { flag: false, ms: 'ไม่สามารถลบรายการที่ส่งคืนแล้ว' };
     record.del = 1;

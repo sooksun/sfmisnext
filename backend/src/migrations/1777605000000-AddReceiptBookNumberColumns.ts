@@ -43,7 +43,9 @@ export class AddReceiptBookNumberColumns1777605000000
       );
     }
     if (have.has('book_no')) {
-      await queryRunner.query(`ALTER TABLE \`receipt\` DROP COLUMN \`book_no\``);
+      await queryRunner.query(
+        `ALTER TABLE \`receipt\` DROP COLUMN \`book_no\``,
+      );
     }
   }
 }

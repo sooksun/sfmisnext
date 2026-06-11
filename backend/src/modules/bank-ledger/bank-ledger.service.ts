@@ -3,6 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BankLedgerEntry } from './entities/bank-ledger-entry.entity';
 import { Admin } from '../admin/entities/admin.entity';
+import { DeleteLogService } from '../delete-log/delete-log.service';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Injectable()
 export class BankLedgerService {
@@ -11,6 +16,7 @@ export class BankLedgerService {
     private readonly repo: Repository<BankLedgerEntry>,
     @InjectRepository(Admin)
     private readonly adminRepo: Repository<Admin>,
+    private readonly deleteLogService: DeleteLogService,
   ) {}
 
   /** โหลดรายการของบัญชีธนาคาร 1 บัญชี พร้อม running balance */
@@ -165,9 +171,10 @@ export class BankLedgerService {
     return { flag: true, ms: 'บันทึกรายการเรียบร้อยแล้ว' };
   }
 
-  async updateEntry(bleId: number, dto: any) {
+  async updateEntry(bleId: number, dto: any, user?: JwtUser) {
     const entry = await this.repo.findOne({ where: { bleId, del: 0 } });
     if (!entry) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user) assertSameSchool(user, entry.scId);
     if (dto.entry_type !== undefined) entry.entryType = dto.entry_type;
     if (dto.doc_no !== undefined) entry.docNo = dto.doc_no;
     if (dto.entry_date !== undefined) entry.entryDate = dto.entry_date;
@@ -179,12 +186,42 @@ export class BankLedgerService {
     return { flag: true, ms: 'แก้ไขรายการเรียบร้อยแล้ว' };
   }
 
-  async removeEntry(bleId: number, upBy: number) {
+  async removeEntry(
+    bleId: number,
+    upBy: number,
+    reason?: string,
+    user?: JwtUser,
+  ) {
+    // ลบรายการทะเบียนเงินฝากธนาคารต้องมีเหตุผลประกอบเสมอ (audit trail)
+    if (!reason || !String(reason).trim()) {
+      return { flag: false, ms: 'กรุณาระบุเหตุผลการลบรายการ' };
+    }
+
     const entry = await this.repo.findOne({ where: { bleId, del: 0 } });
     if (!entry) return { flag: false, ms: 'ไม่พบรายการ' };
+    if (user) assertSameSchool(user, entry.scId);
+
     entry.del = 1;
     entry.upBy = upBy;
     await this.repo.save(entry);
+
+    await this.deleteLogService.log({
+      table: 'bank_ledger_entry',
+      rowId: bleId,
+      reason,
+      deletedBy: upBy,
+      scId: entry.scId,
+      snapshot: {
+        ble_id: entry.bleId,
+        ba_id: entry.baId,
+        entry_type: entry.entryType,
+        entry_date: entry.entryDate,
+        doc_no: entry.docNo,
+        amount: entry.amount,
+        detail: entry.detail,
+      },
+    });
+
     return { flag: true, ms: 'ลบรายการเรียบร้อยแล้ว' };
   }
 }

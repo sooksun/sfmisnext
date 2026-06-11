@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InvoicePreAudit } from './entities/invoice-pre-audit.entity';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const RESULT_NAMES: Record<number, string> = {
   1: 'ผ่านการตรวจ',
@@ -16,11 +20,17 @@ export class InvoicePreAuditService {
     private readonly ipaRepo: Repository<InvoicePreAudit>,
   ) {}
 
-  async loadByRw(rwId: number) {
+  async loadByRw(rwId: number, user?: JwtUser) {
     const items = await this.ipaRepo.find({
       where: { rwId, del: 0 },
       order: { ipaId: 'DESC' },
     });
+    // Multi-tenant guard: รายการตรวจฎีกาต้องเป็นของโรงเรียนผู้ใช้
+    if (user) {
+      for (const a of items) {
+        if (a.scId != null) assertSameSchool(user, a.scId);
+      }
+    }
     return items.map((a) => ({
       ipa_id: a.ipaId,
       rw_id: a.rwId,
@@ -61,12 +71,13 @@ export class InvoicePreAuditService {
     };
   }
 
-  async getStatus(rwId: number) {
+  async getStatus(rwId: number, user?: JwtUser) {
     const latest = await this.ipaRepo.findOne({
       where: { rwId, del: 0 },
       order: { ipaId: 'DESC' },
     });
     if (!latest) return { audited: false };
+    if (user && latest.scId != null) assertSameSchool(user, latest.scId);
     return {
       audited: true,
       result: latest.result,

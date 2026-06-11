@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Send, AlertTriangle, RotateCcw, Printer } from 'lucide-react'
 import { openPrintWindow, makeHeader, makeSignatures, fmtBaht, numberToThaiBaht, esc, thaiFullDate } from '@/lib/print-utils'
+import { paymentRequestMemo } from '@/lib/official-finance-forms'
 import { getLastEntryDate, setLastEntryDate } from '@/lib/last-entry-date'
 import { PageHeader } from '@/components/shared/page-header'
 import { ProcessFlow } from '@/components/shared/process-flow'
@@ -83,11 +84,12 @@ interface BudgetType {
 interface UserRequest {
   admin_id: number
   name: string
+  type?: number // admin.type — ฝ่ายการเงิน = 5 (เจ้าหน้าที่การเงิน), 8 (หัวหน้าการเงิน)
 }
 
 const invoiceSchema = z
   .object({
-    no_doc: z.string().min(1, 'กรุณากรอกเลขที่ใบสำคัญ'),
+    no_doc: z.string().optional(), // ออกเลขอัตโนมัติ บจ./บค. ตอนออกเช็ค/จ่ายเงิน
     bg_type_id: z.number().min(1, 'กรุณาเลือกประเภทงบ'),
     rw_type: z.number().min(1, 'กรุณาเลือกประเภทการจ่าย'),
     p_id: z.number().optional(), // ผู้รับเงิน (partner) — บังคับเฉพาะค่าพัสดุ/บริการ
@@ -185,7 +187,7 @@ const loanStatusStyle: Record<string, { label: string; cls: string }> = {
 }
 
 export default function InvoicePage() {
-  const { scId, adminId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const { scId, adminId, syId, budgetYear: budgetYearRaw, scName } = useAppContext()
   const upBy = adminId
   const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
   const qc = useQueryClient()
@@ -343,11 +345,12 @@ export default function InvoicePage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: ({ item }: { item: InvoiceRow; reason: string }) =>
+    mutationFn: ({ item, reason }: { item: InvoiceRow; reason: string }) =>
       apiPost('Invoice/deleteInvoice', {
         rw_id: item.rw_id,
         sc_id: item.sc_id ?? scId,
         up_by: adminId,
+        reason,
       }),
     onSuccess: (res: any) => {
       if (res.flag) {
@@ -461,6 +464,22 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
     })
   }
 
+  // บันทึกข้อความ "ขออนุมัติเบิกจ่ายเงิน" (ตย.25) — พิมพ์ตอนจ่ายเงิน
+  function printPaymentMemo(item: InvoiceRow) {
+    const { title, body } = paymentRequestMemo({
+      scName,
+      docNo: item.no_doc,
+      date: item.date_request,
+      detail: item.detail,
+      partnerName: item.partner_name,
+      projectName: item.project_name,
+      budgetTypeName: item.budget_type_name,
+      amount: Number(item.amount),
+      requesterName: item.user_request_name,
+    })
+    openPrintWindow({ title, body })
+  }
+
   function openReturn(loan: LoanRow) {
     setReturnTarget(loan)
     resetReturn({
@@ -481,7 +500,11 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
 
   const partnerList = Array.isArray(partners) ? partners : []
   const budgetTypeList = Array.isArray(budgetTypes) ? budgetTypes : []
-  const userRequestList = Array.isArray(userRequests) ? userRequests : []
+  // ผู้ขอเบิก = บุคลากรฝ่ายการเงินเท่านั้น (type 5 = เจ้าหน้าที่การเงิน, 8 = หัวหน้าการเงิน)
+  const FINANCE_TYPES = [5, 8]
+  const userRequestList = (Array.isArray(userRequests) ? userRequests : []).filter(
+    (u) => u.type == null || FINANCE_TYPES.includes(u.type),
+  )
   const payableList = Array.isArray(payableParcels) ? payableParcels : []
   const travelList = Array.isArray(payableTravel) ? payableTravel : []
   const loanList = Array.isArray(payableLoans) ? payableLoans : []
@@ -493,6 +516,10 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
         <div className="flex gap-1">
           <Button size="sm" variant="outline" onClick={() => printInvoice(item)} title="พิมพ์ใบสำคัญจ่าย">
             <Printer className="h-3 w-3" />
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => printPaymentMemo(item)} title="พิมพ์บันทึกข้อความขออนุมัติเบิกจ่าย (ตัวอย่างที่ 25)">
+            <Printer className="h-3 w-3 mr-1" />
+            ขออนุมัติจ่าย
           </Button>
           {EDITABLE_STATUSES.has(item.status) && (
             <>
@@ -666,6 +693,7 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         title={editing ? 'แก้ไขใบสำคัญจ่าย' : 'สร้างใบสำคัญจ่าย'}
+        size="2xl"
         onSubmit={handleSubmit((d) =>
           saveMutation.mutate(d, {
             onSuccess: (res: any) => {
@@ -773,11 +801,6 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
             </div>
           )}
 
-          <div>
-            <Label>เลขที่ใบสำคัญ *</Label>
-            <Input {...register('no_doc')} placeholder="เลขที่ใบสำคัญ" />
-            {errors.no_doc && <p className="text-red-500 text-xs mt-1">{errors.no_doc.message}</p>}
-          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>ประเภทงบ *</Label>
@@ -890,11 +913,12 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
               {errors.date_request && <p className="text-red-500 text-xs mt-1">{errors.date_request.message}</p>}
             </div>
           </div>
-          {!editing && (nextDoc('บจ') || nextDoc('บค')) && (
+          {!editing && (
             <p className="rounded-md bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700">
-              ระบบจะออกเลขที่เอกสาร + เลขเช็คให้อัตโนมัติเมื่อบันทึก (ไม่ต้องกรอกเอง)
-              {nextDoc('บจ') && <> — จ่ายเช็ค: <b>{nextDoc('บจ')}</b></>}
-              {nextDoc('บค') && <> · จ่ายเงินสด: <b>{nextDoc('บค')}</b></>}
+              เลขที่ใบสำคัญจ่ายออกอัตโนมัติตอนออกเช็ค/จ่ายเงิน (ไม่ต้องกรอกเอง) —
+              บค. เมื่อจ่ายเงินสด, บจ. เมื่อจ่ายเช็ค
+              {nextDoc('บจ') && <> · เลขเช็คถัดไป: <b>{nextDoc('บจ')}</b></>}
+              {nextDoc('บค') && <> · เงินสดถัดไป: <b>{nextDoc('บค')}</b></>}
             </p>
           )}
         </div>

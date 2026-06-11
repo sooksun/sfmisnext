@@ -10,6 +10,11 @@ import {
 } from '@nestjs/common';
 import { TravelReimbursementService } from './travel-reimbursement.service';
 import { AddTravelReimbursementDto } from './dto/add-travel-reimbursement.dto';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('TravelReimbursement')
 export class TravelReimbursementController {
@@ -21,19 +26,25 @@ export class TravelReimbursementController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.service.loadList(scId, syId, budgetYear);
   }
 
   @Get('loadTravelers/:tr_id')
   @HttpCode(HttpStatus.OK)
-  loadTravelers(@Param('tr_id', ParseIntPipe) trId: number) {
-    return this.service.loadTravelers(trId);
+  loadTravelers(
+    @Param('tr_id', ParseIntPipe) trId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.service.loadTravelers(trId, user);
   }
 
   @Post('add')
   @HttpCode(HttpStatus.OK)
-  add(@Body() dto: AddTravelReimbursementDto) {
+  add(@Body() dto: AddTravelReimbursementDto, @CurrentUser() user: JwtUser) {
+    assertSameSchool(user, dto.sc_id);
     return this.service.addTravelReimbursement(dto);
   }
 
@@ -48,8 +59,9 @@ export class TravelReimbursementController {
       verify_date: string;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.service.verify(dto);
+    return this.service.verify(dto, user);
   }
 
   @Post('approve')
@@ -63,8 +75,9 @@ export class TravelReimbursementController {
       approve_date: string;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.service.approve(dto);
+    return this.service.approve(dto, user);
   }
 
   @Post('disburse')
@@ -77,13 +90,17 @@ export class TravelReimbursementController {
       type_offer_check?: number;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.service.disburse(dto);
+    return this.service.disburse(dto, user);
   }
 
   @Post('cancel')
   @HttpCode(HttpStatus.OK)
-  cancel(@Body() dto: { tr_id: number; note?: string; up_by: number }) {
-    return this.service.cancel(dto.tr_id, dto.note ?? '', dto.up_by);
+  cancel(
+    @Body() dto: { tr_id: number; note?: string; up_by: number },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.service.cancel(dto.tr_id, dto.note ?? '', dto.up_by, user);
   }
 }

@@ -6,7 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Printer } from 'lucide-react'
-import { openPrintWindow, makeHeader, makeSignatures, fmtBaht, numberToThaiBaht, esc, thaiFullDate } from '@/lib/print-utils'
+import { openPrintWindow } from '@/lib/print-utils'
+import { withholdingCertificateForm, withholdingCertNo } from '@/lib/official-finance-forms'
 import { PageHeader } from '@/components/shared/page-header'
 import { ProcessFlow } from '@/components/shared/process-flow'
 import { DataTable } from '@/components/shared/data-table'
@@ -88,7 +89,7 @@ const fmt = (n: number) => Number(n).toLocaleString('th-TH', { minimumFractionDi
 // ============================================================================
 
 export default function WithholdingCertificatePage() {
-  const { scId, adminId, syId, budgetYear: budgetYearRaw } = useAppContext()
+  const { scId, adminId, syId, budgetYear: budgetYearRaw, scName } = useAppContext()
   const upBy = adminId
   const year = String(budgetYearRaw >= 2400 ? budgetYearRaw : budgetYearRaw + 543)
   const apiYear = String(budgetYearRaw < 2400 ? budgetYearRaw : budgetYearRaw - 543)
@@ -222,31 +223,18 @@ export default function WithholdingCertificatePage() {
   }
 
   function printWC(item: WCRow) {
-    const header = makeHeader({
-      title: 'หนังสือรับรองการหักภาษี ณ ที่จ่าย',
-      subtitle: 'ตามมาตรา 50 ทวิ แห่งประมวลรัษฎากร',
-      docNo: item.wc_no,
-      docDate: item.cer_date,
+    const certNo = withholdingCertNo(item.wc_no, year)
+    const { title, body } = withholdingCertificateForm({
+      scName,
+      certNo,
+      certDate: item.cer_date,
+      payDate: item.cer_date,
+      partnerName: item.p_name,
+      payTypeName: item.detail,
+      incomeAmount: Number(item.amount),
+      taxAmount: Number(item.deduct),
     })
-    const body = `
-<p><b>ผู้มีหน้าที่หักภาษี ณ ที่จ่าย:</b> (โรงเรียน)</p>
-<p><b>ผู้ถูกหักภาษี ณ ที่จ่าย:</b> ${esc(item.p_name ?? '-')}</p>
-<p><b>ลำดับที่ในแบบ:</b> ${item.wc_rank ?? '-'} &nbsp; &nbsp; <b>ปีงบประมาณ:</b> ${esc(item.year ?? '-')}</p>
-<table>
-  <tr><th>รายการ</th><th>จำนวนเงิน (บาท)</th><th>ภาษีหัก ณ ที่จ่าย (บาท)</th></tr>
-  <tr>
-    <td>${esc(item.detail ?? '-')}</td>
-    <td class="num">${fmtBaht(item.amount)}</td>
-    <td class="num">${fmtBaht(item.deduct)}</td>
-  </tr>
-</table>
-<p class="mt-6"><b>จำนวนเงินภาษีหักไว้เป็นอักษร:</b> ${esc(numberToThaiBaht(Number(item.deduct)))}</p>
-<p>วันที่ออกหนังสือ: ${esc(thaiFullDate(item.cer_date))}</p>
-<p class="footer-note">ข้าพเจ้าขอรับรองว่าข้อความและตัวเลขดังกล่าวข้างต้นถูกต้องตรงกับความจริงทุกประการ</p>`
-    openPrintWindow({
-      title: `หนังสือรับรองหักภาษี_${item.wc_no}`,
-      body: header + body + makeSignatures(['ผู้มีหน้าที่หักภาษี ณ ที่จ่าย']),
-    })
+    openPrintWindow({ title, body })
   }
 
   // ── Columns ───────────────────────────────────────────────────────────────

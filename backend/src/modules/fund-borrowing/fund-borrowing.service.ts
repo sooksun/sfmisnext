@@ -5,6 +5,10 @@ import { FundBorrowing } from './entities/fund-borrowing.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
 import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 /**
  * ประเภทเงินที่ "ห้าม" นำไปให้ยืมข้ามประเภท (ตามระเบียบ)
@@ -212,16 +216,20 @@ export class FundBorrowingService {
   }
 
   /** คืนเงินยืมข้ามประเภท → สร้าง FT คู่ย้อนกลับ (คืนเข้าต้นทาง / โอนออกปลายทาง) */
-  async repayBorrowing(dto: {
-    fb_id: number;
-    repay_date: string;
-    note?: string;
-    up_by?: number;
-  }) {
+  async repayBorrowing(
+    dto: {
+      fb_id: number;
+      repay_date: string;
+      note?: string;
+      up_by?: number;
+    },
+    user?: JwtUser,
+  ) {
     const fb = await this.fbRepo.findOne({
       where: { fbId: dto.fb_id, del: 0 },
     });
     if (!fb) return { flag: false, ms: 'ไม่พบรายการยืมเงิน' };
+    if (user && fb.scId != null) assertSameSchool(user, fb.scId);
     if (fb.status !== 1) return { flag: false, ms: 'รายการนี้คืน/ยกเลิกแล้ว' };
 
     return this.dataSource.transaction(async (em) => {
@@ -269,9 +277,10 @@ export class FundBorrowingService {
   }
 
   /** ยกเลิกการยืม (ยังไม่คืน) → ลบ FT คู่ที่สร้างไว้ */
-  async cancelBorrowing(fbId: number, upBy: number) {
+  async cancelBorrowing(fbId: number, upBy: number, user?: JwtUser) {
     const fb = await this.fbRepo.findOne({ where: { fbId, del: 0 } });
     if (!fb) return { flag: false, ms: 'ไม่พบรายการยืมเงิน' };
+    if (user && fb.scId != null) assertSameSchool(user, fb.scId);
     if (fb.status === 2)
       return { flag: false, ms: 'รายการที่คืนแล้วยกเลิกไม่ได้' };
 

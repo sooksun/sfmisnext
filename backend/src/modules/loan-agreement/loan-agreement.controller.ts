@@ -10,6 +10,11 @@ import {
 } from '@nestjs/common';
 import { LoanAgreementService } from './loan-agreement.service';
 import { AddLoanAgreementDto } from './dto/add-loan-agreement.dto';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('LoanAgreement')
 export class LoanAgreementController {
@@ -21,13 +26,19 @@ export class LoanAgreementController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.loanAgreementService.loadLoanAgreements(scId, syId, budgetYear);
   }
 
   @Post('addLoanAgreement')
   @HttpCode(HttpStatus.OK)
-  addLoanAgreement(@Body() dto: AddLoanAgreementDto) {
+  addLoanAgreement(
+    @Body() dto: AddLoanAgreementDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, dto.sc_id);
     return this.loanAgreementService.addLoanAgreement(dto);
   }
 
@@ -42,8 +53,9 @@ export class LoanAgreementController {
       verify_date: string;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.loanAgreementService.verifyLoan(dto);
+    return this.loanAgreementService.verifyLoan(dto, user);
   }
 
   @Post('approveLoan')
@@ -58,8 +70,9 @@ export class LoanAgreementController {
       approve_amount?: number;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.loanAgreementService.approveLoan(dto);
+    return this.loanAgreementService.approveLoan(dto, user);
   }
 
   @Post('disburseLoan')
@@ -71,8 +84,9 @@ export class LoanAgreementController {
       receipt_date: string;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.loanAgreementService.disburseLoan(dto);
+    return this.loanAgreementService.disburseLoan(dto, user);
   }
 
   @Post('returnLoan')
@@ -88,17 +102,22 @@ export class LoanAgreementController {
       note?: string;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.loanAgreementService.returnLoan(dto);
+    return this.loanAgreementService.returnLoan(dto, user);
   }
 
   @Post('cancelLoan')
   @HttpCode(HttpStatus.OK)
-  cancelLoan(@Body() dto: { la_id: number; note?: string; up_by: number }) {
+  cancelLoan(
+    @Body() dto: { la_id: number; note?: string; up_by: number },
+    @CurrentUser() user: JwtUser,
+  ) {
     return this.loanAgreementService.cancelLoan(
       dto.la_id,
       dto.note ?? '',
       dto.up_by,
+      user,
     );
   }
 
@@ -108,13 +127,18 @@ export class LoanAgreementController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.loanAgreementService.dueReminder(scId, syId, budgetYear);
   }
 
   @Get('loadEvidence/:la_id')
   @HttpCode(HttpStatus.OK)
-  loadEvidence(@Param('la_id', ParseIntPipe) laId: number) {
-    return this.loanAgreementService.loadEvidence(laId);
+  loadEvidence(
+    @Param('la_id', ParseIntPipe) laId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.loanAgreementService.loadEvidence(laId, user);
   }
 }

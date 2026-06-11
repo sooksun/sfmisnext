@@ -9,6 +9,11 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { CashKeepingService } from './cash-keeping.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('CashKeeping')
 export class CashKeepingController {
@@ -19,7 +24,9 @@ export class CashKeepingController {
   loadRecords(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.cashKeepingService.loadRecords(scId, syId);
   }
 
@@ -29,7 +36,9 @@ export class CashKeepingController {
   depositReminder(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.cashKeepingService.depositReminder(scId, syId);
   }
 
@@ -48,7 +57,9 @@ export class CashKeepingController {
       note?: string;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, Number(dto.sc_id));
     return this.cashKeepingService.addRecord(dto);
   }
 
@@ -63,13 +74,17 @@ export class CashKeepingController {
       return_note?: string;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.cashKeepingService.returnRecord(dto);
+    return this.cashKeepingService.returnRecord(dto, user);
   }
 
   @Post('removeRecord')
   @HttpCode(HttpStatus.OK)
-  removeRecord(@Body() dto: { ckr_id: number; up_by: number }) {
-    return this.cashKeepingService.removeRecord(dto.ckr_id, dto.up_by);
+  removeRecord(
+    @Body() dto: { ckr_id: number; up_by: number },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.cashKeepingService.removeRecord(dto.ckr_id, dto.up_by, user);
   }
 }

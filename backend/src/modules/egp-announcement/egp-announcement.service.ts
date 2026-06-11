@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EgpAnnouncement } from './entities/egp-announcement.entity';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const TYPE_NAMES: Record<number, string> = {
   1: 'ประกาศแผนจัดซื้อ',
@@ -87,9 +91,10 @@ export class EgpAnnouncementService {
     return { flag: true, ms: 'บันทึกประกาศเรียบร้อย', ea_id: a.eaId };
   }
 
-  async update(dto: any) {
+  async update(dto: any, user?: JwtUser) {
     const a = await this.eaRepo.findOne({ where: { eaId: dto.ea_id, del: 0 } });
     if (!a) return { flag: false, ms: 'ไม่พบประกาศ' };
+    if (user) assertSameSchool(user, a.scId);
     const fields = [
       'ref_no',
       'egp_ref',
@@ -124,9 +129,13 @@ export class EgpAnnouncementService {
     return { flag: true, ms: 'แก้ไขประกาศเรียบร้อย' };
   }
 
-  async publish(dto: { ea_id: number; egp_url?: string; up_by: number }) {
+  async publish(
+    dto: { ea_id: number; egp_url?: string; up_by: number },
+    user?: JwtUser,
+  ) {
     const a = await this.eaRepo.findOne({ where: { eaId: dto.ea_id, del: 0 } });
     if (!a) return { flag: false, ms: 'ไม่พบประกาศ' };
+    if (user) assertSameSchool(user, a.scId);
     if (a.status !== 0) return { flag: false, ms: 'ประกาศนี้เผยแพร่แล้ว' };
     a.status = 1;
     if (dto.egp_url) a.egpUrl = dto.egp_url;
@@ -135,18 +144,20 @@ export class EgpAnnouncementService {
     return { flag: true, ms: 'เผยแพร่ประกาศเรียบร้อย' };
   }
 
-  async close(eaId: number, upBy: number) {
+  async close(eaId: number, upBy: number, user?: JwtUser) {
     const a = await this.eaRepo.findOne({ where: { eaId, del: 0 } });
     if (!a) return { flag: false, ms: 'ไม่พบประกาศ' };
+    if (user) assertSameSchool(user, a.scId);
     a.status = 2;
     a.upBy = upBy;
     await this.eaRepo.save(a);
     return { flag: true, ms: 'ปิดประกาศเรียบร้อย' };
   }
 
-  async cancel(eaId: number, reason: string, upBy: number) {
+  async cancel(eaId: number, reason: string, upBy: number, user?: JwtUser) {
     const a = await this.eaRepo.findOne({ where: { eaId, del: 0 } });
     if (!a) return { flag: false, ms: 'ไม่พบประกาศ' };
+    if (user) assertSameSchool(user, a.scId);
     a.status = 9;
     a.note = reason;
     a.upBy = upBy;
@@ -154,9 +165,10 @@ export class EgpAnnouncementService {
     return { flag: true, ms: 'ยกเลิกประกาศเรียบร้อย' };
   }
 
-  async remove(eaId: number, upBy: number) {
+  async remove(eaId: number, upBy: number, user?: JwtUser) {
     const a = await this.eaRepo.findOne({ where: { eaId, del: 0 } });
     if (!a) return { flag: false, ms: 'ไม่พบประกาศ' };
+    if (user) assertSameSchool(user, a.scId);
     if (a.status === 1)
       return { flag: false, ms: 'เผยแพร่แล้ว ลบไม่ได้ — ใช้ยกเลิกแทน' };
     a.del = 1;

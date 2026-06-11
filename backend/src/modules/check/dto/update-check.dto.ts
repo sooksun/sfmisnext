@@ -59,6 +59,10 @@ export class UpdateCheckDto {
 
   @IsOptional()
   @IsNumber()
+  ba_id?: number; // บัญชีธนาคารที่สั่งจ่าย — auto-sync ทะเบียนคุมเงินฝากธนาคาร
+
+  @IsOptional()
+  @IsNumber()
   user_offer_check?: number;
 
   @IsOptional()

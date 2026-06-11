@@ -14,6 +14,11 @@ import {
   SubmitDto,
   ConfirmDto,
 } from './dto/monthly-submission.dto';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('MonthlySubmission')
 export class MonthlySubmissionController {
@@ -26,7 +31,9 @@ export class MonthlySubmissionController {
   loadSubmissions(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.monthlySubmissionService.loadSubmissions(scId, syId);
   }
 
@@ -34,7 +41,9 @@ export class MonthlySubmissionController {
   @HttpCode(HttpStatus.OK)
   getOrCreate(
     @Body() body: { sc_id: number; sy_id: number; submit_month: string },
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, body.sc_id);
     return this.monthlySubmissionService.getOrCreate(
       body.sc_id,
       body.sy_id,
@@ -44,20 +53,21 @@ export class MonthlySubmissionController {
 
   @Post('saveSubmission')
   @HttpCode(HttpStatus.OK)
-  saveSubmission(@Body() dto: SaveSubmissionDto) {
+  saveSubmission(@Body() dto: SaveSubmissionDto, @CurrentUser() user: JwtUser) {
+    assertSameSchool(user, dto.sc_id);
     return this.monthlySubmissionService.saveSubmission(dto);
   }
 
   @Post('submitMonth')
   @HttpCode(HttpStatus.OK)
-  submitMonth(@Body() dto: SubmitDto) {
-    return this.monthlySubmissionService.submitMonth(dto);
+  submitMonth(@Body() dto: SubmitDto, @CurrentUser() user: JwtUser) {
+    return this.monthlySubmissionService.submitMonth(dto, user);
   }
 
   @Post('confirmSubmission')
   @HttpCode(HttpStatus.OK)
-  confirmSubmission(@Body() dto: ConfirmDto) {
-    return this.monthlySubmissionService.confirmSubmission(dto);
+  confirmSubmission(@Body() dto: ConfirmDto, @CurrentUser() user: JwtUser) {
+    return this.monthlySubmissionService.confirmSubmission(dto, user);
   }
 
   @Get('currentMonthAlert/:sc_id/:sy_id')
@@ -65,7 +75,9 @@ export class MonthlySubmissionController {
   currentMonthAlert(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.monthlySubmissionService.getCurrentMonthAlert(scId, syId);
   }
 }

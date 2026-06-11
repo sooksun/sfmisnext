@@ -10,9 +10,15 @@ import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 function makeQb(opts: { many?: unknown[]; rawMany?: unknown[] } = {}) {
   const qb: Record<string, jest.Mock> = {};
   const chain = () => qb as any;
-  ['leftJoin', 'where', 'andWhere', 'select', 'addSelect', 'orderBy', 'groupBy'].forEach(
-    (m) => (qb[m] = jest.fn().mockReturnValue(chain())),
-  );
+  [
+    'leftJoin',
+    'where',
+    'andWhere',
+    'select',
+    'addSelect',
+    'orderBy',
+    'groupBy',
+  ].forEach((m) => (qb[m] = jest.fn().mockReturnValue(chain())));
   qb['getMany'] = jest.fn().mockResolvedValue(opts.many ?? []);
   qb['getRawMany'] = jest.fn().mockResolvedValue(opts.rawMany ?? []);
   return qb;
@@ -99,8 +105,12 @@ describe('YearEndReportService', () => {
       receiptRepo.createQueryBuilder.mockReturnValue(qb);
       await service.getReceiptUsageReport(5, 3, '2569');
       expect(qb.where).toHaveBeenCalledWith('r.sc_id = :scId', { scId: 5 });
-      expect(qb.andWhere).toHaveBeenCalledWith('r.year = :year', { year: '2569' });
-      expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', { status: '1' });
+      expect(qb.andWhere).toHaveBeenCalledWith('r.year = :year', {
+        year: '2569',
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', {
+        status: '1',
+      });
     });
 
     it('รับ budget_year เป็น ค.ศ. ก็คำนวณ days_remaining ได้ (แปลงเป็น CE)', async () => {
@@ -140,9 +150,24 @@ describe('YearEndReportService', () => {
       prdRepo.createQueryBuilder.mockReturnValue(
         makeQb({
           rawMany: [
-            { pr_id: '10', prd_budget: '1000', bg_type_id: '1', prd_detail: 'a' },
-            { pr_id: '11', prd_budget: '2000', bg_type_id: '1', prd_detail: 'b' },
-            { pr_id: '11', prd_budget: '500', bg_type_id: '2', prd_detail: 'c' },
+            {
+              pr_id: '10',
+              prd_budget: '1000',
+              bg_type_id: '1',
+              prd_detail: 'a',
+            },
+            {
+              pr_id: '11',
+              prd_budget: '2000',
+              bg_type_id: '1',
+              prd_detail: 'b',
+            },
+            {
+              pr_id: '11',
+              prd_budget: '500',
+              bg_type_id: '2',
+              prd_detail: 'c',
+            },
           ],
         }),
       );
@@ -165,10 +190,19 @@ describe('YearEndReportService', () => {
     });
 
     it('bg_type_id เป็น null → จัดเป็น "ไม่ระบุประเภท"', async () => {
-      prRepo.createQueryBuilder.mockReturnValue(makeQb({ many: [{ prId: 10 }] }));
+      prRepo.createQueryBuilder.mockReturnValue(
+        makeQb({ many: [{ prId: 10 }] }),
+      );
       prdRepo.createQueryBuilder.mockReturnValue(
         makeQb({
-          rawMany: [{ pr_id: '10', prd_budget: '700', bg_type_id: null, prd_detail: null }],
+          rawMany: [
+            {
+              pr_id: '10',
+              prd_budget: '700',
+              bg_type_id: null,
+              prd_detail: null,
+            },
+          ],
         }),
       );
       const result = await service.getSchoolRevenueReport(1, 3, '2569');
@@ -177,10 +211,19 @@ describe('YearEndReportService', () => {
     });
 
     it('bg_type_id ที่หาชื่อไม่เจอ → "ประเภท {id}"', async () => {
-      prRepo.createQueryBuilder.mockReturnValue(makeQb({ many: [{ prId: 10 }] }));
+      prRepo.createQueryBuilder.mockReturnValue(
+        makeQb({ many: [{ prId: 10 }] }),
+      );
       prdRepo.createQueryBuilder.mockReturnValue(
         makeQb({
-          rawMany: [{ pr_id: '10', prd_budget: '100', bg_type_id: '99', prd_detail: null }],
+          rawMany: [
+            {
+              pr_id: '10',
+              prd_budget: '100',
+              bg_type_id: '99',
+              prd_detail: null,
+            },
+          ],
         }),
       );
       btRepo.createQueryBuilder.mockReturnValue(makeQb({ many: [] }));
@@ -192,7 +235,9 @@ describe('YearEndReportService', () => {
       const qb = makeQb({ many: [] });
       prRepo.createQueryBuilder.mockReturnValue(qb);
       await service.getSchoolRevenueReport(8, 3, '2569');
-      expect(qb.andWhere).toHaveBeenCalledWith('pr.cf_transaction = :cf', { cf: 1 });
+      expect(qb.andWhere).toHaveBeenCalledWith('pr.cf_transaction = :cf', {
+        cf: 1,
+      });
       expect(qb.andWhere).toHaveBeenCalledWith('pr.del = :del', { del: 0 });
     });
 

@@ -3,21 +3,26 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { AuditCommitteeService } from './audit-committee.service';
 import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
 import { Project } from '../project/entities/project.entity';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 
 describe('AuditCommitteeService', () => {
   let service: AuditCommitteeService;
   let repo: jest.Mocked<any>;
   let projectRepo: jest.Mocked<any>;
+  let regulatoryConfig: { getThreshold: jest.Mock };
 
   beforeEach(async () => {
     repo = { find: jest.fn(), findOne: jest.fn(), save: jest.fn() };
     projectRepo = { find: jest.fn().mockResolvedValue([]) };
+    // default: ปิดการบังคับแยกหน้าที่ เพื่อให้ test เดิมพฤติกรรมไม่เปลี่ยน
+    regulatoryConfig = { getThreshold: jest.fn().mockResolvedValue(0) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuditCommitteeService,
         { provide: getRepositoryToken(ParcelOrder), useValue: repo },
         { provide: getRepositoryToken(Project), useValue: projectRepo },
+        { provide: RegulatoryConfigService, useValue: regulatoryConfig },
       ],
     }).compile();
 
@@ -124,7 +129,9 @@ describe('AuditCommitteeService', () => {
       repo.find.mockResolvedValue([
         { orderId: 1, projectId: 2, scId: 5, details: 'ซื้อกระดาษ' },
       ]);
-      projectRepo.find.mockResolvedValue([{ projId: 2, projName: 'โครงการพัฒนา' }]);
+      projectRepo.find.mockResolvedValue([
+        { projId: 2, projName: 'โครงการพัฒนา' },
+      ]);
 
       const result = await service.loadAuditCommitteeStatus(5, 3);
       expect(result.data[0].project_name).toBe('โครงการพัฒนา');
@@ -211,6 +218,53 @@ describe('AuditCommitteeService', () => {
       expect(repo.findOne).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ del: 0 }) }),
       );
+    });
+
+    // ─── แยกหน้าที่กรรมการตรวจรับ (ม.13) — เมื่อเปิดบังคับ ───────────────────
+    describe('แยกหน้าที่กรรมการ (enforce_committee_separation=1)', () => {
+      beforeEach(() => regulatoryConfig.getThreshold.mockResolvedValue(1));
+
+      it('กรรมการซ้ำกัน → flag:false ไม่บันทึก', async () => {
+        const order = { orderId: 10, scId: 5, adminId: 9, del: 0 } as any;
+        repo.findOne.mockResolvedValue(order);
+        const result = await service.updateSetCommittee({
+          ...dto,
+          committee1: 2,
+          committee2: 2,
+          committee3: 3,
+        });
+        expect(result.flag).toBe(false);
+        expect(result.ms).toContain('ซ้ำ');
+        expect(repo.save).not.toHaveBeenCalled();
+      });
+
+      it('กรรมการเป็นผู้จัดทำ/ผู้ขอซื้อ → flag:false (ผู้มีส่วนได้เสีย)', async () => {
+        const order = { orderId: 10, scId: 5, adminId: 3, del: 0 } as any;
+        repo.findOne.mockResolvedValue(order);
+        const result = await service.updateSetCommittee({
+          ...dto,
+          committee1: 3, // = order.adminId
+          committee2: 4,
+          committee3: 5,
+        });
+        expect(result.flag).toBe(false);
+        expect(result.ms).toContain('ผู้มีส่วนได้เสีย');
+        expect(repo.save).not.toHaveBeenCalled();
+      });
+
+      it('กรรมการต่างกันและไม่ใช่ผู้จัดทำ → ผ่าน', async () => {
+        const order = { orderId: 10, scId: 5, adminId: 9, del: 0 } as any;
+        repo.findOne.mockResolvedValue(order);
+        repo.save.mockResolvedValue(order);
+        const result = await service.updateSetCommittee({
+          ...dto,
+          committee1: 1,
+          committee2: 2,
+          committee3: 3,
+        });
+        expect(result.flag).toBe(true);
+        expect(repo.save).toHaveBeenCalled();
+      });
     });
   });
 });

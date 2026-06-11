@@ -21,6 +21,7 @@ import { UpdateEstimateDto } from './dto/update-estimate.dto';
 import { AddEstimateAcadyearDto } from './dto/add-estimate-acadyear.dto';
 import { UpdateRealBudgetDto } from './dto/update-real-budget.dto';
 import { StudentService } from '../student/student.service';
+import { PlanPrevBalanceService } from '../plan-prev-balance/plan-prev-balance.service';
 
 @Injectable()
 export class BudgetService {
@@ -42,6 +43,7 @@ export class BudgetService {
     @InjectRepository(TbExpenses)
     private readonly tbExpensesRepository: Repository<TbExpenses>,
     private readonly studentService: StudentService,
+    private readonly planPrevBalanceService: PlanPrevBalanceService,
   ) {}
 
   /**
@@ -54,149 +56,125 @@ export class BudgetService {
   async loadEstimatedIncomeByType(scId: number, syId: number) {
     try {
       const byType = await this.studentService.getPerheadByType(scId, syId);
-      return byType.filter((it) => it.estimated_amount > 0);
+      // เงินเหลือจ่ายปีเก่า (ยืนยันแล้ว) แยกตามประเภทเงิน — บวกรวมเข้ายอดประมาณการ
+      const carry = await this.planPrevBalanceService.getSummaryByType(
+        scId,
+        syId,
+      );
+      const carryByType = new Map(carry.map((c) => [c.bg_type_id, c]));
+
+      // ปัดยอดประมาณการต่อประเภทเป็น "จำนวนเต็มบาท" — การวางแผนวงเงินงบประมาณ
+      // ใช้หน่วยบาทเต็ม (เศษสตางค์จากรายหัว×สัดส่วนเป็น noise) เพื่อให้เพดานกรอก
+      // และ "งบทั้งหมด" (= ผลรวมค่านี้) เป็นจำนวนเต็มชุดเดียวกัน → กรอกครบลงตัว 0 พอดี
+      const round0 = (n: number) => Math.round(n);
+
+      const merged = byType.map((it) => {
+        const c = carryByType.get(it.bg_type_id);
+        const carryover = c?.carryover_amount ?? 0;
+        carryByType.delete(it.bg_type_id);
+        return {
+          ...it,
+          carryover_amount: carryover,
+          estimated_amount: round0(it.estimated_amount + carryover),
+        };
+      });
+
+      // ประเภทเงินที่มีเฉพาะเงินเหลือจ่ายปีเก่า (ไม่มียอดรายหัว)
+      for (const c of carryByType.values()) {
+        merged.push({
+          bg_type_id: c.bg_type_id,
+          budget_type: c.budget_type,
+          carryover_amount: c.carryover_amount,
+          estimated_amount: round0(c.carryover_amount),
+        });
+      }
+
+      return merged.filter((it) => it.estimated_amount > 0);
     } catch (error) {
       this.logger.error('loadEstimatedIncomeByType error:', error);
       return [];
     }
   }
 
+  /**
+   * หน้า 1.6 ประมาณการงบประมาณปีการศึกษา — คืน array แยก "ตามประเภทเงิน"
+   * (ตรงกับ interface ฝั่ง frontend: budget_type_id/budget_type_name/estimate_amount/real_amount/remain_amount)
+   *
+   * - estimate_amount = ยอดประมาณการรายหัว (หน้า 1.5) แยกตามประเภทเงิน
+   * - real_amount     = รายจ่ายจริงของปีงบนั้น (tb_expenses) แยกตามประเภทเงิน
+   * - `year` = CE budget year (เช่น 2026); budget_year ที่คืน = พ.ศ. สำหรับแสดงผล
+   */
   async loadEstimateAcadyearGroup(scId: number, year: number, syId: number) {
-    const empty = { data: [], totalrealbudget: 0, totalsumbudget: 0 };
     if (!scId || scId <= 0 || !year || year <= 0 || !syId || syId <= 0) {
-      return empty;
+      return [];
     }
 
     try {
-      const categories = await this.masterBudgetCategoryRepository.find({
-        order: { bgCateId: 'ASC' },
-      });
-
-      if (!categories || categories.length === 0) {
-        return {
-          data: [],
-          totalrealbudget: 0,
-          totalsumbudget: 0,
-        };
-      }
-
-      // เก็บ record ไว้สำหรับ ea_id / สถานะ เท่านั้น
-      const estimate = await this.tbEstimateAcadyearRepository.findOne({
-        where: {
-          scId,
-          syId,
-          budgetYear: year.toString(),
-          del: 0,
-        },
-      });
-
-      // ยอดประมาณการ = ผลรวมจากการคำนวณรายหัว (หน้า 1.5) แบบสด — ตรงกันเสมอ
-      const totalEstimate = await this.studentService.getPerheadTotal(
+      // ประมาณการรายรับแยกตามประเภทเงิน — ดึงสดจากการคำนวณรายหัว
+      const byType = await this.studentService.getPerheadByType(scId, syId);
+      // เงินเหลือจ่ายปีเก่า (ยืนยันแล้ว) แยกตามประเภทเงิน
+      const carry = await this.planPrevBalanceService.getSummaryByType(
         scId,
         syId,
       );
+      const carryByType = new Map(carry.map((c) => [c.bg_type_id, c]));
 
-      // ── Batch-load เพื่อหลีกเลี่ยง N+1 ──────────────────────────────────────
-      const bgCateIds = categories.map((c) => c.bgCateId);
-
-      // 1. โหลด PlnBudgetCategory ทุก category ในรอบเดียว
-      const plnBudgets =
-        bgCateIds.length > 0
-          ? await this.plnBudgetCategoryRepository.find({
-              where: {
-                scId,
-                acadYear: syId,
-                bgCateId: In(bgCateIds),
-                budgetYear: year.toString(),
-                del: 0,
-              },
-            })
-          : [];
-      const plnBudgetMap = new Map(plnBudgets.map((p) => [p.bgCateId, p]));
-
-      // 2. โหลด PlnBudgetCategoryDetail ทุก pbc ในรอบเดียว
-      const pbcIds = plnBudgets.map((p) => p.pbcId);
-      const allDetails =
-        pbcIds.length > 0
-          ? await this.plnBudgetCategoryDetailRepository.find({
-              where: { pbcId: In(pbcIds), del: 0 },
-            })
-          : [];
-      const detailsByPbcId = new Map<number, typeof allDetails>();
-      for (const d of allDetails) {
-        if (d.pbcId == null) continue;
-        const list = detailsByPbcId.get(d.pbcId) ?? [];
-        list.push(d);
-        detailsByPbcId.set(d.pbcId, list);
+      // รวมรายการ: ประเภทที่มีรายหัว และ/หรือ มีเงินเหลือจ่ายปีเก่า
+      const merged = new Map<
+        number,
+        { budget_type: string; perhead: number; carryover: number }
+      >();
+      for (const t of byType) {
+        merged.set(t.bg_type_id, {
+          budget_type: t.budget_type,
+          perhead: t.estimated_amount,
+          carryover: 0,
+        });
+      }
+      for (const c of carry) {
+        const prev = merged.get(c.bg_type_id);
+        if (prev) prev.carryover += c.carryover_amount;
+        else
+          merged.set(c.bg_type_id, {
+            budget_type: c.budget_type,
+            perhead: 0,
+            carryover: c.carryover_amount,
+          });
       }
 
-      // 3. โหลด TbExpenses ทุก bg_type_id ในรอบเดียว
-      const allBgTypeIds = [
-        ...new Set(
-          allDetails.map((d) => d.bgTypeId).filter((id) => id != null),
-        ),
-      ] as number[];
-      const allExpenses =
-        allBgTypeIds.length > 0
-          ? await this.tbExpensesRepository.find({
-              where: { scId, exYearOut: year, bgTypeId: In(allBgTypeIds) },
-            })
-          : [];
-      const expensesByBgTypeId = new Map<number, number>();
-      for (const exp of allExpenses) {
-        if (exp.bgTypeId == null) continue;
-        expensesByBgTypeId.set(
-          exp.bgTypeId,
-          (expensesByBgTypeId.get(exp.bgTypeId) ?? 0) + (exp.exMoney || 0),
+      const rows = Array.from(merged.entries()).filter(
+        ([, v]) => v.perhead + v.carryover > 0,
+      );
+      if (rows.length === 0) return [];
+
+      // ใช้จริง (รายจ่ายจริง) แยกตามประเภทเงินจาก tb_expenses ของปีงบนั้น
+      const bgTypeIds = rows.map(([id]) => id);
+      const expenses = await this.tbExpensesRepository.find({
+        where: { scId, exYearOut: year, bgTypeId: In(bgTypeIds) },
+      });
+      const usedByType = new Map<number, number>();
+      for (const e of expenses) {
+        if (e.bgTypeId == null) continue;
+        usedByType.set(
+          e.bgTypeId,
+          (usedByType.get(e.bgTypeId) ?? 0) + (e.exMoney || 0),
         );
       }
 
-      const data = categories.map((category) => {
-        const plnBudget = plnBudgetMap.get(category.bgCateId);
-        let totalBudget = 0;
-        let expenses = 0;
-        if (plnBudget) {
-          const details = detailsByPbcId.get(plnBudget.pbcId) ?? [];
-          totalBudget = details.reduce((sum, d) => sum + d.budget, 0);
-          expenses = details.reduce(
-            (sum, d) =>
-              sum +
-              (d.bgTypeId != null
-                ? (expensesByBgTypeId.get(d.bgTypeId) ?? 0)
-                : 0),
-            0,
-          );
-        }
+      return rows.map(([bgTypeId, v]) => {
+        const used = usedByType.get(bgTypeId) ?? 0;
+        const total = v.perhead + v.carryover;
         return {
-          ea_id: estimate?.eaId || 0,
-          bg_cate_id: category.bgCateId,
-          budget_cate: category.budgetCate,
-          budget_type: category.budgetCate,
-          ea_budget: totalEstimate,
-          sum_budget: totalEstimate,
-          real_budget: totalBudget,
-          ea_status: estimate?.eaStatus || 0,
-          sc_id: scId,
-          sy_id: syId,
-          budget_year: year.toString(),
-          expenses,
+          budget_type_id: bgTypeId,
+          budget_type_name: v.budget_type,
+          estimate_amount: v.perhead, // ประมาณการรายหัว
+          carryover_amount: v.carryover, // เงินเหลือจ่ายปีเก่า (บรรทัดแยก)
+          total_income: total, // วงเงินรวม = รายหัว + เหลือจ่ายปีเก่า
+          real_amount: used,
+          remain_amount: total - used,
+          budget_year: year + 543,
         };
       });
-
-      const totalrealbudget = data.reduce(
-        (sum, item) => sum + item.real_budget,
-        0,
-      );
-      const totalsumbudget = data.reduce(
-        (sum, item) => sum + item.ea_budget,
-        0,
-      );
-
-      return {
-        data,
-        totalrealbudget,
-        totalsumbudget,
-      };
     } catch (error) {
       this.logger.error('loadEstimateAcadyearGroup error:', error);
       throw new InternalServerErrorException('โหลดข้อมูลงบประมาณล้มเหลว');
@@ -225,7 +203,14 @@ export class BudgetService {
       const plnBudgets = await this.plnBudgetCategoryRepository.find({
         where: { scId, acadYear: syId, budgetYear, del: 0 },
       });
-      const plnByCategory = new Map(plnBudgets.map((p) => [p.bgCateId, p]));
+      // ถ้ามี row ซ้ำต่อหมวด (ข้อมูลเก่า) ให้เลือกตัวที่มียอดมากที่สุด เพื่อไม่แสดงค่าผิด
+      const plnByCategory = new Map<number, (typeof plnBudgets)[number]>();
+      for (const p of plnBudgets) {
+        const prev = plnByCategory.get(p.bgCateId);
+        if (!prev || (p.total ?? 0) > (prev.total ?? 0)) {
+          plnByCategory.set(p.bgCateId, p);
+        }
+      }
 
       // query 3: all details for those pbc_ids in one shot
       const pbcIds = plnBudgets.map((p) => p.pbcId);
@@ -280,8 +265,12 @@ export class BudgetService {
         return { valid: false, budget: 0, error: 'Invalid budget_date' };
       }
 
-      // Check if budget categories exist for this year
-      const count = await this.plnBudgetCategoryRepository.count({
+      // สร้างหมวดงบ "เฉพาะที่ยังไม่มี" (idempotent) — กันการสร้างซ้ำเมื่อ endpoint
+      // ถูกเรียกซ้อน (เช่น React StrictMode เรียก effect 2 ครั้งใน dev)
+      const categories = await this.masterBudgetCategoryRepository.find({
+        order: { bgCateId: 'ASC' },
+      });
+      const existing = await this.plnBudgetCategoryRepository.find({
         where: {
           scId: payload.sc_id,
           acadYear: payload.sy_id,
@@ -289,39 +278,59 @@ export class BudgetService {
           del: 0,
         },
       });
-
-      // If no categories, create default records
-      if (count === 0) {
-        const categories = await this.masterBudgetCategoryRepository.find({
-          order: { bgCateId: 'ASC' },
-        });
-
-        if (categories && categories.length > 0) {
-          const budgetCategories = categories.map((category) => {
-            const plnBudget = new PlnBudgetCategory();
-            plnBudget.scId = payload.sc_id;
-            plnBudget.acadYear = payload.sy_id;
-            plnBudget.budgetYear = payload.budget_date;
-            plnBudget.bgCateId = category.bgCateId;
-            plnBudget.percents = 0;
-            plnBudget.total = 0;
-            plnBudget.del = 0;
-            plnBudget.upBy = payload.up_by || 0;
-            return plnBudget;
-          });
-
-          await this.plnBudgetCategoryRepository.save(budgetCategories);
-        }
+      const existingCateIds = new Set(existing.map((e) => e.bgCateId));
+      const missing = (categories ?? []).filter(
+        (c) => !existingCateIds.has(c.bgCateId),
+      );
+      if (missing.length > 0) {
+        // insert().orIgnore() — กัน race ระหว่างคำขอที่เกือบพร้อมกัน
+        await this.plnBudgetCategoryRepository
+          .createQueryBuilder()
+          .insert()
+          .orIgnore()
+          .values(
+            missing.map((category) => ({
+              scId: payload.sc_id,
+              acadYear: payload.sy_id,
+              budgetYear: payload.budget_date,
+              bgCateId: category.bgCateId,
+              percents: 0,
+              total: 0,
+              del: 0,
+              upBy: payload.up_by || 0,
+            })),
+          )
+          .execute();
       }
 
-      // ยอดประมาณการ = ผลรวมจากการคำนวณรายหัว (หน้า 1.5) แบบสด
-      // ให้ตรงกับหน้า "คำนวณงบจากรายหัว" เสมอ ไม่อ่านค่าที่เก็บใน tb_estimate_acadyear
-      const budget = await this.studentService.getPerheadTotal(
+      // ยอดประมาณการ = ผลรวมรายหัว (หน้า 1.5) + เงินเหลือจ่ายปีเก่า (หน้า 1.2)
+      const [perhead, carryover] = await Promise.all([
+        this.studentService.getPerheadTotal(payload.sc_id, payload.sy_id),
+        this.planPrevBalanceService.getCarryoverTotal(
+          payload.sc_id,
+          payload.sy_id,
+        ),
+      ]);
+
+      // วงเงินที่ "กรอกได้จริง" = ผลรวมของยอดประมาณการแยกประเภท (เพดานต่อประเภท)
+      // ใช้ตัวเลขชุดเดียวกับที่ dialog หน้า 1.7 ใช้เป็นเพดานกรอก (loadEstimatedIncomeByType)
+      // เพื่อให้ "งบทั้งหมด" = ผลรวมเพดาน → กรอกครบแล้วคงเหลือ = 0 พอดี (ไม่เหลือเศษจาก
+      // การปัด/ความต่างของ float ระหว่างยอดรวมกับยอดแยกประเภท)
+      const byType = await this.loadEstimatedIncomeByType(
         payload.sc_id,
         payload.sy_id,
       );
+      const round2 = (n: number) => Math.round(n * 100) / 100;
+      const budget = round2(
+        byType.reduce((s, it) => s + (it.estimated_amount || 0), 0),
+      );
 
-      return { valid: true, budget };
+      return {
+        valid: true,
+        budget,
+        perhead: round2(perhead),
+        carryover: round2(carryover),
+      };
     } catch (error) {
       this.logger.error('checkBudgetCategoryOnYear error:', error);
       return {
@@ -375,11 +384,15 @@ export class BudgetService {
         0,
       );
 
-      // ยอดประมาณการ = ผลรวมจากการคำนวณรายหัว (หน้า 1.5) แบบสด
-      const budgetProject = await this.studentService.getPerheadTotal(
-        payload.sc_id,
-        payload.sy_id,
-      );
+      // ยอดประมาณการ = ผลรวมรายหัว (หน้า 1.5) + เงินเหลือจ่ายปีเก่า (หน้า 1.2)
+      const [perhead, carryover] = await Promise.all([
+        this.studentService.getPerheadTotal(payload.sc_id, payload.sy_id),
+        this.planPrevBalanceService.getCarryoverTotal(
+          payload.sc_id,
+          payload.sy_id,
+        ),
+      ]);
+      const budgetProject = perhead + carryover;
       const balanceBudget = budgetProject - totalBudgetGroup;
       const percent =
         budgetProject > 0 ? (totalBudgetGroup * 100) / budgetProject : 0;
@@ -614,6 +627,61 @@ export class BudgetService {
           'เกิดข้อผิดพลาดในการบันทึกข้อมูล: ' +
           ((error as Error).message || 'Unknown error'),
       };
+    }
+  }
+
+  /**
+   * ลบหมวดงบประมาณ (soft-delete) พร้อมรายละเอียดยอดเงินในหมวดนั้น
+   * ตรวจ tenancy: ผู้ใช้ที่ไม่ใช่ super admin ลบได้เฉพาะหมวดของโรงเรียนตนเอง
+   */
+  async removePLNBudgetCategory(
+    pbcId: number,
+    userScId?: number,
+    userType?: number,
+    upBy?: number,
+  ) {
+    try {
+      if (!pbcId || pbcId <= 0) {
+        return { flag: false, ms: 'ไม่พบข้อมูล pbc_id' };
+      }
+
+      const plnBudget = await this.plnBudgetCategoryRepository.findOne({
+        where: { pbcId, del: 0 },
+      });
+      if (!plnBudget) {
+        return { flag: false, ms: 'ไม่พบข้อมูลหมวดงบประมาณ' };
+      }
+
+      if (
+        userType !== undefined &&
+        userType !== 1 &&
+        userScId !== undefined &&
+        plnBudget.scId !== userScId
+      ) {
+        throw new ForbiddenException('ไม่มีสิทธิ์ลบงบประมาณของโรงเรียนนี้');
+      }
+
+      // soft-delete รายละเอียดยอดเงินในหมวดนี้
+      const details = await this.plnBudgetCategoryDetailRepository.find({
+        where: { pbcId, del: 0 },
+      });
+      for (const d of details) {
+        d.del = 1;
+        d.updateDate = new Date();
+        await this.plnBudgetCategoryDetailRepository.save(d);
+      }
+
+      // soft-delete หมวดงบ
+      plnBudget.del = 1;
+      if (upBy !== undefined) plnBudget.upBy = upBy;
+      plnBudget.updateDate = new Date();
+      await this.plnBudgetCategoryRepository.save(plnBudget);
+
+      return { flag: true, ms: 'ลบหมวดงบประมาณเรียบร้อยแล้ว' };
+    } catch (error) {
+      if (error instanceof ForbiddenException) throw error;
+      this.logger.error('Remove PLN Budget Category error:', error);
+      return { flag: false, ms: 'เกิดข้อผิดพลาดในการลบหมวดงบประมาณ' };
     }
   }
 
@@ -909,6 +977,92 @@ export class BudgetService {
         flag: false,
         ms:
           'เกิดข้อผิดพลาดในการเพิ่มข้อมูล: ' +
+          ((error as Error).message || 'Unknown error'),
+      };
+    }
+  }
+
+  /**
+   * สถานะการยืนยันงบประมาณรวมรายปี (หน้า "งบประมาณรวมรายปี")
+   * คืนยอดที่ยืนยันไว้ + สถานะ confirmed เพื่อให้หน้าจอรู้ว่ายืนยันแล้วหรือยัง
+   * - budgetYear = CE string (เช่น "2026") ให้ตรงกับ pln_budget_category
+   */
+  async loadEstimateAcadyearStatus(
+    scId: number,
+    syId: number,
+    budgetYear: string,
+  ) {
+    const row = await this.tbEstimateAcadyearRepository.findOne({
+      where: { scId, syId, budgetYear, del: 0 },
+    });
+    return {
+      confirmed: row?.eaStatus === 1,
+      ea_budget: row?.eaBudget ?? 0,
+      update_date: row?.updateDate ?? null,
+    };
+  }
+
+  /**
+   * ยืนยันงบประมาณรวมรายปี — ตรึงยอดรวม (รายหัว + เงินเหลือจ่ายปีเก่า) เป็นวงเงินที่ใช้
+   * พิจารณาจัดสรรแผนงาน/โครงการตลอดปี (ea_status = 1)
+   * ยอดคำนวณฝั่ง server ให้ตรงกับที่หน้าจอแสดงเสมอ (ไม่รับยอดจาก client)
+   */
+  async confirmEstimateAcadyear(payload: {
+    sc_id: number;
+    sy_id: number;
+    budget_year: string;
+    up_by?: number;
+  }) {
+    try {
+      const [perhead, carryover] = await Promise.all([
+        this.studentService.getPerheadTotal(payload.sc_id, payload.sy_id),
+        this.planPrevBalanceService.getCarryoverTotal(
+          payload.sc_id,
+          payload.sy_id,
+        ),
+      ]);
+      const total = perhead + carryover;
+      if (total <= 0) {
+        return {
+          flag: false,
+          ms: 'ยังไม่มียอดงบประมาณให้ยืนยัน — กรุณาตรวจสอบการคำนวณรายหัว/เงินเหลือจ่ายปีเก่า',
+        };
+      }
+
+      let row = await this.tbEstimateAcadyearRepository.findOne({
+        where: {
+          scId: payload.sc_id,
+          syId: payload.sy_id,
+          budgetYear: payload.budget_year,
+          del: 0,
+        },
+      });
+      if (!row) {
+        row = new TbEstimateAcadyear();
+        row.scId = payload.sc_id;
+        row.syId = payload.sy_id;
+        row.budgetYear = payload.budget_year;
+        row.realBudget = 0;
+        row.del = 0;
+        row.createDate = new Date();
+      }
+      row.eaBudget = total;
+      row.eaStatus = 1;
+      row.upBy = payload.up_by ?? 0;
+      row.updateDate = new Date();
+      await this.tbEstimateAcadyearRepository.save(row);
+
+      return {
+        flag: true,
+        ms: `ยืนยันงบประมาณรวมรายปีเรียบร้อย (${total.toLocaleString('th-TH')} บาท)`,
+        ea_budget: total,
+      };
+    } catch (error) {
+      this.logger.error('confirmEstimateAcadyear error:', error);
+      return {
+        flag: false,
+        ms:
+          'เกิดข้อผิดพลาดในการยืนยันงบประมาณ: ' +
           ((error as Error).message || 'Unknown error'),
       };
     }

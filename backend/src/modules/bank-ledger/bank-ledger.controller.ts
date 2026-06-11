@@ -7,9 +7,18 @@ import {
   ParseIntPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { BankLedgerService } from './bank-ledger.service';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
+@UseGuards(RolesGuard)
 @Controller('BankLedger')
 export class BankLedgerController {
   constructor(private readonly bankLedgerService: BankLedgerService) {}
@@ -20,7 +29,9 @@ export class BankLedgerController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('ba_id', ParseIntPipe) baId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.bankLedgerService.loadLedger(scId, syId, baId);
   }
 
@@ -30,7 +41,9 @@ export class BankLedgerController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('ba_id', ParseIntPipe) baId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.bankLedgerService.getAccountBalance(scId, syId, baId);
   }
 
@@ -39,12 +52,15 @@ export class BankLedgerController {
   getAllAccountBalances(
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.bankLedgerService.getAllAccountBalances(scId, syId);
   }
 
   @Post('addEntry')
   @HttpCode(HttpStatus.OK)
+  @Roles(1, 2, 5, 8)
   addEntry(
     @Body()
     dto: {
@@ -62,12 +78,15 @@ export class BankLedgerController {
       note?: string;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, dto.sc_id);
     return this.bankLedgerService.addEntry(dto);
   }
 
   @Post('updateEntry/:ble_id')
   @HttpCode(HttpStatus.OK)
+  @Roles(1, 2, 5, 8)
   updateEntry(
     @Param('ble_id', ParseIntPipe) bleId: number,
     @Body()
@@ -80,13 +99,23 @@ export class BankLedgerController {
       note?: string;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.bankLedgerService.updateEntry(bleId, dto);
+    return this.bankLedgerService.updateEntry(bleId, dto, user);
   }
 
   @Post('removeEntry')
   @HttpCode(HttpStatus.OK)
-  removeEntry(@Body() dto: { ble_id: number; up_by: number }) {
-    return this.bankLedgerService.removeEntry(dto.ble_id, dto.up_by);
+  @Roles(1, 2, 5, 8)
+  removeEntry(
+    @Body() dto: { ble_id: number; up_by: number; reason?: string },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.bankLedgerService.removeEntry(
+      dto.ble_id,
+      dto.up_by,
+      dto.reason,
+      user,
+    );
   }
 }

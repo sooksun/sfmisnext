@@ -17,6 +17,7 @@ import {
   thaiFullDate,
   esc,
 } from './print-utils'
+import { KRUT_EMBLEM } from './krut-emblem'
 
 // ── ชนิดข้อมูล ────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,11 @@ function netVat(total: number) {
 const DOT = '...................................'
 const DOTLONG = '............................................................'
 
+/** ตราครุฑกลางหน้า (heightMm = ความสูงเป็นมิลลิเมตร) */
+function krut(heightMm = 14): string {
+  return `<div class="center" style="margin:0 0 2pt 0"><img src="${KRUT_EMBLEM}" alt="ครุฑ" style="height:${heightMm}mm;width:auto" /></div>`
+}
+
 /** หัวกระดาษบันทึกข้อความ (ส่วนราชการ / ที่ / วันที่ / เรื่อง / เรียน) */
 function memoHead(args: {
   d: OrderPrintData
@@ -117,37 +123,41 @@ function memoHead(args: {
 }): string {
   const { d, no, date, subject } = args
   return `
-<div class="center"><h1 style="margin:0 0 6pt 0;letter-spacing:2pt">บันทึกข้อความ</h1></div>
-<p style="margin:2pt 0"><b>ส่วนราชการ</b>&nbsp;&nbsp;${esc(sc(d))}</p>
-<p style="margin:2pt 0;display:flex;justify-content:space-between">
+<div style="position:relative;min-height:15mm;margin:0 0 2pt 0">
+  <img src="${KRUT_EMBLEM}" alt="ครุฑ" style="position:absolute;left:0;bottom:0;height:15mm;width:auto" />
+  <h1 style="text-align:center;font-size:29pt;font-weight:bold;margin:0;padding-top:3mm;line-height:35pt">บันทึกข้อความ</h1>
+</div>
+<p style="margin:1pt 0;line-height:1.25"><b>ส่วนราชการ</b>&nbsp;&nbsp;${esc(sc(d))}</p>
+<p style="margin:1pt 0;line-height:1.25;display:flex;justify-content:space-between">
   <span><b>ที่</b>&nbsp;&nbsp;${esc(no || DOT)}</span>
-  <span><b>วันที่</b>&nbsp;&nbsp;${date ? esc(thaiFullDate(date)) : DOT}</span>
+  <span><b>วัน เดือนปี</b>&nbsp;&nbsp;${date ? esc(thaiFullDate(date)) : DOT}</span>
 </p>
-<p style="margin:2pt 0"><b>เรื่อง</b>&nbsp;&nbsp;${esc(subject)}</p>
-<p style="margin:2pt 0"><b>เรียน</b>&nbsp;&nbsp;ผู้อำนวยการ${esc(sc(d))}</p>
-<hr style="border:none;border-top:1px solid #000;margin:4pt 0 8pt 0" />`
+<p style="margin:1pt 0;line-height:1.25"><b>เรื่อง</b>&nbsp;&nbsp;${esc(subject)}</p>
+<p style="margin:1pt 0 6pt 0;line-height:1.25"><b>เรียน</b>&nbsp;&nbsp;ผู้อำนวยการ${esc(sc(d))}</p>`
 }
 
 /** หัวกระดาษคำสั่งโรงเรียน */
 function orderHead(args: { d: OrderPrintData; no?: string | null; subject: string }): string {
   const { d, no, subject } = args
   return `
-<div class="center" style="margin-bottom:6pt">
-  <h1 style="margin:0">คำสั่ง${esc(sc(d))}</h1>
+${krut(20)}
+<div class="center" style="margin-bottom:4pt;line-height:1.25">
+  <h1 style="font-size:18pt;margin:0">คำสั่ง${esc(sc(d))}</h1>
   <div>ที่&nbsp;&nbsp;${esc(no || DOT)}</div>
-  <div style="margin-top:4pt">เรื่อง&nbsp;&nbsp;${esc(subject)}</div>
+  <div style="margin-top:2pt">เรื่อง&nbsp;&nbsp;${esc(subject)}</div>
 </div>
-<hr style="border:none;border-top:1px solid #000;width:40%;margin:4pt auto 8pt auto" />`
+<hr style="border:none;border-top:1px solid #000;width:40%;margin:3pt auto 6pt auto" />`
 }
 
 /** หัวกระดาษประกาศโรงเรียน */
 function announceHead(args: { d: OrderPrintData; subject: string }): string {
   const { d, subject } = args
   return `
-<div class="center" style="margin-bottom:6pt">
-  <h1 style="margin:0">ประกาศ${esc(sc(d))}</h1>
-  <div style="margin-top:4pt">เรื่อง&nbsp;&nbsp;${esc(subject)}</div>
-  <div style="margin-top:4pt">----------------------------------------</div>
+${krut(20)}
+<div class="center" style="margin-bottom:4pt;line-height:1.25">
+  <h1 style="font-size:18pt;margin:0">ประกาศ${esc(sc(d))}</h1>
+  <div style="margin-top:2pt">เรื่อง&nbsp;&nbsp;${esc(subject)}</div>
+  <div style="margin-top:2pt">----------------------------------------</div>
 </div>`
 }
 

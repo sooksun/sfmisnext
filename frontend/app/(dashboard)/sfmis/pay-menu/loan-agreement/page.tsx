@@ -20,8 +20,11 @@ import { openPrintWindow } from '@/lib/print-utils'
 import {
   officialLoanDebtorRegister,
   officialLoanAgreement,
+  officialCashEquivalentRegister,
+  officialVoucherReceipt,
   type LoanSettlementRow,
 } from '@/lib/official-forms'
+import { loanRequestMemo, loanReturnMemo } from '@/lib/official-finance-forms'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/page-header'
@@ -298,6 +301,24 @@ export default function LoanAgreementPage() {
     openPrintWindow({ title: `ทะเบียนคุมลูกหนี้เงินยืม_${budgetYear}`, body })
   }
 
+  // พิมพ์แบบฟอร์ม "ทะเบียนคุมเอกสารแทนตัวเงิน" (ตย.4 — เงินยืมถือเป็นเอกสารแทนตัวเงิน)
+  function handlePrintCashEquivalent() {
+    if (loans.length === 0) return
+    const body = officialCashEquivalentRegister({
+      scName,
+      budgetYear,
+      rows: loans.map((l) => ({
+        date: l.borrow_date,
+        kind: l.loan_category_name || l.purpose,
+        docNo: l.la_no,
+        amount: l.amount,
+        convertedDate: l.returned_date, // วันที่เปลี่ยนสภาพ = วันที่ส่งใช้/ล้างหนี้ครบ
+        note: l.borrower_name,
+      })),
+    })
+    openPrintWindow({ title: `ทะเบียนคุมเอกสารแทนตัวเงิน_${budgetYear}`, body })
+  }
+
   const pagedLoans = useMemo(
     () => loans.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
     [loans, page],
@@ -547,6 +568,62 @@ export default function LoanAgreementPage() {
     openPrintWindow({ title: `สัญญายืมเงิน_${item.la_no || item.la_id}`, body })
   }
 
+  // บันทึกข้อความ "ขออนุมัติยืมเงิน" (ตย.22/33) — พิมพ์ตอนยืม
+  function printLoanRequest(item: LoanItem) {
+    const { title, body } = loanRequestMemo({
+      scName,
+      loanNo: item.la_no,
+      borrowDate: item.borrow_date,
+      borrowerName: item.borrower_name,
+      borrowerPosition: item.borrower_position,
+      moneyType: item.money_type_name,
+      purpose: item.purpose,
+      budgetYear,
+      amount: Number(item.amount),
+      financeOfficer: item.verify_name,
+      director: item.approve_name,
+    })
+    openPrintWindow({ title, body })
+  }
+
+  // บันทึกข้อความ "ขออนุมัติส่งใช้เงินยืม" (ตย.35) — พิมพ์ตอนคืนเงิน
+  function printLoanReturn(item: LoanItem) {
+    const { title, body } = loanReturnMemo({
+      scName,
+      returnNo: item.la_no,
+      returnDate: item.returned_date,
+      borrowerName: item.borrower_name,
+      moneyType: item.money_type_name,
+      purpose: item.purpose,
+      loanNo: item.la_no,
+      loanAmount: Number(item.amount),
+      dueDate: item.due_date,
+      returnVoucher: Number(item.return_voucher_amount ?? 0),
+      returnCash: Number(item.return_cash ?? 0),
+      returnTotal: Number(item.return_total ?? 0),
+      financeOfficer: item.verify_name,
+      director: item.approve_name,
+    })
+    openPrintWindow({ title, body })
+  }
+
+  // ใบรับใบสำคัญ (ตย.37) — ออกเมื่อส่งใช้เงินยืมด้วยใบสำคัญ
+  function printVoucherReceipt(item: LoanItem) {
+    const body = officialVoucherReceipt({
+      scName,
+      affiliation: item.affiliation,
+      receivedFrom: item.borrower_name,
+      position: item.borrower_position,
+      loanNo: item.la_no,
+      loanDate: item.borrow_date,
+      amount: Number(item.return_voucher_amount ?? 0),
+      receiverName: item.verify_name,
+      receiverPosition: 'เจ้าหน้าที่การเงิน',
+      date: item.returned_date,
+    })
+    openPrintWindow({ title: `ใบรับใบสำคัญ_${item.la_no || item.la_id}`, body })
+  }
+
   function effectiveDays(item: LoanItem): number {
     if (item.due_days && item.due_days > 0) return item.due_days
     const cat = LOAN_CATEGORIES.find((c) => c.value === item.loan_category)
@@ -668,6 +745,17 @@ export default function LoanAgreementPage() {
             <Printer className="h-3 w-3" />
           </Button>
 
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => printLoanRequest(item)}
+            title="พิมพ์บันทึกข้อความขออนุมัติยืมเงิน (ตัวอย่างที่ 22/33)"
+          >
+            <Printer className="h-3 w-3 mr-1" />
+            ขออนุมัติยืม
+          </Button>
+
           {item.status === ST.PENDING_VERIFY && (
             <Button
               variant="outline"
@@ -733,6 +821,32 @@ export default function LoanAgreementPage() {
             </Button>
           )}
 
+          {item.status === ST.RETURNED && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => printLoanReturn(item)}
+              title="พิมพ์บันทึกข้อความส่งใช้เงินยืม (ตัวอย่างที่ 35)"
+            >
+              <Printer className="h-3 w-3 mr-1" />
+              บันทึกส่งใช้
+            </Button>
+          )}
+
+          {item.status === ST.RETURNED && Number(item.return_voucher_amount ?? 0) > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => printVoucherReceipt(item)}
+              title="พิมพ์ใบรับใบสำคัญ (ตัวอย่างที่ 37)"
+            >
+              <Printer className="h-3 w-3 mr-1" />
+              ใบรับใบสำคัญ
+            </Button>
+          )}
+
           {(item.status === ST.PENDING_VERIFY ||
             item.status === ST.PENDING_APPROVE ||
             item.status === ST.PENDING_DISBURSE ||
@@ -764,6 +878,10 @@ export default function LoanAgreementPage() {
             <Button variant="outline" onClick={handlePrintRegister} disabled={loans.length === 0}>
               <Printer className="h-4 w-4 mr-1" />
               พิมพ์ทะเบียนคุม
+            </Button>
+            <Button variant="outline" onClick={handlePrintCashEquivalent} disabled={loans.length === 0}>
+              <Printer className="h-4 w-4 mr-1" />
+              เอกสารแทนตัวเงิน (ตย.4)
             </Button>
             <ExportButton
               onExport={handleExport}

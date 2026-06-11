@@ -9,6 +9,11 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { SmpDepositService } from './smp-deposit.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('SmpDeposit')
 export class SmpDepositController {
@@ -20,7 +25,9 @@ export class SmpDepositController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.smpDepositService.loadEntries(scId, syId, budgetYear);
   }
 
@@ -30,7 +37,9 @@ export class SmpDepositController {
     @Param('sc_id', ParseIntPipe) scId: number,
     @Param('sy_id', ParseIntPipe) syId: number,
     @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.smpDepositService.getSummary(scId, syId, budgetYear);
   }
 
@@ -52,19 +61,28 @@ export class SmpDepositController {
       note?: string;
       up_by?: number;
     },
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, Number(dto.sc_id));
     return this.smpDepositService.addEntry(dto);
   }
 
   @Post('updateEntry/:sde_id')
   @HttpCode(HttpStatus.OK)
-  updateEntry(@Param('sde_id', ParseIntPipe) sdeId: number, @Body() dto: any) {
-    return this.smpDepositService.updateEntry(sdeId, dto);
+  updateEntry(
+    @Param('sde_id', ParseIntPipe) sdeId: number,
+    @Body() dto: any,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.smpDepositService.updateEntry(sdeId, dto, user);
   }
 
   @Post('removeEntry')
   @HttpCode(HttpStatus.OK)
-  removeEntry(@Body() dto: { sde_id: number; up_by: number }) {
-    return this.smpDepositService.removeEntry(dto.sde_id, dto.up_by);
+  removeEntry(
+    @Body() dto: { sde_id: number; up_by: number },
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.smpDepositService.removeEntry(dto.sde_id, dto.up_by, user);
   }
 }

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { IntraBankTransfer } from './entities/intra-bank-transfer.entity';
+import { BankLedgerEntry } from '../bank-ledger/entities/bank-ledger-entry.entity';
 import {
   AddIntraBankTransferDto,
   CompleteIntraBankTransferDto,
@@ -32,6 +33,8 @@ export class IntraBankTransferService {
   constructor(
     @InjectRepository(IntraBankTransfer)
     private readonly ibtRepo: Repository<IntraBankTransfer>,
+    @InjectRepository(BankLedgerEntry)
+    private readonly bleRepo: Repository<BankLedgerEntry>,
   ) {}
 
   async load(scId: number, from?: string, to?: string) {
@@ -120,9 +123,60 @@ export class IntraBankTransferService {
     if (t.status !== 1) return { flag: false, ms: 'สถานะไม่ถูกต้อง' };
     t.status = 2;
     t.completedDate = dto.completed_date;
-    if (dto.from_ledger_id) t.fromLedgerId = dto.from_ledger_id;
-    if (dto.to_ledger_id) t.toLedgerId = dto.to_ledger_id;
     t.upBy = dto.up_by;
+
+    const amount = toNum(t.amount);
+    const fee = toNum(t.fee);
+
+    // ── auto-sync ทะเบียนคุมเงินฝากธนาคาร 2 ฝั่ง ─────────────────────────────
+    // ฝั่งต้นทาง: ถอน (amount + ค่าธรรมเนียม) ; ฝั่งปลายทาง: ฝาก (amount)
+    // ถ้า caller ส่ง ledger id มาเอง (ผูกรายการที่คีย์มือ) → เคารพค่านั้น ไม่สร้างซ้ำ
+    const syId = dto.sy_id ?? 0;
+    if (dto.from_ledger_id) {
+      t.fromLedgerId = dto.from_ledger_id;
+    } else {
+      const out = await this.bleRepo.save(
+        this.bleRepo.create({
+          scId: t.scId,
+          syId,
+          baId: t.fromBankId,
+          entryType: 2, // ถอน
+          docNo: t.ibtNo,
+          entryDate: dto.completed_date,
+          detail:
+            `โอนไปบัญชี #${t.toBankId}` +
+            (fee > 0 ? ` (รวมค่าธรรมเนียม ${fee.toLocaleString('th-TH')} บาท)` : ''),
+          amount: amount + fee,
+          refType: 'transfer',
+          refId: t.ibtId,
+          upBy: dto.up_by,
+          del: 0,
+        }),
+      );
+      t.fromLedgerId = out.bleId;
+    }
+    if (dto.to_ledger_id) {
+      t.toLedgerId = dto.to_ledger_id;
+    } else {
+      const inn = await this.bleRepo.save(
+        this.bleRepo.create({
+          scId: t.scId,
+          syId,
+          baId: t.toBankId,
+          entryType: 1, // ฝาก
+          docNo: t.ibtNo,
+          entryDate: dto.completed_date,
+          detail: `รับโอนจากบัญชี #${t.fromBankId}`,
+          amount,
+          refType: 'transfer',
+          refId: t.ibtId,
+          upBy: dto.up_by,
+          del: 0,
+        }),
+      );
+      t.toLedgerId = inn.bleId;
+    }
+
     await this.ibtRepo.save(t);
     return { flag: true, ms: 'บันทึกการโอนเงินสำเร็จ' };
   }

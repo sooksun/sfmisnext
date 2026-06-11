@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AiRouterService } from '../ai-router.service';
 import { ChatMessage } from '../providers/ai-provider.interface';
+import { CrossDomainGuardService } from '../../cross-domain-guard/cross-domain-guard.service';
 
 export type AlertSeverity = 'info' | 'warning' | 'error';
 
@@ -11,6 +12,10 @@ export interface FinancialAlert {
   title: string;
   detail: string;
   relatedId?: number | string;
+  /** คำแนะนำการแก้ไข (แสดงเป็นปุ่ม/ลิงก์ในหน้าแจ้งเตือน) */
+  suggestedFix?: string;
+  /** เอกสารที่เกี่ยวข้อง (ช่วยให้ผู้ใช้ตามไปแก้ได้) */
+  linkedRecords?: { table: string; id: number | string; label: string }[];
 }
 
 @Injectable()
@@ -20,6 +25,7 @@ export class ValidationService {
   constructor(
     private readonly aiRouter: AiRouterService,
     private readonly dataSource: DataSource,
+    private readonly crossDomainGuard: CrossDomainGuardService,
   ) {}
 
   /**
@@ -32,6 +38,11 @@ export class ValidationService {
       this.checkBankReconciliationMismatch(scId, budgetYear),
       this.checkDuplicateInvoices(scId, budgetYear),
       this.checkStaleChecks(scId, budgetYear),
+      // R1/R2 — ความสัมพันธ์ข้ามงานที่อาจผิดพลาดโดยไม่ตั้งใจ
+      this.checkReceivedNotInvoiced(scId, budgetYear),
+      this.checkCommittedWithoutBudget(scId, budgetYear),
+      // G1/G2/G4 (inspect mode) — ความขัดแย้งเชิงโครงสร้างข้ามงาน (กฎเดียวกับ write-path)
+      this.crossDomainGuard.inspect(scId, budgetYear),
     ]);
 
     const alerts: FinancialAlert[] = [];
@@ -260,6 +271,100 @@ export class ValidationService {
       title: `เช็คค้างนาน: ${r.check_no}`,
       detail: `เช็คลงวันที่ ${r.check_date} ยอด ${Number(r.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท ค้างมาแล้ว ${r.days_pending} วัน`,
       relatedId: r.id,
+    }));
+  }
+
+  /**
+   * R1 — ตรวจรับพัสดุผ่านแล้ว แต่ยังไม่ได้ตั้งเบิก (เกิน 7 วัน)
+   * ป้องกันมูลหนี้ค้างที่ลืมตั้งเบิก (เชื่อม พัสดุ → การเงิน)
+   */
+  private async checkReceivedNotInvoiced(
+    scId: number,
+    budgetYear: string,
+  ): Promise<FinancialAlert[]> {
+    const yearBE = Number(budgetYear);
+    const rows: {
+      order_id: number;
+      project_name: string | null;
+      amount: number;
+      days_since: number;
+    }[] = await this.dataSource.query(
+      `SELECT po.order_id,
+              proj.proj_name AS project_name,
+              COALESCE(ct.ct_total, ct.ct_amount, 0) AS amount,
+              DATEDIFF(NOW(), MAX(insp.insp_date)) AS days_since
+       FROM sup_inspection insp
+       JOIN parcel_order po ON po.order_id = insp.order_id AND po.del = 0
+       LEFT JOIN sup_contract ct ON ct.order_id = po.order_id AND ct.del = 0
+       LEFT JOIN pln_project proj ON proj.proj_id = po.project_id
+       WHERE po.sc_id = ? AND po.acad_year = ?
+         AND insp.insp_result = 1 AND insp.stock_posted = 1 AND insp.del = 0
+         AND NOT EXISTS (
+           SELECT 1 FROM request_withdraw rw
+           WHERE rw.order_id = po.order_id AND rw.del = 0
+         )
+       GROUP BY po.order_id, proj.proj_name, amount
+       HAVING days_since > 7
+       ORDER BY days_since DESC
+       LIMIT 20`,
+      [scId, yearBE],
+    );
+
+    return rows.map((r) => ({
+      type: 'received_not_invoiced',
+      severity: (r.days_since > 30 ? 'error' : 'warning') as AlertSeverity,
+      title: `ตรวจรับแล้วยังไม่ตั้งเบิก: คำสั่งซื้อ #${r.order_id}`,
+      detail: `${r.project_name ?? 'ไม่ระบุโครงการ'} — ตรวจรับผ่านมาแล้ว ${r.days_since} วัน ยอด ${Number(r.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท ยังไม่ได้ตั้งเรื่องจ่าย`,
+      relatedId: r.order_id,
+      suggestedFix:
+        'ไปตั้งเรื่องจ่ายที่หน้า จ่ายเงิน (/sfmis/pay-menu/invoice)',
+      linkedRecords: [
+        {
+          table: 'parcel_order',
+          id: r.order_id,
+          label: `คำสั่งซื้อ #${r.order_id}`,
+        },
+      ],
+    }));
+  }
+
+  /**
+   * R2 — โครงการที่มีการก่อหนี้จัดซื้อ แต่ไม่ได้กำหนดวงเงินโครงการ (งบ = 0)
+   * ป้องกันการจัดซื้อบนโครงการที่ยังไม่ได้ตั้งงบ (เชื่อม แผน → พัสดุ)
+   */
+  private async checkCommittedWithoutBudget(
+    scId: number,
+    budgetYear: string,
+  ): Promise<FinancialAlert[]> {
+    const yearBE = Number(budgetYear);
+    const rows: {
+      proj_id: number;
+      proj_name: string;
+      committed: number;
+    }[] = await this.dataSource.query(
+      `SELECT p.proj_id, p.proj_name, o.committed
+       FROM (
+         SELECT project_id, SUM(budgets) AS committed
+         FROM parcel_order
+         WHERE sc_id = ? AND del = 0 AND order_status <> 9
+           AND acad_year = ? AND project_id > 0
+         GROUP BY project_id
+       ) o
+       JOIN pln_project p ON p.proj_id = o.project_id AND p.del = 0
+       WHERE (p.proj_budget IS NULL OR p.proj_budget <= 0) AND o.committed > 0`,
+      [scId, yearBE],
+    );
+
+    return rows.map((r) => ({
+      type: 'committed_without_budget',
+      severity: 'error' as AlertSeverity,
+      title: `จัดซื้อบนโครงการที่ยังไม่ตั้งงบ: ${r.proj_name}`,
+      detail: `ผลรวมคำสั่งซื้อ ${Number(r.committed).toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท แต่วงเงินโครงการเป็น 0 — ควรกำหนดงบโครงการให้ถูกต้อง`,
+      relatedId: r.proj_id,
+      suggestedFix: 'แก้ไขวงเงินโครงการที่หน้า แผนงาน/โครงการ',
+      linkedRecords: [
+        { table: 'pln_project', id: r.proj_id, label: r.proj_name },
+      ],
     }));
   }
 

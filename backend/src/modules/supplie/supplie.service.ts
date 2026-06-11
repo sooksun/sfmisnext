@@ -13,6 +13,10 @@ import { EditReceiveParcelDto } from './dto/edit-receive-parcel.dto';
 import { UpdateSupplieOrderDto } from './dto/update-supplie-order.dto';
 import { ConfirmWithdrawParcelDto } from './dto/confirm-withdraw-parcel.dto';
 import { LoadStockSupplieDto } from './dto/load-stock-supplie.dto';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Injectable()
 export class SupplieService {
@@ -46,22 +50,65 @@ export class SupplieService {
       order: { receiveId: 'DESC' },
     });
 
-    return receives.map((receive) => ({
-      receive_id: receive.receiveId,
-      admin_id: receive.adminId,
-      agent_admin_id: receive.agentAdminId,
-      user_pacel_id: receive.userPacelId,
-      sc_id: receive.scId,
-      order_id: receive.orderId,
-      sy_year: receive.syYear,
-      title: receive.title,
-      del: receive.del,
-      receive_date: receive.receiveDate,
-      receive_status: receive.receiveStatus,
-      create_date: receive.createDate,
-      update_date: receive.updateDate,
-      add: false,
-    }));
+    // Batch-load (กัน N+1): ข้อมูลตรวจรับ (ตาม order_id) + จำนวนรายการที่รับ (ตาม receive_id)
+    const orderIds = receives.map((r) => r.orderId).filter((id) => id > 0);
+    const receiveIds = receives.map((r) => r.receiveId);
+
+    const inspections =
+      orderIds.length > 0
+        ? await this.supInspectionRepository.find({
+            where: { orderId: In(orderIds), del: 0 },
+          })
+        : [];
+    // เก็บ inspection ล่าสุดต่อ 1 order (find เรียงตาม insp_id เริ่มต้น — ใช้ตัว id มากสุด)
+    const inspByOrder = new Map<number, SupInspection>();
+    for (const insp of inspections) {
+      if (insp.orderId == null) continue;
+      const cur = inspByOrder.get(insp.orderId);
+      if (!cur || insp.inspId > cur.inspId) inspByOrder.set(insp.orderId, insp);
+    }
+
+    const details =
+      receiveIds.length > 0
+        ? await this.receiveParcelDetailRepository.find({
+            where: { receiveId: In(receiveIds), del: 0 },
+          })
+        : [];
+    const itemCountByReceive = new Map<number, number>();
+    for (const d of details) {
+      if (d.receiveId == null) continue;
+      itemCountByReceive.set(
+        d.receiveId,
+        (itemCountByReceive.get(d.receiveId) ?? 0) + 1,
+      );
+    }
+
+    return receives.map((receive) => {
+      const insp = inspByOrder.get(receive.orderId);
+      return {
+        receive_id: receive.receiveId,
+        admin_id: receive.adminId,
+        agent_admin_id: receive.agentAdminId,
+        user_pacel_id: receive.userPacelId,
+        sc_id: receive.scId,
+        order_id: receive.orderId,
+        sy_year: receive.syYear,
+        title: receive.title,
+        project_name: receive.title,
+        del: receive.del,
+        receive_date: receive.receiveDate,
+        receive_status: receive.receiveStatus,
+        total_items: itemCountByReceive.get(receive.receiveId) ?? 0,
+        // ── ข้อมูลตรวจรับ (เอกสาร พ.ร.บ. ม.100-104) ที่ผูกกับคำสั่งซื้อนี้ ──
+        insp_id: insp?.inspId ?? null,
+        insp_result: insp?.inspResult ?? null,
+        stock_posted: insp?.stockPosted ?? 0,
+        report_no: insp?.reportNo ?? null,
+        create_date: receive.createDate,
+        update_date: receive.updateDate,
+        add: false,
+      };
+    });
   }
 
   async loadSubProject(scId: number, yearId: number) {
@@ -135,7 +182,14 @@ export class SupplieService {
     }));
   }
 
-  async loadParcelDetail(orderId: number) {
+  async loadParcelDetail(orderId: number, user?: JwtUser) {
+    // Multi-tenant guard: คำสั่งซื้อต้องเป็นของโรงเรียนผู้ใช้
+    if (user) {
+      const order = await this.parcelOrderRepository.findOne({
+        where: { orderId, del: 0 },
+      });
+      if (order && order.scId != null) assertSameSchool(user, order.scId);
+    }
     const details = await this.parcelDetailRepository.find({
       where: {
         orderId,
@@ -143,10 +197,24 @@ export class SupplieService {
       },
     });
 
+    // ชื่อวัสดุ (ให้หน้า "บันทึกรับพัสดุ" แสดงรายการที่อ่านออก ไม่ใช่แค่ supp_id)
+    const suppIds = details
+      .map((d) => d.suppId)
+      .filter((id): id is number => !!id);
+    const supplies =
+      suppIds.length > 0
+        ? await this.suppliesRepository.find({
+            where: { suppId: In(suppIds), del: 0 },
+          })
+        : [];
+    const nameBySuppId = new Map<number, string>();
+    for (const s of supplies) nameBySuppId.set(s.suppId, s.suppName);
+
     return details.map((detail) => ({
       pc_id: detail.pcId,
       order_id: detail.orderId,
       supp_id: detail.suppId,
+      sp_name: detail.suppId ? (nameBySuppId.get(detail.suppId) ?? '') : '',
       pc_total: detail.pcTotal,
       del: detail.del,
       create_date: detail.createDate,
@@ -173,6 +241,19 @@ export class SupplieService {
       },
     });
 
+    // ชื่อวัสดุ (ให้ dialog ตรวจรับแสดงรายการที่อ่านออก ไม่ใช่แค่ supp_id)
+    const suppIds = parcelDetails
+      .map((pd) => pd.suppId)
+      .filter((id): id is number => !!id);
+    const supplies =
+      suppIds.length > 0
+        ? await this.suppliesRepository.find({
+            where: { suppId: In(suppIds), del: 0 },
+          })
+        : [];
+    const nameBySuppId = new Map<number, string>();
+    for (const s of supplies) nameBySuppId.set(s.suppId, s.suppName);
+
     // Calculate balance for each supply
     const balance = await this.calculateBalance(scId);
 
@@ -183,6 +264,7 @@ export class SupplieService {
           pc_id: pd.pcId,
           order_id: pd.orderId,
           supp_id: pd.suppId,
+          sp_name: pd.suppId ? (nameBySuppId.get(pd.suppId) ?? '') : '',
           pc_total: pd.pcTotal,
           rp_id: rp?.rpId || 0,
           rp_total: rp?.rpTotal || 0,
@@ -396,7 +478,7 @@ export class SupplieService {
     });
   }
 
-  async removeReceiveParcel(receiveId: number) {
+  async removeReceiveParcel(receiveId: number, user?: JwtUser) {
     const receive = await this.receiveParcelOrderRepository.findOne({
       where: { receiveId, del: 0 },
     });
@@ -404,6 +486,9 @@ export class SupplieService {
     if (!receive) {
       return { flag: false, ms: 'ไม่พบข้อมูลการรับพัสดุ' };
     }
+
+    // Multi-tenant guard: รายการรับพัสดุต้องเป็นของโรงเรียนผู้ใช้
+    if (user && receive.scId != null) assertSameSchool(user, receive.scId);
 
     // M5: block ลบถ้า inspection ลงสต็อกแล้ว (stockPosted=1)
     if (receive.orderId) {
@@ -423,7 +508,7 @@ export class SupplieService {
     return { flag: true };
   }
 
-  async updateSupplieOrder(dto: UpdateSupplieOrderDto) {
+  async updateSupplieOrder(dto: UpdateSupplieOrderDto, user?: JwtUser) {
     const order = await this.parcelOrderRepository.findOne({
       where: { orderId: dto.order_id, del: 0 },
     });
@@ -431,6 +516,9 @@ export class SupplieService {
     if (!order) {
       return { flag: false, ms: 'ไม่พบข้อมูลคำสั่งซื้อ' };
     }
+
+    // Multi-tenant guard: คำสั่งซื้อต้องเป็นของโรงเรียนผู้ใช้
+    if (user && order.scId != null) assertSameSchool(user, order.scId);
 
     if (dto.order_status !== undefined) order.orderStatus = dto.order_status;
     if (dto.remark !== undefined) order.remark = dto.remark;
@@ -485,7 +573,16 @@ export class SupplieService {
   }
 
   // backward-compat alias (L1: typo fix confiirmWithDrawParcel → confirmReceiveParcel)
-  async confirmWithDrawParcel(dto: ConfirmWithdrawParcelDto) {
+  async confirmWithDrawParcel(dto: ConfirmWithdrawParcelDto, user?: JwtUser) {
+    // Multi-tenant guard: ใบเบิก/รับพัสดุต้องเป็นของโรงเรียนผู้ใช้
+    if (user && dto.order?.receive_id) {
+      const receive = await this.receiveParcelOrderRepository.findOne({
+        where: { receiveId: dto.order.receive_id, del: 0 },
+      });
+      if (receive && receive.scId != null) {
+        assertSameSchool(user, receive.scId);
+      }
+    }
     return this.confirmReceiveParcel(dto);
   }
 

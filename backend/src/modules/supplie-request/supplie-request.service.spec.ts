@@ -47,7 +47,10 @@ describe('SupplieRequestService', () => {
       providers: [
         SupplieRequestService,
         { provide: getRepositoryToken(SupplieRequest), useValue: reqRepo },
-        { provide: getRepositoryToken(SupplieRequestDetail), useValue: detRepo },
+        {
+          provide: getRepositoryToken(SupplieRequestDetail),
+          useValue: detRepo,
+        },
         { provide: getRepositoryToken(TransactionSupplies), useValue: txRepo },
       ],
     }).compile();
@@ -109,7 +112,9 @@ describe('SupplieRequestService', () => {
         { rqdId: 10, suppId: 5, reqQty: 3, issuedQty: 0, note: null },
       ]);
       const result = await service.getDetail(1);
-      expect(detRepo.find).toHaveBeenCalledWith({ where: { reqId: 1, del: 0 } });
+      expect(detRepo.find).toHaveBeenCalledWith({
+        where: { reqId: 1, del: 0 },
+      });
       expect(result!.status_name).toBe('ส่งคำขอ');
       expect(result!.details).toHaveLength(1);
       expect(result!.details[0].rqd_id).toBe(10);
@@ -276,8 +281,12 @@ describe('SupplieRequestService', () => {
       reqRepo.findOne.mockResolvedValue({ reqId: 1, status: 2, del: 0 });
       const det: any = { rqdId: 10, suppId: 5, del: 0 };
       detRepo.findOne.mockResolvedValue(det);
-      txRepo.createQueryBuilder.mockReturnValue(makeTxQb({ transBalance: 100 }));
-      const result = await service.issue(1, 9, [{ rqd_id: 10, issued_qty: 30 }]);
+      txRepo.createQueryBuilder.mockReturnValue(
+        makeTxQb({ transBalance: 100 }),
+      );
+      const result = await service.issue(1, 9, [
+        { rqd_id: 10, issued_qty: 30 },
+      ]);
 
       expect(txRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({

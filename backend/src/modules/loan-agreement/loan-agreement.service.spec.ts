@@ -30,7 +30,11 @@ describe('LoanAgreementService — workflow + ledger (financial_transactions)', 
   };
   let laTxRepo: { create: jest.Mock; save: jest.Mock };
   let lreTxRepo: { create: jest.Mock; save: jest.Mock };
-  let ckTxRepo: { createQueryBuilder: jest.Mock; create: jest.Mock; save: jest.Mock };
+  let ckTxRepo: {
+    createQueryBuilder: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+  };
 
   // service-level laRepo (นอก transaction)
   let laRepo: { findOne: jest.Mock; save: jest.Mock; create: jest.Mock };
@@ -58,7 +62,9 @@ describe('LoanAgreementService — workflow + ledger (financial_transactions)', 
     };
     laTxRepo = {
       create: jest.fn().mockImplementation((e) => e),
-      save: jest.fn().mockImplementation((e) => Promise.resolve({ laId: 1, ...e })),
+      save: jest
+        .fn()
+        .mockImplementation((e) => Promise.resolve({ laId: 1, ...e })),
     };
     lreTxRepo = {
       create: jest.fn().mockImplementation((e) => e),
@@ -113,8 +119,14 @@ describe('LoanAgreementService — workflow + ledger (financial_transactions)', 
         { provide: getRepositoryToken(LoanAgreement), useValue: laRepo },
         { provide: getRepositoryToken(LoanReturnEvidence), useValue: {} },
         { provide: getRepositoryToken(Admin), useValue: adminRepo },
-        { provide: getRepositoryToken(BudgetIncomeType), useValue: budgetTypeRepo },
-        { provide: getRepositoryToken(FinancialTransactions), useValue: ftRepo },
+        {
+          provide: getRepositoryToken(BudgetIncomeType),
+          useValue: budgetTypeRepo,
+        },
+        {
+          provide: getRepositoryToken(FinancialTransactions),
+          useValue: ftRepo,
+        },
         {
           provide: DocCounterService,
           useValue: {
@@ -127,12 +139,12 @@ describe('LoanAgreementService — workflow + ledger (financial_transactions)', 
         {
           provide: FundBalanceService,
           useValue: {
-            available: jest.fn().mockImplementation(() =>
-              Promise.resolve(availableBalance),
-            ),
-            availableInTx: jest.fn().mockImplementation(() =>
-              Promise.resolve(availableBalance),
-            ),
+            available: jest
+              .fn()
+              .mockImplementation(() => Promise.resolve(availableBalance)),
+            availableInTx: jest
+              .fn()
+              .mockImplementation(() => Promise.resolve(availableBalance)),
           },
         },
         {
@@ -259,7 +271,12 @@ describe('LoanAgreementService — workflow + ledger (financial_transactions)', 
     expect(savedFts).toHaveLength(2);
     const clear = savedFts.find((f: any) => f.registerKind === 'clear_voucher');
     const cash = savedFts.find((f: any) => f.registerKind === 'return_cash');
-    expect(clear).toMatchObject({ type: 0, bgTypeId: 101, amount: 28650, laId: 1 });
+    expect(clear).toMatchObject({
+      type: 0,
+      bgTypeId: 101,
+      amount: 28650,
+      laId: 1,
+    });
     expect(cash).toMatchObject({
       type: 1,
       bgTypeId: 101,

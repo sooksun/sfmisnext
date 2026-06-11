@@ -14,6 +14,15 @@ VALUES
   (2556, 1, '2012-10-01', '2013-09-30', @UP, 0, NOW(), NOW(), @SC, 2556, '2012-10-01', '2013-09-30');
 SET @SY := LAST_INSERT_ID();
 
+-- 1.5) เล่มใบเสร็จตามโจทย์: เล่ม 8 ก 56789 เลขที่ 1-50 ------------------------
+DELETE FROM receipt_book WHERE sc_id=@SC AND budget_year='2013';
+INSERT INTO receipt_book
+  (sc_id, sy_id, budget_year, book_code, from_no, to_no, current_no, status,
+   opened_date, note, up_by, del, create_date, update_date)
+VALUES
+  (@SC, @SY, '2013', '8 ก 56789', 1, 50, 1, 1,
+   '2012-10-01', 'ชุดทดสอบ finance1.pdf', @UP, 0, NOW(), NOW());
+
 -- 2) money types ตามทะเบียนคุมในคู่มือ (id 101–110) ---------------------------
 DELETE FROM master_budget_income_type WHERE bg_type_id BETWEEN 101 AND 120;
 INSERT INTO master_budget_income_type (bg_type_id, budget_type, budget_type_calc, budget_borrow_type, spacial_type, up_by, del, create_date, update_date) VALUES

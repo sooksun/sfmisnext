@@ -10,16 +10,25 @@ describe('DeleteWithReasonDialog', () => {
     expect(screen.queryByText('ยืนยันการลบข้อมูล')).not.toBeInTheDocument()
   })
 
-  it('requireReason + เหตุผลว่าง → ขึ้น error และไม่เรียก onConfirm', async () => {
+  it('requireReason + เหตุผลว่าง → ปุ่มยืนยัน disabled และไม่เรียก onConfirm', () => {
     const onConfirm = vi.fn()
     render(
       <DeleteWithReasonDialog open onClose={() => {}} onConfirm={onConfirm} />,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'ยืนยันการลบ' }))
-    await waitFor(() =>
-      expect(screen.getByText('กรุณากรอกเหตุผลการลบ')).toBeInTheDocument(),
-    )
+    const confirm = screen.getByRole('button', { name: 'ยืนยันการลบ' })
+    expect(confirm).toBeDisabled()
+    fireEvent.click(confirm)
     expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it('เหตุผลเป็นช่องว่างล้วน → ปุ่มยืนยันยัง disabled', () => {
+    render(
+      <DeleteWithReasonDialog open onClose={() => {}} onConfirm={() => {}} />,
+    )
+    fireEvent.change(screen.getByPlaceholderText(/กรอกข้อมูลผิด/), {
+      target: { value: '   ' },
+    })
+    expect(screen.getByRole('button', { name: 'ยืนยันการลบ' })).toBeDisabled()
   })
 
   it('กรอกเหตุผลแล้วยืนยัน → เรียก onConfirm พร้อมเหตุผล (trim)', async () => {
@@ -33,18 +42,30 @@ describe('DeleteWithReasonDialog', () => {
     await waitFor(() => expect(onConfirm).toHaveBeenCalledWith('รายการซ้ำ'))
   })
 
-  it('การพิมพ์ล้าง error เดิม', async () => {
+  it('พิมพ์เหตุผลแล้ว → ปุ่มยืนยัน enabled', () => {
     render(
       <DeleteWithReasonDialog open onClose={() => {}} onConfirm={() => {}} />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'ยืนยันการลบ' }))
-    await waitFor(() =>
-      expect(screen.getByText('กรุณากรอกเหตุผลการลบ')).toBeInTheDocument(),
     )
     fireEvent.change(screen.getByPlaceholderText(/กรอกข้อมูลผิด/), {
       target: { value: 'x' },
     })
-    expect(screen.queryByText('กรุณากรอกเหตุผลการลบ')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ยืนยันการลบ' })).not.toBeDisabled()
+  })
+
+  it('custom reasonLabel/confirmLabel → แสดงตามที่กำหนด', () => {
+    render(
+      <DeleteWithReasonDialog
+        open
+        onClose={() => {}}
+        onConfirm={() => {}}
+        title="ยืนยันการยกเลิกเช็ค"
+        reasonLabel="เหตุผลการยกเลิก"
+        confirmLabel="ยกเลิกเช็ค"
+      />,
+    )
+    expect(screen.getByText('ยืนยันการยกเลิกเช็ค')).toBeInTheDocument()
+    expect(screen.getByText(/เหตุผลการยกเลิก/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ยกเลิกเช็ค' })).toBeInTheDocument()
   })
 
   it('requireReason=false + เหตุผลว่าง → เรียก onConfirm("") ได้', async () => {
@@ -65,11 +86,11 @@ describe('DeleteWithReasonDialog', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('loading → ปุ่มแสดง "กำลังลบ..." และ disabled', () => {
+  it('loading → ปุ่มแสดง "กำลังดำเนินการ..." และ disabled', () => {
     render(
       <DeleteWithReasonDialog open onClose={() => {}} onConfirm={() => {}} loading />,
     )
-    const confirm = screen.getByRole('button', { name: 'กำลังลบ...' })
+    const confirm = screen.getByRole('button', { name: 'กำลังดำเนินการ...' })
     expect(confirm).toBeDisabled()
   })
 })

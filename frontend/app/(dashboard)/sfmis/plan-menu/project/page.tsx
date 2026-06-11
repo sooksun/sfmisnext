@@ -14,6 +14,13 @@ import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import { useAppContext } from '@/hooks/use-app-context'
 
@@ -25,6 +32,9 @@ interface ProjectRow {
   project_code: string       // auto-gen PROJ-XXXXXX จาก backend
   proj_name: string
   proj_detail: string | null
+  proj_policy: string | null
+  proj_budget_type: string | null
+  proj_owner: string | null
   proj_budget: number
   proj_status: number
   sc_id: number
@@ -43,9 +53,12 @@ interface ProjectResponse {
 // ── Schema ────────────────────────────────────────────────────────────────────
 
 const projectSchema = z.object({
-  proj_name:   z.string().min(1, 'กรุณากรอกชื่อโครงการ'),
-  proj_detail: z.string().optional(),
-  proj_budget: z.number().min(0, 'กรุณากรอกวงเงิน'),
+  proj_name:        z.string().min(1, 'กรุณากรอกชื่อโครงการ'),
+  proj_detail:      z.string().optional(),
+  proj_policy:      z.string().optional(),
+  proj_budget_type: z.string().optional(),
+  proj_owner:       z.string().optional(),
+  proj_budget:      z.number().min(0, 'กรุณากรอกวงเงิน'),
 })
 type ProjectForm = z.infer<typeof projectSchema>
 
@@ -86,11 +99,35 @@ export default function ProjectPage() {
 
   const rows = resp?.data ?? []
 
+  // ── Dropdown sources: นโยบายโรงเรียน + ประเภทเงิน ─────────────────────────
+  const { data: policyData } = useQuery({
+    queryKey: ['school-policy-list', scId],
+    queryFn: () =>
+      apiGet<{ data: { sp_id: number; sp_name: string }[] }>(
+        `B_school_policy/load_school_policy/${scId}/0/500`,
+      ),
+    enabled: scId > 0,
+  })
+  const policyList = policyData?.data ?? []
+
+  // ประเภทเงินที่ "กำหนดรายหัวได้" (ตั้งค่าหน้า 1.4 ตั้งค่าเงินรายหัว) — perhead === 1
+  const { data: moneyTypeData } = useQuery({
+    queryKey: ['perhead-budget-types', scId],
+    queryFn: () =>
+      apiGet<{ bg_type_id: number; budget_type: string; perhead: number }[]>(
+        `Student/loadPerheadBudgetTypes/${scId}`,
+      ),
+    enabled: scId > 0,
+  })
+  const moneyTypeList = (Array.isArray(moneyTypeData) ? moneyTypeData : []).filter(
+    (m) => m.perhead === 1,
+  )
+
   // ── Form ──────────────────────────────────────────────────────────────────
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<ProjectForm>({
+  const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<ProjectForm>({
     resolver: zodResolver(projectSchema),
-    defaultValues: { proj_name: '', proj_detail: '', proj_budget: 0 },
+    defaultValues: { proj_name: '', proj_detail: '', proj_policy: '', proj_budget_type: '', proj_owner: '', proj_budget: 0 },
   })
 
   // ── Mutations ─────────────────────────────────────────────────────────────
@@ -135,16 +172,19 @@ export default function ProjectPage() {
 
   function openAdd() {
     setEditing(null)
-    reset({ proj_name: '', proj_detail: '', proj_budget: 0 })
+    reset({ proj_name: '', proj_detail: '', proj_policy: '', proj_budget_type: '', proj_owner: '', proj_budget: 0 })
     setDialogOpen(true)
   }
 
   function openEdit(item: ProjectRow) {
     setEditing(item)
     reset({
-      proj_name:   item.proj_name ?? '',
-      proj_detail: item.proj_detail ?? '',
-      proj_budget: Number(item.proj_budget),
+      proj_name:        item.proj_name ?? '',
+      proj_detail:      item.proj_detail ?? '',
+      proj_policy:      item.proj_policy ?? '',
+      proj_budget_type: item.proj_budget_type ?? '',
+      proj_owner:       item.proj_owner ?? '',
+      proj_budget:      Number(item.proj_budget),
     })
     setDialogOpen(true)
   }
@@ -243,6 +283,44 @@ export default function ProjectPage() {
           <div>
             <Label>รายละเอียด</Label>
             <Input {...register('proj_detail')} placeholder="รายละเอียดโครงการ (ไม่บังคับ)" />
+          </div>
+          <div>
+            <Label>สอดคล้องกับนโยบายโรงเรียน</Label>
+            <Select
+              value={watch('proj_policy') || ''}
+              onValueChange={(v) => setValue('proj_policy', v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={policyList.length ? 'เลือกนโยบายโรงเรียน' : 'ยังไม่มีนโยบายโรงเรียน (เพิ่มที่หน้านโยบายโรงเรียน)'} />
+              </SelectTrigger>
+              <SelectContent>
+                {policyList.map((p) => (
+                  <SelectItem key={p.sp_id} value={p.sp_name}>{p.sp_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>ประเภทงบประมาณที่ใช้</Label>
+              <Select
+                value={watch('proj_budget_type') || ''}
+                onValueChange={(v) => setValue('proj_budget_type', v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="เลือกประเภทเงิน" />
+                </SelectTrigger>
+                <SelectContent>
+                  {moneyTypeList.map((m) => (
+                    <SelectItem key={m.bg_type_id} value={m.budget_type}>{m.budget_type}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>ผู้รับผิดชอบโครงการ</Label>
+              <Input {...register('proj_owner')} placeholder="ชื่อ-สกุล ผู้รับผิดชอบ" />
+            </div>
           </div>
           <div>
             <Label>วงเงินงบประมาณ (บาท) *</Label>

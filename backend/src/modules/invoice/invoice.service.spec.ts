@@ -7,6 +7,10 @@ import { Partner } from '../general-db/entities/partner.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { BudgetIncomeType } from '../policy/entities/budget-income-type.entity';
 import { FinancialAuditService } from '../financial-audit/financial-audit.service';
+import { CrossDomainGuardService } from '../cross-domain-guard/cross-domain-guard.service';
+import { DeleteLogService } from '../delete-log/delete-log.service';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
+import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 import { AddInvoiceDto } from './dto/add-invoice.dto';
 
 // ─── QueryBuilder mock factory ───────────────────────────────────────────────
@@ -54,6 +58,9 @@ describe('InvoiceService', () => {
   let financialAuditService: jest.Mocked<
     Pick<FinancialAuditService, 'isDateLocked'>
   >;
+  let deleteLog: { log: jest.Mock };
+  let fundBalance: { available: jest.Mock };
+  let regulatoryConfig: { getThreshold: jest.Mock };
 
   beforeEach(async () => {
     const mockQb = makeQb([]);
@@ -70,6 +77,12 @@ describe('InvoiceService', () => {
     adminRepo = { find: jest.fn() };
     budgetTypeRepo = { find: jest.fn() };
     financialAuditService = { isDateLocked: jest.fn() };
+    deleteLog = { log: jest.fn().mockResolvedValue(undefined) };
+    fundBalance = {
+      available: jest.fn().mockResolvedValue(Number.MAX_SAFE_INTEGER),
+    };
+    // default: ปิด block_overspend เพื่อให้ test เดิมพฤติกรรมไม่เปลี่ยน
+    regulatoryConfig = { getThreshold: jest.fn().mockResolvedValue(0) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -83,6 +96,15 @@ describe('InvoiceService', () => {
           useValue: budgetTypeRepo,
         },
         { provide: FinancialAuditService, useValue: financialAuditService },
+        {
+          provide: CrossDomainGuardService,
+          useValue: {
+            checkPayBeforeInspection: jest.fn().mockResolvedValue(null),
+          },
+        },
+        { provide: DeleteLogService, useValue: deleteLog },
+        { provide: FundBalanceService, useValue: fundBalance },
+        { provide: RegulatoryConfigService, useValue: regulatoryConfig },
       ],
     }).compile();
 
@@ -387,6 +409,47 @@ describe('InvoiceService', () => {
       expect(rwRepo.findOne).not.toHaveBeenCalled();
       expect(rwRepo.save).toHaveBeenCalled();
     });
+
+    // ─── BUG-06: กันตั้งเบิกรวมเกินยอดคงเหลือประเภทเงิน ───────────────────────
+    describe('guard ยอดคงเหลือประเภทเงิน (block_overspend=1)', () => {
+      // qb จำลองยอดเบิกค้างจ่ายสะสม (committed)
+      const committedQb = (committed: number) => {
+        const qb: Record<string, jest.Mock> = {};
+        ['select', 'where', 'andWhere'].forEach(
+          (m) => (qb[m] = jest.fn().mockReturnValue(qb)),
+        );
+        qb['getRawOne'] = jest
+          .fn()
+          .mockResolvedValue({ committed: String(committed) });
+        return qb;
+      };
+
+      beforeEach(() => regulatoryConfig.getThreshold.mockResolvedValue(1));
+
+      it('ยอดเบิกค้าง + ขอเบิกใหม่ เกินยอดคงเหลือ → block', async () => {
+        fundBalance.available.mockResolvedValue(10000);
+        rwRepo.createQueryBuilder.mockReturnValue(committedQb(8000));
+        const result = await service.addInvoice(baseDto({ amount: 5000 }));
+        expect(result.flag).toBe(false);
+        expect(result.ms).toContain('เกินยอดคงเหลือ');
+        expect(rwRepo.save).not.toHaveBeenCalled();
+      });
+
+      it('ยอดรวมไม่เกินยอดคงเหลือ → ผ่าน', async () => {
+        fundBalance.available.mockResolvedValue(10000);
+        rwRepo.createQueryBuilder.mockReturnValue(committedQb(2000));
+        const result = await service.addInvoice(baseDto({ amount: 5000 }));
+        expect(result).toEqual({ flag: true });
+        expect(rwRepo.save).toHaveBeenCalled();
+      });
+
+      it('ปิด block_overspend (=0) → ไม่ตรวจยอด', async () => {
+        regulatoryConfig.getThreshold.mockResolvedValue(0);
+        const result = await service.addInvoice(baseDto({ amount: 999999 }));
+        expect(result).toEqual({ flag: true });
+        expect(fundBalance.available).not.toHaveBeenCalled();
+      });
+    });
   });
 
   // ─── updateInvoice ──────────────────────────────────────────────────────────
@@ -502,7 +565,13 @@ describe('InvoiceService', () => {
     it('addInvoice: เบิกเงินยืมเกินวงเงินอนุมัติ → block', async () => {
       rwRepo.manager.query.mockResolvedValue([{ amt: 10000 }]);
       const result = await service.addInvoice(
-        baseDto({ la_id: 9, amount: 12000, rw_type: 1, user_request: 5, p_id: 0 }),
+        baseDto({
+          la_id: 9,
+          amount: 12000,
+          rw_type: 1,
+          user_request: 5,
+          p_id: 0,
+        }),
       );
       expect(result.flag).toBe(false);
       expect(result.ms).toContain('วงเงินยืม');
@@ -773,20 +842,50 @@ describe('InvoiceService', () => {
 
   // ─── deleteInvoice ──────────────────────────────────────────────────────────
   describe('deleteInvoice', () => {
+    const REASON = 'บันทึกผิดรายการ';
+
+    it('ไม่มีเหตุผล → flag: false (บังคับ audit trail)', async () => {
+      const result = await service.deleteInvoice(1, 1, 7);
+      expect(result.flag).toBe(false);
+      expect(result.ms).toContain('เหตุผล');
+      expect(rwRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('เหตุผลเป็นช่องว่าง → flag: false', async () => {
+      const result = await service.deleteInvoice(1, 1, 7, '   ');
+      expect(result.flag).toBe(false);
+      expect(rwRepo.findOne).not.toHaveBeenCalled();
+    });
+
     it('ไม่พบ invoice → flag: false', async () => {
       rwRepo.findOne.mockResolvedValue(null);
-      const result = await service.deleteInvoice(999, 1);
+      const result = await service.deleteInvoice(999, 1, 7, REASON);
       expect(result).toEqual({ flag: false, ms: 'ไม่พบข้อมูลใบเบิก' });
     });
 
     it('cross-tenant isolation — query ใช้ scId ที่ส่งมา', async () => {
       rwRepo.findOne.mockResolvedValue(null);
-      await service.deleteInvoice(1, 77);
+      await service.deleteInvoice(1, 77, 7, REASON);
       expect(rwRepo.findOne).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ scId: 77, del: 0 }),
         }),
       );
+    });
+
+    it('ใบเบิกที่ออกเช็คแล้ว (202) → flag: false ให้ใช้ยกเลิกเช็คแทน', async () => {
+      const invoice = {
+        rwId: 1,
+        scId: 1,
+        del: 0,
+        status: 202,
+        dateRequest: new Date('2026-05-01'),
+      } as RequestWithdraw;
+      rwRepo.findOne.mockResolvedValue(invoice);
+      const result = await service.deleteInvoice(1, 1, 7, REASON);
+      expect(result.flag).toBe(false);
+      expect(result.ms).toContain('ยกเลิกเช็ค');
+      expect(rwRepo.save).not.toHaveBeenCalled();
     });
 
     it('วันที่ถูกล็อก (financial audit) → flag: false', async () => {
@@ -799,12 +898,12 @@ describe('InvoiceService', () => {
       rwRepo.findOne.mockResolvedValue(invoice);
       financialAuditService.isDateLocked.mockResolvedValue(true);
 
-      const result = await service.deleteInvoice(1, 1);
+      const result = await service.deleteInvoice(1, 1, 7, REASON);
       expect(result.flag).toBe(false);
       expect(result.ms).toContain('ถูกลงนามแล้ว');
     });
 
-    it('วันที่ไม่ถูกล็อก → soft delete (del=1) และ flag: true', async () => {
+    it('วันที่ไม่ถูกล็อก → soft delete (del=1) + ลง delete-log และ flag: true', async () => {
       const invoice = {
         rwId: 1,
         scId: 1,
@@ -815,10 +914,19 @@ describe('InvoiceService', () => {
       financialAuditService.isDateLocked.mockResolvedValue(false);
       rwRepo.save.mockResolvedValue(invoice);
 
-      const result = await service.deleteInvoice(1, 1, 7);
+      const result = await service.deleteInvoice(1, 1, 7, REASON);
       expect(invoice.del).toBe(1);
       expect(invoice.upBy).toBe(7);
       expect(rwRepo.save).toHaveBeenCalledWith(invoice);
+      expect(deleteLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          table: 'request_withdraw',
+          rowId: 1,
+          deletedBy: 7,
+          scId: 1,
+          reason: expect.stringContaining(REASON),
+        }),
+      );
       expect(result).toEqual({ flag: true, ms: 'ลบข้อมูลใบเบิกเรียบร้อยแล้ว' });
     });
 
@@ -834,7 +942,7 @@ describe('InvoiceService', () => {
       financialAuditService.isDateLocked.mockResolvedValue(false);
       rwRepo.save.mockResolvedValue(invoice);
 
-      await service.deleteInvoice(1, 1); // ไม่ส่ง upBy
+      await service.deleteInvoice(1, 1, undefined, REASON); // ไม่ส่ง upBy
       expect(invoice.upBy).toBe(0); // ยังคงเดิม
     });
   });

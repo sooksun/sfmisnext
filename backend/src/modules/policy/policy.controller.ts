@@ -10,6 +10,11 @@ import {
 } from '@nestjs/common';
 import { PolicyService } from './policy.service';
 import { PageSizePipe } from '../../common/pipes/page-size.pipe';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Controller('Policy')
 export class PolicyController {
@@ -22,7 +27,9 @@ export class PolicyController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
     @Param('pageSize', PageSizePipe) pageSize: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.policyService.loadRealBudget(syId, scId, page, pageSize);
   }
 
@@ -32,7 +39,9 @@ export class PolicyController {
     @Param('scId', ParseIntPipe) scId: number,
     @Param('page', ParseIntPipe) page: number,
     @Param('pageSize', PageSizePipe) pageSize: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.policyService.loadRealBudget(syId, scId, page, pageSize);
   }
 
@@ -43,7 +52,9 @@ export class PolicyController {
     @Param('year') year: string,
     @Param('page', ParseIntPipe) page: number,
     @Param('pageSize', PageSizePipe) pageSize: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.policyService.loadExpenses(scId, year, page, pageSize);
   }
 
@@ -53,7 +64,9 @@ export class PolicyController {
     @Param('year') year: string,
     @Param('page', ParseIntPipe) page: number,
     @Param('pageSize', PageSizePipe) pageSize: number,
+    @CurrentUser() user: JwtUser,
   ) {
+    assertSameSchool(user, scId);
     return this.policyService.loadExpenses(scId, year, page, pageSize);
   }
 
@@ -77,26 +90,31 @@ export class PolicyController {
 
   @Post('get_partner/:scId')
   @HttpCode(HttpStatus.OK)
-  getPartner(@Param('scId', ParseIntPipe) scId: number) {
+  getPartner(
+    @Param('scId', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
     return this.policyService.getPartner(scId);
   }
 
   @Post('addRealBudget')
   @HttpCode(HttpStatus.OK)
-  addRealBudget(@Body() payload: any) {
+  addRealBudget(@Body() payload: any, @CurrentUser() user: JwtUser) {
+    assertSameSchool(user, Number(payload?.sc_id ?? user.sc_id));
     return this.policyService.addRealBudget(payload);
   }
 
   @Post('updateRealBudget')
   @HttpCode(HttpStatus.OK)
-  updateRealBudget(@Body() payload: any) {
-    return this.policyService.updateRealBudget(payload);
+  updateRealBudget(@Body() payload: any, @CurrentUser() user: JwtUser) {
+    return this.policyService.updateRealBudget(payload, user);
   }
 
   @Post('removeRealBudget')
   @HttpCode(HttpStatus.OK)
-  removeRealBudget(@Body() payload: any) {
-    return this.policyService.removeRealBudget(payload);
+  removeRealBudget(@Body() payload: any, @CurrentUser() user: JwtUser) {
+    return this.policyService.removeRealBudget(payload, user);
   }
 
   @Post('addExpenses')

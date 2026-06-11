@@ -27,7 +27,9 @@ const ALL_DOC_TYPES = ['BR', 'BC', 'BJ', 'BY', 'BG', 'BF', 'BT', 'BK'];
  * รับได้ทั้ง ค.ศ. (2026) และ พ.ศ. (2569) → คืน "2569"
  * ป้องกันเลขออกเป็น ค.ศ. (บจ.1/2026) เพราะ request_withdraw.year เก็บเป็น ค.ศ.
  */
-export function toBudgetYearBE(year: string | number | null | undefined): string {
+export function toBudgetYearBE(
+  year: string | number | null | undefined,
+): string {
   const n = Number(year);
   if (!Number.isFinite(n) || n <= 0) return String(year ?? '');
   return String(n >= 2400 ? n : n + 543);

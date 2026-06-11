@@ -5,11 +5,15 @@ import { GovRevenueEntry } from './entities/gov-revenue-entry.entity';
 import { RegulatoryConfigService } from '../regulatory-config/regulatory-config.service';
 import { DocCounterService } from '../doc-counter/doc-counter.service';
 import { AddGovRevenueDto } from './dto/add-gov-revenue.dto';
+import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 
 describe('GovRevenueService', () => {
   let service: GovRevenueService;
   let entryRepo: jest.Mocked<any>;
-  let regulatoryConfig: jest.Mocked<Pick<RegulatoryConfigService, 'getThreshold'>>;
+  let openingRepo: jest.Mocked<any>;
+  let regulatoryConfig: jest.Mocked<
+    Pick<RegulatoryConfigService, 'getThreshold'>
+  >;
   let docCounter: jest.Mocked<Pick<DocCounterService, 'issue'>>;
 
   beforeEach(async () => {
@@ -19,6 +23,7 @@ describe('GovRevenueService', () => {
       create: jest.fn(),
       save: jest.fn(),
     };
+    openingRepo = { find: jest.fn().mockResolvedValue([]) };
     regulatoryConfig = { getThreshold: jest.fn() };
     docCounter = { issue: jest.fn() };
 
@@ -26,6 +31,7 @@ describe('GovRevenueService', () => {
       providers: [
         GovRevenueService,
         { provide: getRepositoryToken(GovRevenueEntry), useValue: entryRepo },
+        { provide: getRepositoryToken(OpeningBalance), useValue: openingRepo },
         { provide: RegulatoryConfigService, useValue: regulatoryConfig },
         { provide: DocCounterService, useValue: docCounter },
       ],
@@ -61,7 +67,13 @@ describe('GovRevenueService', () => {
       await service.loadEntries(5, 3, '2569', 2);
       expect(entryRepo.find).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { scId: 5, syId: 3, budgetYear: '2569', revenueType: 2, del: 0 },
+          where: {
+            scId: 5,
+            syId: 3,
+            budgetYear: '2569',
+            revenueType: 2,
+            del: 0,
+          },
         }),
       );
     });
@@ -69,7 +81,7 @@ describe('GovRevenueService', () => {
     it('คืน { data, count } ว่างเมื่อไม่มีข้อมูล', async () => {
       entryRepo.find.mockResolvedValue([]);
       const result = await service.loadEntries(1, 3, '2569', 1);
-      expect(result).toEqual({ data: [], count: 0 });
+      expect(result).toEqual({ data: [], count: 0, carry_forward: 0 });
     });
 
     it('คำนวณ running balance ถูกต้อง (รับ + / นำส่ง −)', async () => {
@@ -80,6 +92,31 @@ describe('GovRevenueService', () => {
       ]);
       const result = await service.loadEntries(1, 3, '2569', 1);
       expect(result.data.map((r) => r.balance)).toEqual([1000, 700, 900]);
+    });
+
+    it('รวมยอดยกมาเงินรายได้แผ่นดินใน running balance ประเภท 1', async () => {
+      openingRepo.find.mockResolvedValue([{ amount: 2632 }]);
+      entryRepo.find.mockResolvedValue([
+        makeEntry({ greId: 1, entryType: 2, amount: 2632 }),
+      ]);
+      const result = await service.loadEntries(1, 3, '2569', 1);
+      expect(result.carry_forward).toBe(2632);
+      expect(result.data[0].balance).toBe(0);
+    });
+
+    it('ไม่บวก opening_balance ซ้ำเมื่อมีรายการยอดยกมาในทะเบียนแล้ว', async () => {
+      openingRepo.find.mockResolvedValue([{ amount: 2632 }]);
+      entryRepo.find.mockResolvedValue([
+        makeEntry({
+          docNo: 'ยกมา',
+          detail: 'ยอดยกมา ดอกเบี้ยสะสม',
+          amount: 1078,
+        }),
+      ]);
+      const result = await service.loadEntries(1, 3, '2569', 1);
+      expect(result.carry_forward).toBe(0);
+      expect(result.data[0].balance).toBe(1078);
+      expect(openingRepo.find).not.toHaveBeenCalled();
     });
 
     it('แยก amount_in / amount_out ตาม entry_type', async () => {
@@ -157,11 +194,34 @@ describe('GovRevenueService', () => {
 
     it('by_type คำนวณ received/remitted/outstanding เฉพาะประเภท 1,2', async () => {
       entryRepo.find.mockResolvedValue([
-        makeEntry({ revenueType: 1, entryType: 1, amount: 5000, docDate: null }),
-        makeEntry({ greId: 2, revenueType: 1, entryType: 2, amount: 2000, docDate: null }),
-        makeEntry({ greId: 3, revenueType: 2, entryType: 1, amount: 1000, docDate: null }),
+        makeEntry({
+          revenueType: 1,
+          entryType: 1,
+          amount: 5000,
+          docDate: null,
+        }),
+        makeEntry({
+          greId: 2,
+          revenueType: 1,
+          entryType: 2,
+          amount: 2000,
+          docDate: null,
+        }),
+        makeEntry({
+          greId: 3,
+          revenueType: 2,
+          entryType: 1,
+          amount: 1000,
+          docDate: null,
+        }),
         // ประเภท 4 ไม่ควรนับ
-        makeEntry({ greId: 4, revenueType: 4, entryType: 1, amount: 9999, docDate: null }),
+        makeEntry({
+          greId: 4,
+          revenueType: 4,
+          entryType: 1,
+          amount: 9999,
+          docDate: null,
+        }),
       ]);
       const result = await service.interestReminder(1, 3, '2569');
       const t1 = result.by_type.find((t) => t.revenue_type === 1)!;
@@ -174,7 +234,12 @@ describe('GovRevenueService', () => {
 
     it('ยอดค้างเกิน threshold → มี alert level urgent', async () => {
       entryRepo.find.mockResolvedValue([
-        makeEntry({ revenueType: 1, entryType: 1, amount: 50000, docDate: null }),
+        makeEntry({
+          revenueType: 1,
+          entryType: 1,
+          amount: 50000,
+          docDate: null,
+        }),
       ]);
       const result = await service.interestReminder(1, 3, '2569');
       expect(result.alerts.some((a) => a.level === 'urgent')).toBe(true);
@@ -248,6 +313,52 @@ describe('GovRevenueService', () => {
       await service.addEntry({ ...rest, doc_no: 'X' } as AddGovRevenueDto);
       const created = entryRepo.create.mock.calls[0][0];
       expect(created.upBy).toBe(0);
+    });
+
+    // ─── กันนำส่ง (entry_type=2) เกินยอดคงค้าง ───────────────────────────────
+    it('นำส่งเกินยอดคงค้าง → flag:false ไม่บันทึก', async () => {
+      // รับมา 1,000 (type 1) แล้วจะนำส่ง 1,500 (type 2) → เกิน
+      entryRepo.find.mockResolvedValue([
+        { greId: 1, entryType: 1, amount: 1000 },
+      ]);
+      const result = await service.addEntry({
+        ...dto,
+        doc_no: 'X',
+        entry_type: 2,
+        amount: 1500,
+      });
+      expect(result.flag).toBe(false);
+      expect(result.ms).toContain('เกินยอดคงค้าง');
+      expect(entryRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('นำส่งไม่เกินยอดคงค้าง → ผ่าน', async () => {
+      // รับมา 1,000, นำส่งไปแล้ว 200 → คงค้าง 800 ; นำส่งเพิ่ม 800 → พอดี
+      entryRepo.find.mockResolvedValue([
+        { greId: 1, entryType: 1, amount: 1000 },
+        { greId: 2, entryType: 2, amount: 200 },
+      ]);
+      const result = await service.addEntry({
+        ...dto,
+        doc_no: 'X',
+        entry_type: 2,
+        amount: 800,
+      });
+      expect(result.flag).toBe(true);
+      expect(entryRepo.save).toHaveBeenCalled();
+    });
+
+    it('นำส่งจากยอดยกมาได้ แม้ยังไม่มีรายการรับในปี', async () => {
+      openingRepo.find.mockResolvedValue([{ amount: 2632 }]);
+      entryRepo.find.mockResolvedValue([]);
+      const result = await service.addEntry({
+        ...dto,
+        doc_no: 'X',
+        entry_type: 2,
+        amount: 2632,
+      });
+      expect(result.flag).toBe(true);
+      expect(entryRepo.save).toHaveBeenCalled();
     });
   });
 

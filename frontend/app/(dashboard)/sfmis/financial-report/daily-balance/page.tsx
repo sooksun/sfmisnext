@@ -114,6 +114,13 @@ export default function DailyBalancePage() {
     enabled: scId > 0 && syId > 0 && !!selectedDate,
   })
 
+  // กรรมการเก็บรักษาเงิน (ตย.41) — ใช้เติมช่องลงนามในแบบฟอร์มที่พิมพ์
+  const { data: committee } = useQuery<{ role: string; seq: number; name: string }[]>({
+    queryKey: ['cash-committee', scId],
+    queryFn: () => apiGet<{ role: string; seq: number; name: string }[]>(`CashCommittee/load/${scId}`),
+    enabled: scId > 0,
+  })
+
   const signMutation = useMutation({
     mutationFn: () =>
       apiPost('FinancialAudit/signDaily', {
@@ -216,6 +223,11 @@ export default function DailyBalancePage() {
   function handlePrint() {
     if (rows.length === 0) return
     const s = auditStatus?.signers
+    // กรรมการเก็บรักษาเงิน 3 คน (ตย.41) — ถ้าตั้งค่าไว้ ใช้แทนผู้ลงนามรายวัน
+    const keeperNames = (committee ?? [])
+      .filter((c) => c.role === 'keeper' && c.seq <= 3)
+      .sort((a, b) => a.seq - b.seq)
+      .map((c) => c.name)
     const body = officialDailyBalanceForm({
       scName,
       date: selectedDate,
@@ -236,7 +248,11 @@ export default function DailyBalancePage() {
       preparerName: s?.finance?.signed_name ?? undefined,
       preparerPosition: s?.finance?.signed_position ?? undefined,
       directorName: s?.director?.signed_name ?? undefined,
-      committeeNames: s?.committee?.signed_name ? [s.committee.signed_name] : undefined,
+      committeeNames: keeperNames.length
+        ? keeperNames
+        : s?.committee?.signed_name
+          ? [s.committee.signed_name]
+          : undefined,
     })
     openPrintWindow({ title: `รายงานเงินคงเหลือประจำวัน_${selectedDate}`, body })
   }

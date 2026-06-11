@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiGet } from '@/lib/api'
 import { PageHeader } from '@/components/shared/page-header'
-import { AlertTriangle, AlertCircle, Info, Shield, RefreshCw } from 'lucide-react'
+import { AlertTriangle, AlertCircle, Info, Shield, RefreshCw, Lightbulb, Link2 } from 'lucide-react'
 import { useAppContext } from '@/hooks/use-app-context'
 
 interface FinancialAlert {
@@ -12,6 +12,8 @@ interface FinancialAlert {
   title: string
   detail: string
   relatedId?: number | string
+  suggestedFix?: string
+  linkedRecords?: { table: string; id: number | string; label: string }[]
 }
 
 interface AlertsResponse {
@@ -146,6 +148,31 @@ export default function AiAlertsPage() {
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-gray-600">{alert.detail}</p>
+
+                {alert.suggestedFix && (
+                  <div className="mt-2 flex items-start gap-1.5 rounded-md bg-white/60 px-2 py-1.5 text-xs text-gray-700">
+                    <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5 text-emerald-500" />
+                    <span>
+                      <span className="font-medium">แนวทางแก้ไข: </span>
+                      {alert.suggestedFix}
+                    </span>
+                  </div>
+                )}
+
+                {alert.linkedRecords && alert.linkedRecords.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <Link2 className="h-3.5 w-3.5 text-gray-400" />
+                    {alert.linkedRecords.map((rec, j) => (
+                      <span
+                        key={`${rec.table}-${rec.id}-${j}`}
+                        className="rounded-full bg-white px-2 py-0.5 text-xs text-gray-600 border"
+                        title={`${rec.table} #${rec.id}`}
+                      >
+                        {rec.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )

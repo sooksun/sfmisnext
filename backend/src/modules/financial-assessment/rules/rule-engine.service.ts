@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GovRevenueEntry } from '../../gov-revenue/entities/gov-revenue-entry.entity';
 import { FinancialTransactions } from '../../report-daily-balance/entities/financial-transactions.entity';
+import { OpeningBalance } from '../../opening-balance/entities/opening-balance.entity';
 import { BudgetRequest } from '../../budget-request/entities/budget-request.entity';
 import { BankLedgerEntry } from '../../bank-ledger/entities/bank-ledger-entry.entity';
 import { SmpDepositEntry } from '../../smp-deposit/entities/smp-deposit-entry.entity';
@@ -43,6 +44,8 @@ export class RuleEngineService {
     private readonly govRepo: Repository<GovRevenueEntry>,
     @InjectRepository(FinancialTransactions)
     private readonly ftRepo: Repository<FinancialTransactions>,
+    @InjectRepository(OpeningBalance)
+    private readonly openingRepo: Repository<OpeningBalance>,
     @InjectRepository(BudgetRequest)
     private readonly brRepo: Repository<BudgetRequest>,
     @InjectRepository(BankLedgerEntry)
@@ -274,16 +277,19 @@ export class RuleEngineService {
     set('7.2', reconOutcome);
     set('7.4', reconOutcome);
 
-    // 7.1 รายงานสิ้นเดือนตรงทะเบียนคุม — ระบบสร้างรายงานจากทะเบียนชุดเดียวกัน
-    const ftCount = await this.ftRepo.count({ where: { scId, syId, del: 0 } });
-    set(
-      '7.1',
-      ftCount > 0
-        ? yes(
-            'ระบบสร้างรายงานเงินคงเหลือสิ้นเดือนจากทะเบียนคุมชุดเดียวกัน ยอดตรงกันอัตโนมัติ',
-          )
-        : unknown('ยังไม่มีรายการเคลื่อนไหวให้เทียบยอด'),
-    );
+    // 7.1 รายงานสิ้นเดือนตรงทะเบียนคุม — ยอดคงเหลือทุกประเภทถูกต้อง (ไม่ติดลบ)
+    const balances71 = await this.typeBalances(scId, syId);
+    if (balances71.length === 0) {
+      set('7.1', unknown('ยังไม่มีรายการเคลื่อนไหวให้เทียบยอด'));
+    } else {
+      const neg = balances71.filter((b) => b.balance < -0.005);
+      set(
+        '7.1',
+        neg.length === 0
+          ? yes(`ยอดคงเหลือสิ้นเดือนทุกประเภทถูกต้อง (${balances71.length} ประเภท ไม่ติดลบ)`)
+          : no(`ยอดคงเหลือสิ้นเดือนมีประเภทติดลบ ${neg.length} ประเภท — รายงานไม่ตรงทะเบียนคุม`),
+      );
+    }
   }
 
   // ── ประเด็น 9 เงินยืม ──
@@ -570,14 +576,25 @@ export class RuleEngineService {
   ) {
     const { scId, syId } = ctx;
 
-    // 2.2 ยอดรายงานคงเหลือตรงทะเบียนคุม — ระบบใช้ฐานข้อมูลเดียว (รายงานคำนวณจากทะเบียน)
-    const ftCount = await this.ftRepo.count({ where: { scId, syId, del: 0 } });
-    set(
-      '2.2',
-      ftCount > 0
-        ? yes('ระบบคำนวณรายงานเงินคงเหลือจากทะเบียนคุมชุดเดียวกัน ยอดตรงกันอัตโนมัติ')
-        : unknown('ยังไม่มีรายการเคลื่อนไหวให้เทียบยอด'),
-    );
+    // 2.2 ยอดคงเหลือทะเบียนคุมแต่ละประเภทถูกต้อง — คำนวณยอดจริง (ยอดยกมา + รับ - จ่าย)
+    //     ต่อประเภทเงิน แล้วตรวจ "ติดลบ" ซึ่งเป็นข้อผิดพลาดเชิงบัญชี (ทะเบียนคุมห้ามติดลบ)
+    const balances = await this.typeBalances(scId, syId);
+    if (balances.length === 0) {
+      set('2.2', unknown('ยังไม่มีรายการเคลื่อนไหวให้เทียบยอด'));
+    } else {
+      const neg = balances.filter((b) => b.balance < -0.005);
+      const total = balances.reduce((s, b) => s + b.balance, 0);
+      set(
+        '2.2',
+        neg.length === 0
+          ? yes(
+              `ยอดคงเหลือทุกประเภทถูกต้อง (${balances.length} ประเภท รวม ${total.toLocaleString()} บาท ไม่มีประเภทใดติดลบ)`,
+            )
+          : no(
+              `พบประเภทเงินยอดติดลบ ${neg.length} ประเภท (เช่น ประเภท ${neg[0].typeId} = ${neg[0].balance.toLocaleString()}) — ตรวจการบันทึกรับ-จ่าย`,
+            ),
+      );
+    }
 
     // 2.4 ยอดเงินฝากธนาคารตรง Bank Statement — จากงบเทียบยอด (is_balanced)
     const recons = await this.reconRepo.find({ where: { scId, del: 0 } });
@@ -593,14 +610,51 @@ export class RuleEngineService {
       );
     }
 
-    // 2.5 ยอดเงินฝากส่วนราชการผู้เบิกตรงสมุดคู่ฝาก — ระบบฐานข้อมูลเดียว
-    const smpCount = await this.smpRepo.count({ where: { scId, del: 0 } });
-    set(
-      '2.5',
-      smpCount > 0
-        ? yes('ระบบคำนวณยอดสมุดคู่ฝากจากรายการชุดเดียวกัน ยอดตรงกันอัตโนมัติ')
-        : na('ไม่มีรายการเงินฝากส่วนราชการผู้เบิกในระบบ'),
-    );
+    // 2.5 ยอดเงินฝากส่วนราชการผู้เบิก — คำนวณยอดจริง (ฝาก - ถอน) ตรวจติดลบ
+    const smpRows = await this.smpRepo.find({ where: { scId, del: 0 } });
+    if (smpRows.length === 0) {
+      set('2.5', na('ไม่มีรายการเงินฝากส่วนราชการผู้เบิกในระบบ'));
+    } else {
+      const smpBal = smpRows.reduce(
+        (s, r) => s + (r.entryType === 1 ? 1 : -1) * (Number(r.amount) || 0),
+        0,
+      );
+      set(
+        '2.5',
+        smpBal >= -0.005
+          ? yes(`ยอดเงินฝากส่วนราชการผู้เบิกคงเหลือ ${smpBal.toLocaleString()} บาท (ฝาก-ถอนสมดุล)`)
+          : no(`ยอดเงินฝากส่วนราชการผู้เบิกติดลบ ${smpBal.toLocaleString()} บาท — ถอนเกินยอดฝาก`),
+      );
+    }
+  }
+
+  /** ยอดคงเหลือต่อประเภทเงิน = ยอดยกมา(opening) + Σ(รับ-จ่าย) ของปีงบ — ใช้ตรวจติดลบ */
+  private async typeBalances(
+    scId: number,
+    syId: number,
+  ): Promise<{ typeId: number; balance: number }[]> {
+    const [openRows, ftRows] = await Promise.all([
+      this.openingRepo
+        .createQueryBuilder('o')
+        .select('o.money_type_id', 'tid')
+        .addSelect('SUM(o.amount)', 'amt')
+        .where('o.sc_id = :scId AND o.sy_id = :syId AND o.del = 0', { scId, syId })
+        .groupBy('o.money_type_id')
+        .getRawMany<{ tid: number; amt: string }>(),
+      this.ftRepo
+        .createQueryBuilder('ft')
+        .select('ft.bg_type_id', 'tid')
+        .addSelect('SUM(ft.type * ft.amount)', 'amt') // type = 1 รับ / -1 จ่าย
+        .where('ft.sc_id = :scId AND ft.sy_id = :syId AND ft.del = 0', { scId, syId })
+        .groupBy('ft.bg_type_id')
+        .getRawMany<{ tid: number; amt: string }>(),
+    ]);
+    const bal = new Map<number, number>();
+    for (const r of openRows)
+      bal.set(Number(r.tid), (bal.get(Number(r.tid)) ?? 0) + Number(r.amt || 0));
+    for (const r of ftRows)
+      bal.set(Number(r.tid), (bal.get(Number(r.tid)) ?? 0) + Number(r.amt || 0));
+    return [...bal.entries()].map(([typeId, balance]) => ({ typeId, balance }));
   }
 
   // ── ประเด็น 3.5 นำส่งภาษีหัก ณ ที่จ่าย ──

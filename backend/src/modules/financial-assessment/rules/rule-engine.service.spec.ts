@@ -23,6 +23,7 @@ import { PlnReceive } from '../../receive/entities/pln-receive.entity';
 import { BudgetIncomeTypeSchool } from '../../bank/entities/budget-income-type-school.entity';
 import { FiscalYearBalance } from '../../fiscal-year-balance/entities/fiscal-year-balance.entity';
 import { FinanceAnnualAttestation } from '../entities/finance-annual-attestation.entity';
+import { OpeningBalance } from '../../opening-balance/entities/opening-balance.entity';
 
 function qbStub(rows: any[]) {
   const qb: any = {
@@ -55,6 +56,7 @@ describe('RuleEngineService', () => {
     const tokens: [any, string][] = [
       [GovRevenueEntry, 'gov'],
       [FinancialTransactions, 'ft'],
+      [OpeningBalance, 'opening'],
       [BudgetRequest, 'br'],
       [BankLedgerEntry, 'ble'],
       [SmpDepositEntry, 'smp'],
@@ -325,5 +327,38 @@ describe('RuleEngineService', () => {
       bits: repoMock({ find: types }),
     });
     expect((await svc2.evaluate(ctx))['1.3'].result).toBe('no');
+  });
+
+  // ── ข้อ 3: เทียบยอดจริง (เลิก tautology) — จับประเภทเงินติดลบ ──
+  it('2.2/7.1: ประเภทเงินยอดติดลบ → no (ยอดยกมา+รับ-จ่าย ต่อประเภท)', async () => {
+    const svc = await build({
+      opening: repoMock({ qbRows: [{ tid: 9, amt: '1000' }] }),
+      ft: repoMock({ qbRows: [{ tid: 9, amt: '-2000' }], count: 1 }), // จ่ายเกินยอด → -1000
+    });
+    const r = await svc.evaluate(ctx);
+    expect(r['2.2'].result).toBe('no');
+    expect(r['7.1'].result).toBe('no');
+  });
+
+  it('2.2: ทุกประเภทไม่ติดลบ → yes (แสดงยอดรวมจริง)', async () => {
+    const svc = await build({
+      opening: repoMock({ qbRows: [{ tid: 9, amt: '5000' }] }),
+      ft: repoMock({ qbRows: [{ tid: 9, amt: '-2000' }] }), // เหลือ 3000
+    });
+    const r = await svc.evaluate(ctx);
+    expect(r['2.2'].result).toBe('yes');
+    expect(r['2.2'].detail).toContain('3,000');
+  });
+
+  it('2.5: ถอนเงินฝากส่วนราชการเกินยอดฝาก → no', async () => {
+    const svc = await build({
+      smp: repoMock({
+        find: [
+          { entryType: 1, amount: 1000 }, // ฝาก
+          { entryType: 2, amount: 3000 }, // ถอน → -2000
+        ],
+      }),
+    });
+    expect((await svc.evaluate(ctx))['2.5'].result).toBe('no');
   });
 });

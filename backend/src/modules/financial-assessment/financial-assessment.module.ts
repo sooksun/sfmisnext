@@ -8,6 +8,7 @@ import { FinancialAssessmentItem } from './entities/financial-assessment-item.en
 // ── source entities (read-only) สำหรับ Rule Engine ──
 import { GovRevenueEntry } from '../gov-revenue/entities/gov-revenue-entry.entity';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
+import { OpeningBalance } from '../opening-balance/entities/opening-balance.entity';
 import { BudgetRequest } from '../budget-request/entities/budget-request.entity';
 import { BankLedgerEntry } from '../bank-ledger/entities/bank-ledger-entry.entity';
 import { SmpDepositEntry } from '../smp-deposit/entities/smp-deposit-entry.entity';
@@ -39,6 +40,7 @@ import { FinanceAnnualAttestation } from './entities/finance-annual-attestation.
       // read-only source tables
       GovRevenueEntry,
       FinancialTransactions,
+      OpeningBalance,
       BudgetRequest,
       BankLedgerEntry,
       SmpDepositEntry,

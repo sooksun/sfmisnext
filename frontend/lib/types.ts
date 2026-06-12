@@ -296,3 +296,149 @@ export interface Bank {
   bank_name: string
   bank_code: string
 }
+
+// ── Project Workspace (Phase 1) ─────────────────────────────────────────────
+
+/** สถานะดำเนินงานโครงการ (execution_status) */
+export const EXEC_STATUS: Record<number, string> = {
+  1: 'ร่าง',
+  2: 'พร้อมดำเนินงาน',
+  3: 'กำลังดำเนินงาน',
+  4: 'รอตรวจสรุป',
+  5: 'ปิดโครงการ',
+  6: 'ติดขัด',
+  9: 'ยกเลิก',
+}
+
+/** สถานะงานย่อย (task.status) */
+export const TASK_STATUS: Record<number, string> = {
+  1: 'ยังไม่เริ่ม',
+  2: 'กำลังทำ',
+  3: 'รอตรวจ',
+  4: 'เสร็จแล้ว',
+  5: 'ติดขัด',
+  9: 'ยกเลิก',
+}
+
+export interface ProjectMember {
+  member_id: number
+  project_id: number
+  admin_id: number
+  admin_name: string
+  project_role: 'owner' | 'member' | 'reviewer'
+  role_name: string | null
+  note: string | null
+}
+
+export interface ProjectTask {
+  task_id: number
+  project_id: number
+  task_no: number
+  title: string
+  detail: string | null
+  assignee_admin_id: number | null
+  assignee_name: string
+  start_date: string | null
+  due_date: string | null
+  status: number
+  status_name: string
+  weight: number
+  sort_order: number
+  evidence_required: number
+  result_note: string | null
+  blocked_reason: string | null
+  completed_date: string | null
+}
+
+export interface ProjectBudgetSummary {
+  allocated: number
+  committed: number
+  actual: number
+  remaining: number
+  used_percent: number
+  over_threshold: boolean
+  orders: { order_id: number; budgets: number; order_status: number }[]
+}
+
+export interface ProjectWorkspaceData {
+  project: {
+    proj_id: number
+    proj_name: string
+    proj_detail: string | null
+    proj_budget: number
+    proj_owner: string | null
+    owner_admin_id: number | null
+    department: number | null
+    sc_id: number
+    sy_id: number
+    proj_status: number
+    execution_status: number
+    execution_status_name: string
+    progress_percent: number
+    start_date: string | null
+    end_date: string | null
+    expected_output: string | null
+    success_indicator: string | null
+    closed_date: string | null
+    cancel_reason: string | null
+  }
+  members: ProjectMember[]
+  tasks: ProjectTask[]
+  budget: ProjectBudgetSummary
+  evidence_count: number
+}
+
+export interface ProjectDashboardRow {
+  proj_id: number
+  proj_name: string
+  department: number | null
+  proj_owner: string | null
+  owner_admin_id: number | null
+  owner_name: string
+  proj_budget: number
+  proj_status: number
+  execution_status: number
+  execution_status_name: string
+  progress_percent: number
+  end_date: string | null
+  overdue: boolean
+  at_risk: boolean
+  blocked: boolean
+  stale: boolean
+}
+
+export interface ProjectDashboard {
+  summary: {
+    total: number
+    running: number
+    overdue: number
+    blocked: number
+    waiting_ack: number
+    closed: number
+    draft: number
+  }
+  total_budget: number
+  data: ProjectDashboardRow[]
+}
+
+export interface MyTaskRow {
+  task_id: number
+  project_id: number
+  project_name: string
+  title: string
+  status: number
+  status_name: string
+  due_date: string | null
+  days_left: number | null
+  overdue: boolean
+  weight: number
+  evidence_required: number
+}
+
+export interface UserOption {
+  admin_id: number
+  name: string
+  username: string
+  position: number | null
+  type: number | null
+}

@@ -20,6 +20,7 @@ import { BudgetModule } from './modules/budget/budget.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { ProjectModule } from './modules/project/project.module';
 import { ProjectApproveModule } from './modules/project-approve/project-approve.module';
+import { ProjectWorkspaceModule } from './modules/project-workspace/project-workspace.module';
 import { ProcurementPlanModule } from './modules/procurement-plan/procurement-plan.module';
 import { ReceiveModule } from './modules/receive/receive.module';
 import { ReceiptModule } from './modules/receipt/receipt.module';
@@ -124,6 +125,7 @@ import { AttachmentModule } from './modules/attachment/attachment.module';
     SettingsModule,
     ProjectModule,
     ProjectApproveModule,
+    ProjectWorkspaceModule,
     ProcurementPlanModule,
     ReceiveModule,
     ReceiptModule,

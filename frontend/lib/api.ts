@@ -50,7 +50,7 @@ async function getAuthHeaders(): Promise<HeadersInit> {
 
 interface RequestConfig {
   url: string
-  method: 'GET' | 'POST'
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE'
   body?: string
 }
 
@@ -141,4 +141,33 @@ export async function apiPost<T>(
     body,
   })
   return handleResponse<T>(res, { url, method: 'POST', body })
+}
+
+export async function apiPatch<T>(
+  segment: string,
+  data: Record<string, unknown>,
+): Promise<T> {
+  const payload: Record<string, unknown> = { ...data }
+  if (typeof window !== 'undefined') {
+    const uid = getUserId()
+    if (uid && !payload.up_by) payload.up_by = uid
+  }
+  const url = `${BASE_URL}${segment}`
+  const body = JSON.stringify(payload)
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: await getAuthHeaders(),
+    body,
+  })
+  return handleResponse<T>(res, { url, method: 'PATCH', body })
+}
+
+export async function apiDelete<T>(segment: string): Promise<T> {
+  const url = `${BASE_URL}${segment}`
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: await getAuthHeaders(),
+    cache: 'no-store',
+  })
+  return handleResponse<T>(res, { url, method: 'DELETE' })
 }

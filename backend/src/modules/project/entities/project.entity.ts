@@ -73,6 +73,52 @@ export class Project {
   @Column({ name: 'proj_status', type: 'int', default: 0 })
   projStatus: number;
 
+  // ── Phase 1: ฟิลด์การดำเนินงาน (แยกจากสถานะอนุมัติ proj_status) ──
+
+  /** เจ้าของโครงการแบบอ้างอิงผู้ใช้ (admin_id) — แยกจาก proj_owner (ชื่อ snapshot เดิม) */
+  @Column({ name: 'owner_admin_id', type: 'int', nullable: true })
+  ownerAdminId: number | null;
+
+  @Column({ name: 'start_date', type: 'date', nullable: true })
+  startDate: string | null;
+
+  @Column({ name: 'end_date', type: 'date', nullable: true })
+  endDate: string | null;
+
+  /** สถานะดำเนินงาน: 1=ร่าง 2=พร้อม 3=กำลังทำ 4=รอตรวจสรุป 5=ปิด 6=ติดขัด 9=ยกเลิก */
+  @Column({
+    name: 'execution_status',
+    type: 'tinyint',
+    default: 1,
+    comment: '1=ร่าง 2=พร้อม 3=กำลังทำ 4=รอตรวจสรุป 5=ปิด 6=ติดขัด 9=ยกเลิก',
+  })
+  executionStatus: number;
+
+  /** ค่า cache ความก้าวหน้า — ระบบคำนวณใหม่เมื่อ task เปลี่ยน */
+  @Column({
+    name: 'progress_percent',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    default: 0,
+  })
+  progressPercent: number;
+
+  @Column({ name: 'expected_output', type: 'text', nullable: true })
+  expectedOutput: string | null;
+
+  @Column({ name: 'success_indicator', type: 'text', nullable: true })
+  successIndicator: string | null;
+
+  @Column({ name: 'closed_date', type: 'date', nullable: true })
+  closedDate: string | null;
+
+  @Column({ name: 'closed_by', type: 'int', nullable: true })
+  closedBy: number | null;
+
+  @Column({ name: 'cancel_reason', type: 'text', nullable: true })
+  cancelReason: string | null;
+
   @Column({ type: 'int', default: 0 })
   del: number;
 

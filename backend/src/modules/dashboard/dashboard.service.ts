@@ -20,6 +20,28 @@ export interface DashboardAlert {
   link: string;
 }
 
+const TH_MONTH_ABBR = [
+  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
+];
+
+/** "YYYY-MM" (ค.ศ.) → "ก.พ. 2569" (พ.ศ.) — ใช้กับเดือนที่ค้างนำส่ง */
+function thMonth(ym?: string | null): string {
+  if (!ym) return '-';
+  const [y, m] = String(ym).split('-').map((s) => parseInt(s, 10));
+  if (!y || !m || m < 1 || m > 12) return String(ym);
+  return `${TH_MONTH_ABBR[m - 1]} ${y + 543}`;
+}
+
+/** "YYYY-MM-DD" (ค.ศ.) → "6 มี.ค. 2569" (พ.ศ.) — แปลงเฉพาะตอนแสดงผล */
+function thDate(ymd?: string | null): string {
+  if (!ymd) return '-';
+  const datePart = String(ymd).slice(0, 10);
+  const [y, m, d] = datePart.split('-').map((s) => parseInt(s, 10));
+  if (!y || !m || !d || m < 1 || m > 12) return String(ymd);
+  return `${d} ${TH_MONTH_ABBR[m - 1]} ${y + 543}`;
+}
+
 @Injectable()
 export class DashboardService {
   constructor(
@@ -90,7 +112,7 @@ export class DashboardService {
           category: 'tax',
           level: r.status === 'overdue' ? 'urgent' : 'warning',
           title: 'นำส่งภาษีหัก ณ ที่จ่าย',
-          message: `เดือน ${r.month} ค้างนำส่ง ${baht(r.outstanding)} บาท (กำหนด ${r.deadline})`,
+          message: `เดือน ${thMonth(r.month)} ค้างนำส่ง ${baht(r.outstanding)} บาท (กำหนด ${thDate(r.deadline)})`,
           link: '/sfmis/financial-report/gov-revenue',
         }),
       );
@@ -101,7 +123,7 @@ export class DashboardService {
         category: 'loan',
         level: r.flag === 'overdue' ? 'urgent' : 'warning',
         title: 'เงินยืมค้างชำระ',
-        message: `บย.${r.la_no} ${r.borrower_name ?? ''} ${baht(r.amount)} บาท (กำหนดคืน ${r.due_date ?? '-'})`,
+        message: `บย.${r.la_no} ${r.borrower_name ?? ''} ${baht(r.amount)} บาท (กำหนดคืน ${thDate(r.due_date)})`,
         link: '/sfmis/pay-menu/loan-agreement',
       }),
     );

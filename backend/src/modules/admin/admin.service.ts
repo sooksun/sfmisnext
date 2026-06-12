@@ -108,6 +108,7 @@ export class AdminService {
       username: admin.username ?? '',
       sc_id: admin.scId ?? 0,
       type: admin.type ?? 0,
+      areacode: admin.areacode ?? undefined,
     };
     const access_token = this.jwtService.sign(jwtPayload);
 

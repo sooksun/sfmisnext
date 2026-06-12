@@ -243,5 +243,25 @@ describe('FinancialAssessmentService — scoring', () => {
       expect(row3.has_assessment).toBe(false);
       expect(row3.level_label).toBe('-');
     });
+
+    it('user เขตพื้นที่ (type=9) เห็นเฉพาะโรงเรียนในเขตของตน (areacode)', async () => {
+      faRepo.find.mockResolvedValue([]);
+      itemRepo.find.mockResolvedValue([]);
+      await service.districtSummary('2569', {
+        admin_id: 50, sc_id: 0, type: 9, username: 'area36', areacode: '36',
+      } as any);
+      expect(schoolRepo.find).toHaveBeenCalledWith({
+        where: { del: 0, areacode: '36' },
+      });
+    });
+
+    it('super admin (type=1) เห็นทุกโรงเรียน (ไม่กรอง areacode)', async () => {
+      faRepo.find.mockResolvedValue([]);
+      itemRepo.find.mockResolvedValue([]);
+      await service.districtSummary('2569', {
+        admin_id: 1, sc_id: 99, type: 1, username: 'root',
+      } as any);
+      expect(schoolRepo.find).toHaveBeenCalledWith({ where: { del: 0 } });
+    });
   });
 });

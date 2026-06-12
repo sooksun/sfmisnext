@@ -9,6 +9,7 @@ export interface JwtPayload {
   username: string;
   sc_id: number;
   type: number;
+  areacode?: string; // เขตพื้นที่ — สำหรับ user ระดับเขต (type=9)
 }
 
 @Injectable()
@@ -30,6 +31,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       username: payload.username,
       sc_id: payload.sc_id,
       type: payload.type,
+      areacode: payload.areacode,
     };
   }
 }

@@ -79,6 +79,7 @@ const PLAN   = [1, 2, 3, 6]
 const SUPPLY = [1, 2, 4, 7]
 const FINANCE = [1, 2, 5, 8]
 const SUPER  = [1]
+const DISTRICT = [1, 9]   // ผู้ดูแลสูงสุด + เจ้าหน้าที่เขตพื้นที่
 
 interface NavItem {
   label: string
@@ -235,7 +236,7 @@ const navGroups: NavItem[] = [
       { label: '6.7 งบห้องเรียน',          href: '/sfmis/classroom-budget', icon: GraduationCap, roles: SUPER },
       { label: '6.8 นโยบาย อปท.',          href: '/sfmis/sao-policy',      icon: BookMarked, roles: SUPER },
       { label: '6.9 อปท.',                 href: '/sfmis/sao',             icon: Building2, roles: SUPER },
-      { label: '6.10 แบบ สพท. 2544 (สังเคราะห์เขต)', href: '/sfmis/admin-tools/district-assessment', icon: ClipboardCheck, roles: SUPER },
+      { label: '6.10 แบบ สพท. 2544 (สังเคราะห์เขต)', href: '/sfmis/admin-tools/district-assessment', icon: ClipboardCheck, roles: DISTRICT },
       // 6.10 Receipt เดิมซ้ำกับ 2.4 ใบเสร็จรับเงิน — เอาออก (เข้าผ่านงานการเงินแทน)
     ],
   },

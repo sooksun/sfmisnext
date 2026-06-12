@@ -7,7 +7,8 @@ export interface JwtUser {
   admin_id: number;
   username: string;
   sc_id: number;
-  type: number; // 1=Super Admin, 2=ผอ., ฯลฯ
+  type: number; // 1=Super Admin, 2=ผอ., …, 9=เขตพื้นที่
+  areacode?: string; // รหัสเขตพื้นที่ — มีค่าเมื่อ type=9
 }
 
 /**

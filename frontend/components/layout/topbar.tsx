@@ -48,6 +48,7 @@ export function Topbar() {
       case 6: return 'หัวหน้าแผน'
       case 7: return 'หัวหน้าพัสดุ'
       case 8: return 'หัวหน้าการเงิน'
+      case 9: return 'เจ้าหน้าที่เขตพื้นที่'
       default: return 'ผู้ใช้งาน'
     }
   }

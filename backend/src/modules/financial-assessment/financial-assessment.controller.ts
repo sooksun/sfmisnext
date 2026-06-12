@@ -100,9 +100,12 @@ export class FinancialAssessmentController {
 
   /** แบบ สพท. 2544 — สังเคราะห์ระดับเขต (super admin/เขตพื้นที่เท่านั้น) */
   @Get('districtSummary/:budget_year')
-  @Roles(1)
+  @Roles(1, 9)
   @HttpCode(HttpStatus.OK)
-  districtSummary(@Param('budget_year') budgetYear: string) {
-    return this.service.districtSummary(budgetYear);
+  districtSummary(
+    @Param('budget_year') budgetYear: string,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.service.districtSummary(budgetYear, user);
   }
 }

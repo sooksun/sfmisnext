@@ -75,7 +75,7 @@ export default function DistrictAssessmentPage() {
   const { data, isLoading } = useQuery<DistrictSummary>({
     queryKey: ['district-assessment', budgetYear],
     queryFn: () => apiGet<DistrictSummary>(`Financial_assessment/districtSummary/${budgetYear}`),
-    enabled: budgetYearRaw > 0 && userType === 1,
+    enabled: budgetYearRaw > 0 && (userType === 1 || userType === 9),
   })
 
   const handleExport = () => {
@@ -182,7 +182,7 @@ export default function DistrictAssessmentPage() {
     })
   }
 
-  if (userType !== 1)
+  if (userType !== 1 && userType !== 9)
     return (
       <div className="p-6 text-gray-500">
         หน้านี้สำหรับผู้ดูแลระบบ/เขตพื้นที่การศึกษาเท่านั้น

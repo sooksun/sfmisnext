@@ -40,8 +40,13 @@ export class FinancialAssessmentService {
    * แบบ สพท. 2544 — สังเคราะห์ผลการประเมินของทุกโรงเรียนในสังกัด (เฉพาะ super admin/เขตพื้นที่)
    * คืน: นิยามข้อ (จาก catalog) + แถวรายโรงเรียน (คะแนนรายข้อ/รายประเด็น/รวม/ระดับ/สถานะ) + สรุปจำนวนตามระดับ
    */
-  async districtSummary(budgetYear: string) {
-    const schools = await this.schoolRepo.find({ where: { del: 0 } });
+  async districtSummary(budgetYear: string, user?: JwtUser) {
+    // user ระดับเขต (type=9) เห็นเฉพาะโรงเรียนในเขตของตน; super admin (type=1) เห็นทั้งหมด
+    const where: { del: number; areacode?: string } = { del: 0 };
+    if (user && user.type === 9 && user.areacode) {
+      where.areacode = user.areacode;
+    }
+    const schools = await this.schoolRepo.find({ where });
     const assessments = await this.faRepo.find({
       where: { budgetYear, del: 0 },
     });

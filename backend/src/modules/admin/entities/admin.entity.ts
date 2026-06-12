@@ -54,4 +54,8 @@ export class Admin {
 
   @Column({ name: 'sc_id', type: 'int', default: 0 })
   scId: number;
+
+  /** รหัสเขตพื้นที่ — ใช้กับ user ระดับเขต (type=9) เพื่อจำกัดขอบเขตการดูข้อมูล */
+  @Column({ name: 'areacode', type: 'varchar', length: 10, nullable: true })
+  areacode?: string;
 }

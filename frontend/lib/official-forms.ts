@@ -1834,3 +1834,189 @@ export function officialFoodPurchaseForm(o: FoodPurchaseOpts): string {
   </div>`
   return FORM_CSS + head + body
 }
+
+// ── 18) ใบนำฝาก (คู่มือ 2544 หน้า 26) — นำเงินนอกงบประมาณฝาก สพท. ──
+export interface PayInSlipItem {
+  type?: string | null // ประเภทเงิน
+  detail?: string | null
+  amount: number
+}
+export interface PayInSlipOpts {
+  areaName?: string | null // ชื่อ สพท. ผู้รับฝาก
+  scName?: string | null
+  slipNo?: string | null // ที่ บฝ.
+  date?: string | null
+  depositorName?: string | null
+  depositorPosition?: string | null
+  items: PayInSlipItem[]
+}
+export function officialPayInSlip(o: PayInSlipOpts): string {
+  const total = o.items.reduce((s, r) => s + Number(r.amount || 0), 0)
+  const itemRows = o.items
+    .map(
+      (r) => `<tr>
+      <td class="ctr">${r.type ? esc(r.type) : ''}</td>
+      <td>${r.detail ? esc(r.detail) : ''}</td>
+      <td class="num">${fmtBaht(r.amount)}</td>
+    </tr>`,
+    )
+    .join('')
+  const blank = `<span class="of-dotted of-dots"></span>`
+  return (
+    FORM_CSS +
+    `<div class="of-title"><div class="of-h1">ใบนำฝาก</div></div>
+    <table class="of">
+      <tr>
+        <td style="width:65%"><b>ส่วนราชการผู้รับฝาก</b><br/>สำนักงานเขตพื้นที่การศึกษา${o.areaName ? esc(o.areaName) : blank}</td>
+        <td><b>ที่ผู้รับฝาก</b></td>
+      </tr>
+      <tr>
+        <td><b>ส่วนราชการผู้นำฝาก</b><br/>${schoolName(o.scName) || blank}</td>
+        <td><b>ที่ผู้นำฝาก</b><br/>ที่ บฝ. ${o.slipNo ? esc(o.slipNo) : DOTS}</td>
+      </tr>
+    </table>
+    <p class="of-sign-c" style="margin:3mm 0">ข้าพเจ้าขอนำฝากเงินตามรายละเอียด ดังนี้</p>
+    <table class="of">
+      <thead><tr><th style="width:25%">ประเภท</th><th>รายการ</th><th style="width:22%">จำนวนเงิน</th></tr></thead>
+      <tbody>${itemRows}</tbody>
+      <tfoot><tr><td colspan="2" class="ctr"><b>รวมเงิน</b></td><td class="num"><b>${fmtBaht(total)}</b></td></tr></tfoot>
+    </table>
+    <p>(ตัวอักษร) <b>${esc(numberToThaiBaht(total))}</b></p>
+    <div class="of-sign-wrap" style="display:flex;justify-content:space-between">
+      <span>วันที่ ${o.date ? esc(thaiFullDate(o.date)) : DOTS}</span>
+      <span class="of-sign-c">ลายมือชื่อผู้นำฝาก ${LONGDOTS}<br/>${o.depositorName ? `( ${esc(o.depositorName)} )` : `( ${LONGDOTS} )`}</span>
+      <span>ตำแหน่ง ${o.depositorPosition ? esc(o.depositorPosition) : DOTS}</span>
+    </div>
+    <hr style="border:none;border-top:1px solid #000;margin:6mm 0 3mm 0" />
+    <div class="of-sign-c"><b>ใบรับเงิน</b></div>
+    <p class="of-sign-c">ได้รับเงินตามจำนวนข้างต้นไว้ถูกต้องแล้ว</p>
+    <div class="of-sign-3">
+      <div class="b">ลายมือชื่อผู้รับเงิน<br/><br/>${LONGDOTS}<br/>วันที่ ${DOTS}</div>
+      <div class="b">ลายมือชื่อหัวหน้าส่วนราชการผู้รับฝาก<br/><br/>${LONGDOTS}<br/>วันที่ ${DOTS}</div>
+    </div>`
+  )
+}
+
+// ── 19) ใบเบิกเงินฝาก (คู่มือ 2544 หน้า 27) — ขอถอนเงินที่ฝาก สพท. คืน ──
+export interface WithdrawSlipOpts {
+  docNo?: string | null // เลขที่
+  scName?: string | null
+  depositType?: string | null // ถอนเงินฝากประเภท
+  amount: number
+  date?: string | null
+  headName?: string | null // หัวหน้าหน่วยงานย่อย (ผอ.)
+  proxyName?: string | null // ผู้รับมอบฉันทะ
+}
+export function officialWithdrawSlip(o: WithdrawSlipOpts): string {
+  const blank = `<span class="of-dotted of-dots"></span>`
+  return (
+    FORM_CSS +
+    `<table class="of">
+      <tr>
+        <td style="width:25%"><b>เลขที่</b> ${o.docNo ? esc(o.docNo) : ''}</td>
+        <td class="ctr" style="width:50%"><b style="font-size:18pt">ใบเบิกเงินฝาก</b></td>
+        <td><b>ที่ส่วนราชการผู้เบิก</b></td>
+      </tr>
+    </table>
+    <div class="of-sign-c" style="margin:3mm 0"><b>คำขอถอนเงิน</b></div>
+    <p>หน่วยงานย่อย ${schoolName(o.scName) || blank} ถอนเงินฝากประเภท ${o.depositType ? esc(o.depositType) : blank}</p>
+    <p>จำนวนเงิน <b>${fmtBaht(o.amount)}</b> บาท (ตัวอักษร <b>${esc(numberToThaiBaht(Number(o.amount) || 0))}</b>)</p>
+    <table class="of-recon" style="margin-top:4mm"><tr>
+      <td style="width:50%">
+        ชื่อผู้รับมอบฉันทะ ${o.proxyName ? esc(o.proxyName) : DOTS}<br/><br/>
+        ลายมือชื่อผู้รับมอบฉันทะ ${LONGDOTS}<br/><br/>
+        ตำแหน่ง ${DOTS}
+      </td>
+      <td>
+        ลายมือชื่อหัวหน้าหน่วยงานย่อย ${LONGDOTS}<br/>
+        ${o.headName ? `( ${esc(o.headName)} )` : `( ${LONGDOTS} )`}<br/>
+        ตำแหน่ง ${DOTS}<br/>
+        วันที่ ${o.date ? esc(thaiFullDate(o.date)) : DOTS}
+      </td>
+    </tr></table>
+    <hr style="border:none;border-top:1px solid #000;margin:5mm 0 3mm 0" />
+    <div class="of-sign-c"><b>คำอนุมัติ</b></div>
+    <table class="of-recon"><tr>
+      <td style="width:50%">ลายมือชื่อผู้อนุมัติ ${LONGDOTS}</td>
+      <td>ตำแหน่ง ${DOTS}<br/>วันที่ ${DOTS}</td>
+    </tr></table>
+    <hr style="border:none;border-top:1px solid #000;margin:5mm 0 3mm 0" />
+    <div class="of-sign-c"><b>ใบรับเงิน</b></div>
+    <p class="of-sign-c">ได้รับเงินตามจำนวนข้างต้นไว้ถูกต้องแล้ว</p>
+    <p>☐ เช็ค &nbsp;&nbsp; ☐ โอนเข้าบัญชี ${DOTS} เลขที่ ${DOTS} ธนาคาร ${DOTS} สาขา ${DOTS}</p>
+    <div class="of-sign-3">
+      <div class="b">ลายมือชื่อผู้รับเงิน<br/><br/>${LONGDOTS}<br/>วันที่ ${DOTS}</div>
+      <div class="b">ลายมือชื่อผู้จ่ายเงิน<br/><br/>${LONGDOTS}<br/>วันที่ ${DOTS}</div>
+    </div>`
+  )
+}
+
+// ── 20) แบบคำขอรับเงินผ่านธนาคาร (คู่มือ 2544 หน้า 28) ──
+//        กรณีจ่ายเงินให้เจ้าหนี้/ผู้มีสิทธิที่ไม่เป็นข้าราชการ โอนผ่านธนาคาร
+//        (หนังสือกระทรวงการคลัง ด่วนที่สุด ที่ กค 0530.1/ว 143 ลว. 22 ธ.ค. 2543)
+export interface BankTransferRequestOpts {
+  scName?: string | null
+  date?: string | null
+  payeeType?: 1 | 2 | null // 1 = บุคคลธรรมดา, 2 = นิติบุคคล (null = เว้นให้ติ๊กมือ)
+  payeeName?: string | null
+  payeeAddress?: string | null
+  payeeTel?: string | null
+  payeeTaxId?: string | null
+  paymentDetail?: string | null // โอนเงินค่า...
+  amount?: number | null
+  contractNo?: string | null // สัญญา/ใบสั่งซื้อ,สั่งจ้าง เลขที่
+  contractDate?: string | null
+  bankName?: string | null
+  bankBranch?: string | null
+  accountName?: string | null
+  accountNo?: string | null
+}
+export function officialBankTransferRequest(o: BankTransferRequestOpts): string {
+  const blank = `<span class="of-dotted of-dots"></span>`
+  const mark = (t: 1 | 2) => (o.payeeType === t ? '☑' : '☐')
+  const amt = Number(o.amount || 0)
+  const person = o.payeeType !== 2
+  return (
+    FORM_CSS +
+    `<div class="of-title">
+      <div class="of-h1">แบบคำขอรับเงินผ่านธนาคาร</div>
+      <div class="of-line">(กรณีไม่เป็นข้าราชการ, ลูกจ้าง หรือผู้รับบำนาญของทางราชการ)</div>
+    </div>
+    <p style="text-align:right">วันที่ ${o.date ? esc(thaiFullDate(o.date)) : DOTS}</p>
+    <p><b>เรียน</b> ผู้อำนวยการ${schoolName(o.scName) || blank}</p>
+    <p><b>${mark(1)} บุคคลธรรมดา</b><br/>
+    ข้าพเจ้า ${person && o.payeeName ? esc(o.payeeName) : LONGDOTS}
+    อยู่บ้านเลขที่ ${person && o.payeeAddress ? esc(o.payeeAddress) : LONGDOTS}
+    โทรศัพท์ ${person && o.payeeTel ? esc(o.payeeTel) : DOTS}
+    บัตรประจำตัว ${DOTS} เลขที่ ${DOTS}
+    วันที่ออกบัตร ${DOTS} วันที่หมดอายุ ${DOTS}
+    เลขประจำตัวผู้เสียภาษีอากร ${person && o.payeeTaxId ? esc(o.payeeTaxId) : DOTS}</p>
+    <p><b>${mark(2)} นิติบุคคล</b><br/>
+    ข้าพเจ้า ${!person && o.payeeName ? esc(o.payeeName) : LONGDOTS}
+    ชื่อจดทะเบียนเป็นนิติบุคคล ณ ${DOTS}
+    มีสำนักงานใหญ่อยู่เลขที่ ${!person && o.payeeAddress ? esc(o.payeeAddress) : LONGDOTS}
+    โทรศัพท์ ${!person && o.payeeTel ? esc(o.payeeTel) : DOTS}
+    เลขประจำตัวผู้เสียภาษีอากร ${!person && o.payeeTaxId ? esc(o.payeeTaxId) : DOTS}
+    โดย ${LONGDOTS} ผู้มีอำนาจลงนามผูกพันนิติบุคคล
+    ปรากฏตามหนังสือรับรองของสำนักงานทะเบียนหุ้นส่วน/บริษัท ${DOTS}
+    ลงวันที่ ${DOTS} และมีหนังสือมอบอำนาจลงวันที่ ${DOTS}</p>
+    <p>มีความประสงค์ให้ ${schoolName(o.scName) || blank} โอนเงินค่า ${o.paymentDetail ? esc(o.paymentDetail) : LONGDOTS}
+    จำนวนเงิน <b>${amt ? fmtBaht(amt) : DOTS}</b> บาท
+    (ตัวอักษร <b>${amt ? esc(numberToThaiBaht(amt)) : LONGDOTS}</b>)
+    ตามสัญญา/ใบสั่งซื้อ,สั่งจ้าง เลขที่ ${o.contractNo ? esc(o.contractNo) : DOTS}
+    ลงวันที่ ${o.contractDate ? esc(thaiFullDate(o.contractDate)) : DOTS}
+    เข้าบัญชีเงินฝากธนาคาร ${o.bankName ? esc(o.bankName) : DOTS}
+    สาขา ${o.bankBranch ? esc(o.bankBranch) : DOTS}
+    ชื่อบัญชี ${o.accountName ? esc(o.accountName) : LONGDOTS}
+    เลขที่บัญชี ${o.accountNo ? esc(o.accountNo) : DOTS}</p>
+    <p>ทั้งนี้ หากมีค่าธรรมเนียม หรือค่าใช้จ่ายอื่นใดที่ธนาคารเรียกเก็บ ข้าพเจ้ายินยอมให้หักเงินดังกล่าว
+    จากเงินที่จะได้รับจากทางราชการ และพร้อมที่จะส่งใบเสร็จรับเงินให้ภายใน 15 วัน
+    นับแต่วันที่โอนเงินเข้าบัญชีเงินฝากธนาคาร</p>
+    <div class="of-sign-wrap of-sign-c" style="margin-left:auto;width:70mm">
+      ลงชื่อ ${LONGDOTS} ผู้ยื่นคำขอ<br/>
+      ( ${o.payeeName ? esc(o.payeeName) : LONGDOTS} )
+    </div>
+    <p style="font-size:12pt;margin-top:6mm">(หนังสือกระทรวงการคลัง ด่วนที่สุด ที่ กค 0530.1/ว 143 ลว. 22 ธ.ค. 2543
+    เรื่อง การจ่ายเงินให้เจ้าหนี้โดยผ่านธนาคาร)</p>`
+  )
+}

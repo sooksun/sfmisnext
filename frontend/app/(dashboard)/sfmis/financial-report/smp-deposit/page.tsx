@@ -7,7 +7,11 @@ import { z } from 'zod'
 import { Plus, Pencil, Trash2, ArrowDownToLine, ArrowUpFromLine, TrendingUp, Printer } from 'lucide-react'
 import { toast } from 'sonner'
 import { openPrintWindow } from '@/lib/print-utils'
-import { officialSmpPassbookRegister } from '@/lib/official-forms'
+import {
+  officialSmpPassbookRegister,
+  officialPayInSlip,
+  officialWithdrawSlip,
+} from '@/lib/official-forms'
 import { PageHeader } from '@/components/shared/page-header'
 import { FormDialog } from '@/components/shared/form-dialog'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -242,6 +246,34 @@ export default function SmpDepositPage() {
     openPrintWindow({ title: `สมุดคู่ฝาก_${budgetYear}`, body, paper: 'A4 landscape' })
   }
 
+  // พิมพ์ "ใบนำฝาก" (ฝาก) หรือ "ใบเบิกเงินฝาก" (ถอน) ของรายการนั้น (คู่มือ 2544 หน้า 26-27)
+  function handlePrintSlip(row: SmpEntry) {
+    if (row.entry_type === 1) {
+      const body = officialPayInSlip({
+        scName,
+        slipNo: row.doc_no,
+        date: row.doc_date,
+        items: [
+          {
+            type: row.money_type_name,
+            detail: row.detail,
+            amount: Number(row.amount_in || row.amount || 0),
+          },
+        ],
+      })
+      openPrintWindow({ title: `ใบนำฝาก_${row.doc_no ?? row.sde_id}`, body })
+    } else {
+      const body = officialWithdrawSlip({
+        docNo: row.doc_no,
+        scName,
+        depositType: row.money_type_name,
+        amount: Number(row.amount_out || row.amount || 0),
+        date: row.doc_date,
+      })
+      openPrintWindow({ title: `ใบเบิกเงินฝาก_${row.doc_no ?? row.sde_id}`, body })
+    }
+  }
+
   function openAdd() {
     reset({
       entry_type: 1,
@@ -354,6 +386,15 @@ export default function SmpDepositPage() {
             size="sm"
             variant="outline"
             className="h-7 w-7 p-0"
+            onClick={() => handlePrintSlip(item)}
+            title={item.entry_type === 1 ? 'พิมพ์ใบนำฝาก' : 'พิมพ์ใบเบิกเงินฝาก'}
+          >
+            <Printer className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 w-7 p-0"
             onClick={() => openEdit(item)}
             title="แก้ไข"
           >
@@ -370,7 +411,7 @@ export default function SmpDepositPage() {
           </Button>
         </div>
       ),
-      headerClassName: 'w-20',
+      headerClassName: 'w-28',
     },
   ]
 

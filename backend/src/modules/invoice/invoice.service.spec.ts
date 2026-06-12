@@ -257,12 +257,26 @@ describe('InvoiceService', () => {
 
     it('map column names ถูกต้อง', async () => {
       partnerRepo.find.mockResolvedValue([
-        { pId: 3, pName: 'ผู้ค้า', payType: 1, calVat: 0, del: 0 },
+        {
+          pId: 3,
+          pName: 'ผู้ค้า',
+          pType: 2,
+          pAddress: '99 หมู่ 1',
+          pTel: '053123456',
+          pIdTax: '1234567890123',
+          payType: 1,
+          calVat: 0,
+          del: 0,
+        },
       ]);
       const [row] = await service.loadPartner(1);
       expect(row).toEqual({
         p_id: 3,
         p_name: 'ผู้ค้า',
+        p_type: 2,
+        p_address: '99 หมู่ 1',
+        p_tel: '053123456',
+        p_tax_id: '1234567890123',
         pay_type: 1,
         cal_vat: 0,
         del: 0,

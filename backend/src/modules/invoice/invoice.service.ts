@@ -300,6 +300,10 @@ export class InvoiceService {
     return partners.map((partner) => ({
       p_id: partner.pId,
       p_name: partner.pName,
+      p_type: partner.pType,
+      p_address: partner.pAddress ?? '',
+      p_tel: partner.pTel || partner.pPhone || '',
+      p_tax_id: partner.pIdTax || partner.pTax || '',
       pay_type: partner.payType,
       cal_vat: partner.calVat,
       del: partner.del,

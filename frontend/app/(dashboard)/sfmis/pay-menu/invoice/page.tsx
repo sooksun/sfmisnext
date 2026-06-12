@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Send, AlertTriangle, RotateCcw, Printer } from 'lucide-react'
 import { openPrintWindow, makeHeader, makeSignatures, fmtBaht, numberToThaiBaht, esc, thaiFullDate } from '@/lib/print-utils'
 import { paymentRequestMemo } from '@/lib/official-finance-forms'
+import { officialBankTransferRequest } from '@/lib/official-forms'
 import { getLastEntryDate, setLastEntryDate } from '@/lib/last-entry-date'
 import { PageHeader } from '@/components/shared/page-header'
 import { ProcessFlow } from '@/components/shared/process-flow'
@@ -74,6 +75,10 @@ interface LoanRow {
 interface Partner {
   p_id: number
   p_name: string
+  p_type?: number // 1 = บุคคลธรรมดา, 2 = นิติบุคคล
+  p_address?: string
+  p_tel?: string
+  p_tax_id?: string
 }
 
 interface BudgetType {
@@ -480,6 +485,24 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
     openPrintWindow({ title, body })
   }
 
+  // แบบคำขอรับเงินผ่านธนาคาร (คู่มือ 2544 หน้า 28) — ให้เจ้าหนี้/ผู้รับเงินกรอกยื่นขอรับโอน
+  function printBankTransferRequest(item: InvoiceRow) {
+    const partner = partnerList.find((p) => p.p_id === item.p_id)
+    const body = officialBankTransferRequest({
+      scName,
+      date: item.date_request,
+      payeeType: partner?.p_type === 2 ? 2 : partner?.p_type === 1 ? 1 : null,
+      payeeName: item.partner_name || partner?.p_name,
+      payeeAddress: partner?.p_address,
+      payeeTel: partner?.p_tel,
+      payeeTaxId: partner?.p_tax_id,
+      paymentDetail: item.detail,
+      amount: Number(item.amount),
+      accountName: item.partner_name || partner?.p_name,
+    })
+    openPrintWindow({ title: `คำขอรับเงินผ่านธนาคาร_${item.no_doc}`, body })
+  }
+
   function openReturn(loan: LoanRow) {
     setReturnTarget(loan)
     resetReturn({
@@ -520,6 +543,10 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
           <Button size="sm" variant="outline" onClick={() => printPaymentMemo(item)} title="พิมพ์บันทึกข้อความขออนุมัติเบิกจ่าย (ตัวอย่างที่ 25)">
             <Printer className="h-3 w-3 mr-1" />
             ขออนุมัติจ่าย
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => printBankTransferRequest(item)} title="พิมพ์แบบคำขอรับเงินผ่านธนาคาร (สำหรับเจ้าหนี้/ผู้รับเงินยื่น)">
+            <Printer className="h-3 w-3 mr-1" />
+            คำขอรับเงิน
           </Button>
           {EDITABLE_STATUSES.has(item.status) && (
             <>
@@ -584,7 +611,8 @@ ${item.remark ? `<p><b>หมายเหตุ:</b> ${esc(item.remark)}</p>` : 
         </div>
       ),
     },
-  ], [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [partnerList, scName])
 
   // ── คอลัมน์ตารางเงินยืม ────────────────────────────────────────────────────
   const loanColumns = useMemo(() => [

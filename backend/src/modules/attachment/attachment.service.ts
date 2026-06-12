@@ -55,6 +55,11 @@ export class AttachmentService {
     return { data, count: data.length };
   }
 
+  /** หา attachment จากชื่อไฟล์ที่เก็บ (ใช้ตรวจ tenant ก่อนส่งไฟล์) */
+  async findByStoredName(storedName: string) {
+    return this.repo.findOne({ where: { storedName, del: 0 } });
+  }
+
   /** บันทึก metadata ไฟล์ที่อัปโหลดแล้ว */
   async create(meta: CreateAttachmentMeta) {
     const row = this.repo.create({

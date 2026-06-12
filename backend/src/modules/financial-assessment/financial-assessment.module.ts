@@ -30,6 +30,7 @@ import { BudgetIncomeTypeSchool } from '../bank/entities/budget-income-type-scho
 import { FiscalYearBalance } from '../fiscal-year-balance/entities/fiscal-year-balance.entity';
 import { School } from '../school/entities/school.entity';
 import { FinanceAnnualAttestation } from './entities/finance-annual-attestation.entity';
+import { CrossDomainGuardModule } from '../cross-domain-guard/cross-domain-guard.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { FinanceAnnualAttestation } from './entities/finance-annual-attestation.
       FiscalYearBalance,
       School,
     ]),
+    CrossDomainGuardModule, // ใช้ guard.inspect() ในข้อ 5.1
   ],
   controllers: [FinancialAssessmentController],
   providers: [FinancialAssessmentService, RuleEngineService],

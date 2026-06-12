@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  NotFoundException,
   Body,
   Controller,
   Get,
@@ -92,7 +93,11 @@ export class AttachmentController {
   }
 
   @Get('file/:stored_name')
-  file(@Param('stored_name') storedName: string, @Res() res: Response) {
+  async file(
+    @Param('stored_name') storedName: string,
+    @CurrentUser() user: JwtUser,
+    @Res() res: Response,
+  ) {
     // กัน path traversal — อนุญาตเฉพาะ basename ที่ไม่มีตัวคั่น path / '..'
     if (
       storedName.includes('/') ||
@@ -102,6 +107,10 @@ export class AttachmentController {
     ) {
       throw new BadRequestException('ชื่อไฟล์ไม่ถูกต้อง');
     }
+    // กัน IDOR: ดาวน์โหลดได้เฉพาะไฟล์ของโรงเรียนตัวเอง (super admin ข้ามได้)
+    const att = await this.attachmentService.findByStoredName(storedName);
+    if (!att) throw new NotFoundException('ไม่พบไฟล์แนบ');
+    assertSameSchool(user, att.scId);
     return res.sendFile(path.join(UPLOAD_DIR, storedName));
   }
 

@@ -271,7 +271,7 @@ export const ASSESS_ITEMS: AssessItemDef[] = [
     code: '5.1',
     topic: 5,
     weight: 5,
-    mode: 'prefill',
+    mode: 'auto',
     naAllowed: false,
     label: 'การจ่ายเงินแต่ละประเภทตรงตามวัตถุประสงค์ และระเบียบหรือแนวทางการดำเนินงานที่กำหนด',
   },

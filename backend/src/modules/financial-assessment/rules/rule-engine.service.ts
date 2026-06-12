@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { GovRevenueEntry } from '../../gov-revenue/entities/gov-revenue-entry.entity';
 import { FinancialTransactions } from '../../report-daily-balance/entities/financial-transactions.entity';
 import { OpeningBalance } from '../../opening-balance/entities/opening-balance.entity';
+import { CrossDomainGuardService } from '../../cross-domain-guard/cross-domain-guard.service';
 import { BudgetRequest } from '../../budget-request/entities/budget-request.entity';
 import { BankLedgerEntry } from '../../bank-ledger/entities/bank-ledger-entry.entity';
 import { SmpDepositEntry } from '../../smp-deposit/entities/smp-deposit-entry.entity';
@@ -86,6 +87,7 @@ export class RuleEngineService {
     private readonly bitsRepo: Repository<BudgetIncomeTypeSchool>,
     @InjectRepository(FiscalYearBalance)
     private readonly fybRepo: Repository<FiscalYearBalance>,
+    private readonly guard: CrossDomainGuardService,
   ) {}
 
   async evaluate(ctx: AssessContext): Promise<EvalMap> {
@@ -826,15 +828,23 @@ export class RuleEngineService {
     ctx: AssessContext,
     set: (c: string, o: EvalOutcome) => void,
   ) {
-    const { scId, syId } = ctx;
+    const { scId, syId, budgetYear } = ctx;
 
-    // 5.1 (prefill) จ่ายตรงวัตถุประสงค์ — ระบบมี hard-block กันจ่ายผิดประเภทตั้งแต่ขั้นบันทึก
-    set(
-      '5.1',
-      yes(
-        'ระบบมีตัวกันการจ่ายผิดประเภทเงิน (cross-domain-guard G1-G6) บล็อกตั้งแต่ขั้นบันทึก — โปรดยืนยันรายการยกเว้น (ถ้ามี)',
-      ),
-    );
+    // 5.1 จ่ายตรงวัตถุประสงค์/ระเบียบ — สแกนความขัดแย้งข้ามงานจริงย้อนหลัง (cross-domain-guard)
+    try {
+      const alerts = await this.guard.inspect(scId, budgetYear);
+      const violations = alerts.filter((a) => a.severity === 'error');
+      set(
+        '5.1',
+        violations.length === 0
+          ? yes('สแกนแล้วไม่พบการจ่ายเกินวงเงิน/ผิดวัตถุประสงค์ข้ามงาน (cross-domain-guard)')
+          : no(
+              `พบความขัดแย้งข้ามงาน ${violations.length} รายการ (เช่น ${violations[0].title}) — ตรวจการจ่ายให้ตรงวัตถุประสงค์`,
+            ),
+      );
+    } catch {
+      set('5.1', unknown('ตรวจความขัดแย้งข้ามงานไม่ได้ในขณะนี้ — โปรดยืนยันเอง'));
+    }
 
     const rws = await this.rwRepo.find({ where: { scId, syId, del: 0 } });
     const paid = rws.filter((r) => r.status >= RW_APPROVED_MIN);

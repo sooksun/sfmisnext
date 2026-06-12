@@ -24,6 +24,7 @@ import { BudgetIncomeTypeSchool } from '../../bank/entities/budget-income-type-s
 import { FiscalYearBalance } from '../../fiscal-year-balance/entities/fiscal-year-balance.entity';
 import { FinanceAnnualAttestation } from '../entities/finance-annual-attestation.entity';
 import { OpeningBalance } from '../../opening-balance/entities/opening-balance.entity';
+import { CrossDomainGuardService } from '../../cross-domain-guard/cross-domain-guard.service';
 
 function qbStub(rows: any[]) {
   const qb: any = {
@@ -85,6 +86,10 @@ describe('RuleEngineService', () => {
           provide: getRepositoryToken(ent),
           useValue: repos[key] ?? repoMock({}),
         })),
+        {
+          provide: CrossDomainGuardService,
+          useValue: repos['guard'] ?? { inspect: jest.fn().mockResolvedValue([]) },
+        },
       ],
     }).compile();
     return module.get(RuleEngineService);
@@ -360,5 +365,21 @@ describe('RuleEngineService', () => {
       }),
     });
     expect((await svc.evaluate(ctx))['2.5'].result).toBe('no');
+  });
+
+  it('5.1: สแกน guard เจอ violation (severity error) → no ; ไม่เจอ → yes', async () => {
+    const svc1 = await build({
+      guard: {
+        inspect: jest.fn().mockResolvedValue([
+          { type: 'project_overcommit', severity: 'error', title: 'โครงการเกินวงเงิน', detail: '' },
+        ]),
+      },
+    });
+    expect((await svc1.evaluate(ctx))['5.1'].result).toBe('no');
+
+    const svc2 = await build({
+      guard: { inspect: jest.fn().mockResolvedValue([]) },
+    });
+    expect((await svc2.evaluate(ctx))['5.1'].result).toBe('yes');
   });
 });

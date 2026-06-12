@@ -7,7 +7,9 @@ import {
   Post,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { IsNumber, IsOptional, IsString, IsArray } from 'class-validator';
 import { AiAssistService } from './ai-assist.service';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -29,6 +31,9 @@ class AdvisoryDto {
   @IsOptional() @IsArray() warnings?: { code: string; message: string }[];
 }
 
+// กัน cost abuse: ทุก endpoint อาจเรียก AI provider — จำกัด 30 ครั้ง/นาที (ใช้ named limiter 'ai' เดียวกับ ai.controller)
+@UseGuards(ThrottlerGuard)
+@Throttle({ ai: { limit: 30, ttl: 60000 } })
 @Controller('Ai_assist')
 export class AiAssistController {
   constructor(private readonly service: AiAssistService) {}

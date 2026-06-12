@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FinancialTransactions } from '../report-daily-balance/entities/financial-transactions.entity';
+import { budgetYearBEOf } from '../../common/utils/year.util';
 
 export interface AnomalyWarning {
   code: string;
@@ -57,7 +58,7 @@ export class AnomalyService {
         });
       }
       if (input.budget_year) {
-        const by = this.budgetYearOf(date);
+        const by = budgetYearBEOf(date);
         if (String(by) !== String(input.budget_year)) {
           warnings.push({
             code: 'YEAR_MISMATCH',
@@ -160,11 +161,5 @@ export class AnomalyService {
       .andWhere('DATE(ft.create_date) = :d', { d })
       .getCount();
     return n > 0;
-  }
-
-  /** ปีงบประมาณ พ.ศ. ของวันที่ (ต.ค.-ธ.ค. = ปีงบถัดไป) */
-  private budgetYearOf(d: Date): number {
-    const be = d.getFullYear() + 543;
-    return d.getMonth() >= 9 ? be + 1 : be;
   }
 }

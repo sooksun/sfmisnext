@@ -7,6 +7,8 @@ import { DeadlineEngineService } from './deadline-engine.service';
 import { DailyCheckService } from './daily-check.service';
 import type { ComputedAlert } from './deadline-rules';
 import { type JwtUser } from '../../common/utils/tenant-guard';
+import { currentBudgetYearBE } from '../../common/utils/year.util';
+import { ok, fail } from '../../common/utils/response.util';
 
 @Injectable()
 export class WorkAlertService {
@@ -134,14 +136,14 @@ export class WorkAlertService {
 
   async acknowledge(waId: number, user: JwtUser) {
     const row = await this.waRepo.findOne({ where: { waId, del: 0 } });
-    if (!row) return { flag: false, ms: 'ไม่พบรายการเตือน' };
+    if (!row) return fail('ไม่พบรายการเตือน');
     if (user.type !== 1 && row.scId !== user.sc_id)
-      return { flag: false, ms: 'ไม่มีสิทธิ์' };
+      return fail('ไม่มีสิทธิ์');
     if (row.status === 1) {
       row.status = 2;
       await this.waRepo.save(row);
     }
-    return { flag: true, ms: 'รับทราบแล้ว' };
+    return ok('รับทราบแล้ว');
   }
 
   async acknowledgeAll(scId: number, user: JwtUser) {
@@ -153,12 +155,12 @@ export class WorkAlertService {
       r.status = 2;
       await this.waRepo.save(r);
     }
-    return { flag: true, ms: `รับทราบ ${mine.length} รายการ`, count: mine.length };
+    return ok(`รับทราบ ${mine.length} รายการ`, { count: mine.length });
   }
 
   /** cron: sync ทุกโรงเรียนสำหรับปีงบปัจจุบัน */
   async syncAllSchools(now: Date = new Date()) {
-    const budgetYear = currentBudgetYear(now);
+    const budgetYear = String(currentBudgetYearBE(now));
     const schools = await this.schoolRepo.find({ where: { del: 0 } });
     let total = 0;
     for (const sc of schools) {
@@ -202,9 +204,3 @@ function toDto(r: WorkAlert) {
   };
 }
 
-/** ปีงบประมาณ พ.ศ. ปัจจุบันจากวันที่ (ต.ค.-ธ.ค. = ปีหน้า) */
-function currentBudgetYear(now: Date): string {
-  const ce = now.getFullYear();
-  const be = ce + 543;
-  return String(now.getMonth() >= 9 ? be + 1 : be);
-}

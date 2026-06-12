@@ -296,7 +296,16 @@ export class ProjectApproveService {
       order,
       items,
       committee,
-      partner: partner ? { p_id: partner.pId, p_name: partner.pName } : null,
+      partner: partner
+        ? {
+            p_id: partner.pId,
+            p_name: partner.pName,
+            p_address: partner.pAddress ?? '',
+            p_tel: partner.pTel || partner.pPhone || '',
+            p_tax_id: partner.pIdTax || partner.pTax || '',
+            cal_vat: partner.calVat,
+          }
+        : null,
       project_name: project?.projName ?? order.details ?? '',
       school_name: school?.scName ?? '',
       school_address,

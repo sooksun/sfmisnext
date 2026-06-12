@@ -968,7 +968,14 @@ describe('ProjectApproveService', () => {
       ]);
       // director (type 2) สำหรับลงนามท้ายเอกสาร
       adminRepo.findOne.mockResolvedValue({ adminId: 99, name: 'ผอ. ทดสอบ' });
-      partnerRepo.findOne.mockResolvedValue({ pId: 7, pName: 'ร้านค้า ค' });
+      partnerRepo.findOne.mockResolvedValue({
+        pId: 7,
+        pName: 'ร้านค้า ค',
+        pAddress: '19 หมู่ 3',
+        pTel: '0654939321',
+        pIdTax: '8571584128811',
+        calVat: 1,
+      });
       projectRepo.findOne.mockResolvedValue({
         projId: 3,
         projName: 'โครงการจริง',
@@ -985,7 +992,14 @@ describe('ProjectApproveService', () => {
       expect(result).not.toBeNull();
       expect(result!.items[0].supp_name).toBe('กระดาษ A4');
       expect(result!.committee).toEqual(['ครู ก', 'ครู ข']); // committee3=0 ถูกตัด
-      expect(result!.partner).toEqual({ p_id: 7, p_name: 'ร้านค้า ค' });
+      expect(result!.partner).toEqual({
+        p_id: 7,
+        p_name: 'ร้านค้า ค',
+        p_address: '19 หมู่ 3',
+        p_tel: '0654939321',
+        p_tax_id: '8571584128811',
+        cal_vat: 1,
+      });
       expect(result!.project_name).toBe('โครงการจริง');
       expect(result!.school_name).toBe('โรงเรียนทดสอบ');
       expect(result!.director_name).toBe('ผอ. ทดสอบ');

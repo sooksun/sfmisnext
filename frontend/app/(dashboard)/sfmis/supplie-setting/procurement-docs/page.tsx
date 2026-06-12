@@ -12,6 +12,7 @@ import { apiGet } from '@/lib/api'
 import { useAppContext } from '@/hooks/use-app-context'
 import {
   PROCUREMENT_FORMS,
+  formsForOrder,
   buildAllForms,
   type OrderPrintData,
 } from '@/lib/official-procurement-forms'
@@ -164,7 +165,7 @@ export default function ProcurementDocsPage() {
               พิมพ์ทั้งหมด (รวมทุกฉบับเป็นชุดเดียว)
             </Button>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {PROCUREMENT_FORMS.map((f) => (
+              {(printData ? formsForOrder(printData) : PROCUREMENT_FORMS).map((f) => (
                 <Button
                   key={f.key}
                   variant="outline"

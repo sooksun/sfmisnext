@@ -129,24 +129,27 @@ export class AdminController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
   @Roles(1, 2)
-  addUser(@Body() payload: AddAdminDto) {
-    return this.adminService.addAdmin(payload);
+  addUser(@Body() payload: AddAdminDto, @CurrentUser() user: JwtUser) {
+    return this.adminService.addAdmin(payload, user);
   }
 
   @Post('update_user')
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
   @Roles(1, 2)
-  updateUser(@Body() payload: UpdateAdminDto) {
-    return this.adminService.updateAdmin(payload);
+  updateUser(@Body() payload: UpdateAdminDto, @CurrentUser() user: JwtUser) {
+    return this.adminService.updateAdmin(payload, user);
   }
 
   @Post('remove_user')
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
   @Roles(1, 2)
-  removeUser(@Body() payload: UpdateAdminStatusDto) {
-    return this.adminService.removeAdmin(payload);
+  removeUser(
+    @Body() payload: UpdateAdminStatusDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.adminService.removeAdmin(payload, user);
   }
 
   // ── Public data (ใช้ JWT ตรวจสิทธิ์แค่ว่า login แล้ว) ──────────

@@ -382,6 +382,46 @@ describe('AdminService', () => {
     });
   });
 
+  // ── IDOR guard (cross-tenant user management) ──
+  describe('tenant guard — จัดการผู้ใช้ข้ามโรงเรียน', () => {
+    const intruder = { admin_id: 9, sc_id: 2, type: 2, username: 'dirB' } as any; // ผอ.ร.ร.อื่น
+    const superAdmin = { admin_id: 1, sc_id: 99, type: 1, username: 'root' } as any;
+
+    it('updateAdmin: ผอ.ร.ร.อื่นแก้ admin โรงเรียน 1 → ForbiddenException', async () => {
+      adminRepo.findOne.mockResolvedValue(createMockAdmin({ scId: 1 }));
+      await expect(
+        service.updateAdmin({ admin_id: 1, name: 'X' } as any, intruder),
+      ).rejects.toThrow('ไม่สามารถดูหรือแก้ไขข้อมูลของโรงเรียนอื่นได้');
+    });
+
+    it('removeAdmin: ผอ.ร.ร.อื่นลบ admin โรงเรียน 1 → ForbiddenException', async () => {
+      adminRepo.findOne.mockResolvedValue(createMockAdmin({ scId: 1 }));
+      await expect(
+        service.removeAdmin({ admin_id: 1, del: 1 } as any, intruder),
+      ).rejects.toThrow('ไม่สามารถดูหรือแก้ไขข้อมูลของโรงเรียนอื่นได้');
+    });
+
+    it('addAdmin: non-super ถูกบังคับ sc_id เป็นของตัวเอง (กันสร้างข้ามโรงเรียน)', async () => {
+      adminRepo.findOne.mockResolvedValue(null);
+      await service.addAdmin(
+        { name: 'U', email: 'u@x.th', sc_id: 999 } as any,
+        intruder,
+      );
+      expect(adminRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ scId: 2 }), // ถูกบังคับเป็น sc_id ของ intruder ไม่ใช่ 999
+      );
+    });
+
+    it('updateAdmin: super admin แก้ข้ามโรงเรียนได้', async () => {
+      adminRepo.findOne.mockResolvedValue(createMockAdmin({ scId: 1 }));
+      const r = await service.updateAdmin(
+        { admin_id: 1, name: 'X' } as any,
+        superAdmin,
+      );
+      expect((r as any).flag).toBe(true);
+    });
+  });
+
   describe('updateAdmin', () => {
     it('should return error when admin_id is missing', async () => {
       const result = await service.updateAdmin({} as any);

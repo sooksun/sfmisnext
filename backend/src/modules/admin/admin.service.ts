@@ -13,6 +13,10 @@ import { Admin } from './entities/admin.entity';
 import { MasterLevel } from './entities/master-level.entity';
 import type { JwtPayload } from '../auth/jwt.strategy';
 import { DeleteLogService } from '../delete-log/delete-log.service';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 const BCRYPT_ROUNDS = 12;
 /** จำกัดขนาด Base64 ไม่เกิน 2 MB (≈ 2.67 MB base64-encoded) */
@@ -244,7 +248,11 @@ export class AdminService {
     };
   }
 
-  async addAdmin(payload: AddAdminDto) {
+  async addAdmin(payload: AddAdminDto, user?: JwtUser) {
+    // กัน IDOR: ผู้ที่ไม่ใช่ super admin สร้างผู้ใช้ได้เฉพาะโรงเรียนตัวเองเท่านั้น
+    if (user && user.type !== 1) {
+      payload.sc_id = user.sc_id;
+    }
     const username =
       payload.username || payload.email?.split('@')[0] || `user_${Date.now()}`;
 
@@ -298,7 +306,10 @@ export class AdminService {
     }
   }
 
-  async removeAdmin(payload: UpdateAdminStatusDto & { reason?: string }) {
+  async removeAdmin(
+    payload: UpdateAdminStatusDto & { reason?: string },
+    user?: JwtUser,
+  ) {
     const admin = await this.adminRepository.findOne({
       where: { adminId: payload.admin_id, del: 0 },
     });
@@ -306,6 +317,9 @@ export class AdminService {
     if (!admin) {
       return '0';
     }
+
+    // กัน IDOR: แก้/ลบได้เฉพาะ admin ในโรงเรียนตัวเอง (super admin ข้ามได้)
+    if (user) assertSameSchool(user, admin.scId ?? 0);
 
     const snapshot = { ...admin, password: '[redacted]' };
     admin.del = payload.del;
@@ -324,7 +338,7 @@ export class AdminService {
     return '1';
   }
 
-  async updateAdmin(payload: UpdateAdminDto) {
+  async updateAdmin(payload: UpdateAdminDto, user?: JwtUser) {
     if (!payload.admin_id) {
       return { flag: false, ms: 'ไม่พบ admin_id' };
     }
@@ -335,6 +349,12 @@ export class AdminService {
 
     if (!admin) {
       return { flag: false, ms: 'ไม่พบข้อมูลผู้ใช้' };
+    }
+
+    // กัน IDOR: แก้ได้เฉพาะ admin ในโรงเรียนตัวเอง + กัน non-super ย้ายโรงเรียน
+    if (user && user.type !== 1) {
+      assertSameSchool(user, admin.scId ?? 0);
+      payload.sc_id = user.sc_id; // ไม่ให้ย้าย user ไปโรงเรียนอื่น
     }
 
     if (payload.name !== undefined) admin.name = payload.name;

@@ -2,12 +2,23 @@
 
 รายงาน vulnerabilities ของระบบ SFMIS หลังลบ Angular legacy frontend (เหลือ Backend NestJS + Frontend Next.js เท่านั้น)
 
-**วันที่สแกน:** 2026-05-04
-**Tool:** `npm audit` (npm 10.x)
+> ## ✅ สถานะปัจจุบัน: ปลอดช่องโหว่ (re-scan 2026-06-12)
+>
+> | Stack | Total | Critical | High | Mod | Low |
+> |---|---:|---:|---:|---:|---:|
+> | Backend (NestJS 11.1.24) | **0** | 0 | 0 | 0 | 0 |
+> | Frontend (Next.js 16.2.7) | **0** | 0 | 0 | 0 | 0 |
+>
+> CVE ทั้ง 29 รายการจากการสแกนครั้งแรก (2026-05-04) **ได้รับการแก้ไขครบแล้ว** —
+> NestJS family อัปเป็น 11.1.24, Next.js 16.2.7, และ `xlsx` ใช้ **0.20.3 (official SheetJS CDN)**
+> แทน 0.18.5 ที่มีช่องโหว่ · `npm audit` (รวม dev) = **0 vulnerabilities** ทั้งสอง stack
+> (ตรวจด้วย Node v24.14.0). รายละเอียดด้านล่างเป็น **บันทึกประวัติ** ของรอบ 2026-05-04 เพื่อ traceability
+
+**วันที่สแกนครั้งแรก:** 2026-05-04 · **Tool:** `npm audit` (npm 10.x)
 
 ---
 
-## 📊 Executive Summary
+## 📊 Executive Summary (ประวัติ — รอบ 2026-05-04, แก้ครบแล้ว)
 
 | Stack | Total | 🔴 Critical | 🟠 High | 🟡 Moderate | 🟢 Low |
 |---|---:|---:|---:|---:|---:|
@@ -38,8 +49,11 @@
 - **CVSS:** 6.1
 - **หมายเหตุ:** `next@16.2.6` ยัง bundle `postcss@8.4.x` — ใช้ **`overrides` ใน `frontend/package.json`** บังคับ `postcss@^8.5.10` (resolve เป็น 8.5.14) และ `fast-uri@^3.1.2` เพื่อปิดช่องโหว่ transitive ที่ `npm audit` รายงาน
 
-#### 3. 🟠 HIGH — `xlsx` 0.18.5 ⚠️ **ไม่มี fix จาก npm**
-- **Advisories:**
+#### 3. ~~🟠 HIGH — `xlsx` 0.18.5~~ → **แก้แล้ว: ใช้ 0.20.3 (CDN) — ทางเลือก A**
+> `frontend/package.json` ระบุ `"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"` (vendored)
+> ครอบคลุมทั้ง Prototype Pollution + ReDoS แล้ว · `npm audit` frontend = 0
+
+- **Advisories (อ้างอิงเดิม):**
   - GHSA-4r6h-8v6p-xvw6 — Prototype Pollution (CVSS 7.8)
   - GHSA-5pgg-2g8v-p4x9 — ReDoS (CVSS 7.5)
 - **Range:** `<0.20.2` (เวอร์ชันปัจจุบัน 0.18.5)
@@ -138,15 +152,15 @@ vulnerabilities เหล่านี้อยู่ใน build tools / CLI too
 
 ## 📋 Action Plan ก่อน Deploy Production
 
-### P0 — ต้องทำก่อน Deploy
-- [ ] อัปเกรด `next` → 16.2.4 (FE)
-- [ ] อัปเกรด NestJS family ใน backend (BE)
-- [ ] รัน `npm test` หลังอัปเกรด (backend test suite — 257 tests)
-- [ ] รัน `npm run build` หลังอัปเกรด (ทั้ง 2 ฝั่ง)
+### P0 — ต้องทำก่อน Deploy ✅ เสร็จครบ (2026-06-12)
+- [x] อัปเกรด `next` → **16.2.7** (FE)
+- [x] อัปเกรด NestJS family → **@nestjs/core 11.1.24** (BE)
+- [x] `npm test` หลังอัปเกรด — ผ่าน **1,225 tests** (เพิ่มจาก 257)
+- [x] `npm run build` ทั้ง 2 ฝั่ง — ผ่าน
 
 ### P1 — ทำในรอบถัดไป (low real-world impact ใน SFMIS)
-- [ ] ตัดสินใจเรื่อง `xlsx` (ทางเลือก A/B/C ด้านบน)
-- [ ] รัน `npm audit fix` ใน backend ทุกไตรมาส
+- [x] ตัดสินใจเรื่อง `xlsx` → **ทางเลือก A** (0.20.3 จาก CDN, vendored)
+- [ ] รัน `npm audit` ใน backend/frontend ทุกไตรมาส (ปัจจุบัน = 0)
 - [ ] subscribe GitHub Dependabot alerts สำหรับ repo
 
 ### P2 — Hardening เพิ่ม
@@ -184,4 +198,5 @@ vulnerabilities เหล่านี้อยู่ใน build tools / CLI too
 | วันที่ | Backend | Frontend | หมายเหตุ |
 |---|---|---|---|
 | 2026-05-04 | 28 (1C/11H/14M/2L) | 3 (0C/2H/1M) | หลังลบ Angular legacy |
+| 2026-06-12 | **0** | **0** | แก้ครบ: NestJS 11.1.24, Next 16.2.7, xlsx 0.20.3 (CDN) — `npm audit` (รวม dev) = 0 ทั้งสอง stack |
 | 2024 (เก่า) | — | — | รายงานเก่าสำหรับ Angular 16.2 — **ไม่ relevant** เพราะ Angular ถูกลบแล้ว |

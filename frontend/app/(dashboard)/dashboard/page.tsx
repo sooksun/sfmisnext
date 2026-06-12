@@ -2,6 +2,9 @@
 import { School, CalendarDays, User, Sparkles, Brain, AlertTriangle, GitMerge } from 'lucide-react'
 import Link from 'next/link'
 import { useAppContext } from '@/hooks/use-app-context'
+import { WorkAlertCard } from '@/components/dashboard/work-alert-card'
+import { DailyCheckBanner } from '@/components/dashboard/daily-check-banner'
+import { AiAssistCard } from '@/components/dashboard/ai-assist-card'
 import { DashboardBudgetSection } from '@/components/dashboard/dashboard-budget-section'
 import { AlertsWidget } from '@/components/dashboard/alerts-widget'
 import { CashDepositModal } from '@/components/dashboard/cash-deposit-modal'
@@ -28,6 +31,15 @@ export default function DashboardPage() {
         <p className="mt-1 text-indigo-100 text-sm md:text-base">
           ระบบบริหารจัดการการเงินโรงเรียน (School Finance Management Information System)
         </p>
+      </div>
+
+      {/* แถบเตือนปิดยอดประจำวัน (เด่น) */}
+      <DailyCheckBanner />
+
+      {/* งานที่ต้องทำ + ผู้ช่วย AI */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <WorkAlertCard />
+        <AiAssistCard />
       </div>
 
       {/* Info cards */}

@@ -65,6 +65,7 @@ import {
   BellRing,
   ClipboardSignature,
   Plane,
+  History,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
@@ -200,6 +201,7 @@ const navGroups: NavItem[] = [
       { label: '4.9 ทะเบียนคุมหลักฐานขอเบิก',    href: '/sfmis/pay-menu/budget-request',          icon: ClipboardList, roles: FINANCE },
       { label: '4.10 ทะเบียนคุมเงินฝาก',         href: '/sfmis/financial-report/deposit-register', icon: Landmark,     roles: FINANCE },
       { label: '4.11 ประเมินตนเอง (แบบ 2544)',   href: '/sfmis/financial-report/self-assessment',  icon: ClipboardCheck, roles: FINANCE },
+      { label: '4.12 งานที่ต้องทำ (เตือนตามปฏิทิน)', href: '/sfmis/work-alerts',                    icon: BellRing,      roles: ALL },
     ],
   },
   {
@@ -213,6 +215,7 @@ const navGroups: NavItem[] = [
       { label: '5.4 บัญชีธนาคาร',    href: '/sfmis/business-setting/account-bank', icon: Landmark,   roles: ADMIN },
       { label: '5.5 ยอดยกมาต้นปี',   href: '/sfmis/year/opening-balance',          icon: ArrowDownToLine, roles: ADMIN },
       { label: '5.6 บันทึกการลบข้อมูล', href: '/sfmis/admin-tools/delete-log',    icon: ShieldCheck,     roles: ADMIN },
+      { label: '5.6.1 บันทึกกิจกรรมระบบ', href: '/sfmis/admin-tools/activity-log', icon: History,         roles: ADMIN },
       { label: '5.7 เกณฑ์ตามระเบียบ', href: '/sfmis/admin-tools/regulatory-config', icon: Settings,    roles: ADMIN },
       { label: '5.8 กรรมการเก็บรักษาเงิน', href: '/sfmis/admin-tools/cash-committee', icon: UserCheck, roles: ADMIN },
       { label: '5.9 รีเซ็ต/ข้อมูลตัวอย่าง', href: '/sfmis/admin-tools/system-reset', icon: RotateCcw, roles: SUPER },

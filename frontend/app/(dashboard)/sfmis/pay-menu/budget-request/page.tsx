@@ -14,6 +14,8 @@ import { officialDisbursementEvidenceRegister } from '@/lib/official-forms'
 import { PageHeader } from '@/components/shared/page-header'
 import { ProcessFlow } from '@/components/shared/process-flow'
 import { FormDialog } from '@/components/shared/form-dialog'
+import { AnomalyWarnings } from '@/components/shared/anomaly-warnings'
+import { useAnomalyPrecheck } from '@/hooks/use-anomaly-precheck'
 import { DataTable } from '@/components/shared/data-table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -100,6 +102,8 @@ export default function BudgetRequestPage() {
   const { scId, syId, budgetYear, adminId, scName } = useAppContext()
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
+  const { warnings: anomalyWarnings, check: anomalyCheck, clear: clearAnomaly } = useAnomalyPrecheck('budget-request')
+  const [anomalyBypass, setAnomalyBypass] = useState(false)
   const [editItem, setEditItem] = useState<BudgetRequestItem | null>(null)
   // เปลี่ยนสถานะแบบต้องระบุวันที่ (ส่งเบิก=1 / โอนเงินแล้ว=2)
   const [transition, setTransition] = useState<{ item: BudgetRequestItem; target: number } | null>(null)
@@ -195,14 +199,32 @@ export default function BudgetRequestPage() {
   })
 
   function openAdd() {
-    setEditItem(null); reset({ expense_type_text: 'ค่าใช้สอย', amount: 0 }); setOpen(true)
+    setEditItem(null); reset({ expense_type_text: 'ค่าใช้สอย', amount: 0 }); setAnomalyBypass(false); clearAnomaly(); setOpen(true)
   }
   function openEdit(item: BudgetRequestItem) {
     setEditItem(item)
     reset({ action_date: item.action_date ?? '', creditor_name: item.creditor_name ?? '', expense_type_text: expenseLabel(item), amount: item.amount, remark: item.remark ?? '' })
     setOpen(true)
   }
-  function onSubmit(vals: FormValues) {
+  async function onSubmit(vals: FormValues) {
+    // L2 ตรวจค่าผิดปกติก่อนบันทึก — ถ้ามีคำเตือน แสดงก่อน รอผู้ใช้กดยืนยันอีกครั้ง
+    if (!anomalyBypass) {
+      const ws = await anomalyCheck({
+        amount: vals.amount,
+        action_date: vals.action_date,
+        creditor_name: vals.creditor_name,
+      })
+      if (ws.length > 0) { setAnomalyBypass(true); return }
+    }
+    // ผู้ใช้ยืนยันบันทึกทั้งที่มีคำเตือน → ขอความเห็น AI แบบ fire-and-forget (บันทึกเป็นข้อสังเกตย้อนหลัง)
+    if (anomalyWarnings.length > 0) {
+      apiPost('Ai_assist/advisory', {
+        sc_id: scId, budget_year: String(budgetYear), module: 'budget-request',
+        payload: { amount: vals.amount, action_date: vals.action_date, creditor_name: vals.creditor_name },
+        warnings: anomalyWarnings.map((w) => ({ code: w.code, message: w.message })),
+      }).catch(() => {})
+    }
+    setAnomalyBypass(false); clearAnomaly()
     // เก็บทั้งข้อความอิสระ (expense_type_text) และเลขหมวด (expense_type) เพื่อเข้ากันได้ย้อนหลัง
     const dto = { ...(vals as Record<string, unknown>), expense_type: matchExpenseType(vals.expense_type_text) }
     if (editItem) updateMut.mutate({ br_id: editItem.br_id, ...dto, up_by: adminId })
@@ -329,6 +351,10 @@ export default function BudgetRequestPage() {
             </div>
           </div>
           {!editItem && <p className="text-xs text-gray-400">รายการใหม่จะมีสถานะ &quot;รอส่งเบิก&quot; — กดปุ่ม &quot;ส่งเบิก&quot; ในตารางเพื่อบันทึกวันที่ส่ง</p>}
+          <AnomalyWarnings warnings={anomalyWarnings} onDismiss={clearAnomaly} />
+          {anomalyBypass && anomalyWarnings.length > 0 && (
+            <p className="text-xs text-amber-600">ตรวจสอบแล้ว — กด “บันทึก” อีกครั้งเพื่อยืนยันบันทึกตามนี้</p>
+          )}
         </div>
       </FormDialog>
 

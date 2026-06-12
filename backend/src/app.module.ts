@@ -3,6 +3,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
@@ -62,6 +63,10 @@ import { BudgetTransferModule } from './modules/budget-transfer/budget-transfer.
 import { ProjectFollowupModule } from './modules/project-followup/project-followup.module';
 import { EgpAnnouncementModule } from './modules/egp-announcement/egp-announcement.module';
 import { FinancialAssessmentModule } from './modules/financial-assessment/financial-assessment.module';
+import { WorkAlertModule } from './modules/work-alert/work-alert.module';
+import { ActivityLogModule } from './modules/activity-log/activity-log.module';
+import { AnomalyModule } from './modules/anomaly/anomaly.module';
+import { AiAssistModule } from './modules/ai-assist/ai-assist.module';
 import { InvoicePreAuditModule } from './modules/invoice-pre-audit/invoice-pre-audit.module';
 import { PlanTraceModule } from './modules/plan-trace/plan-trace.module';
 import { IntraBankTransferModule } from './modules/intra-bank-transfer/intra-bank-transfer.module';
@@ -79,6 +84,7 @@ import { AttachmentModule } from './modules/attachment/attachment.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         name: 'login',
@@ -161,6 +167,10 @@ import { AttachmentModule } from './modules/attachment/attachment.module';
     ProjectFollowupModule,
     EgpAnnouncementModule,
     FinancialAssessmentModule,
+    WorkAlertModule,
+    ActivityLogModule,
+    AnomalyModule,
+    AiAssistModule,
     InvoicePreAuditModule,
     PlanTraceModule,
     IntraBankTransferModule,

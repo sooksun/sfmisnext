@@ -290,6 +290,91 @@ export default function SelfAssessmentPage() {
     )
   }
 
+  // พิมพ์แบบ 2544-2 (ให้คะแนนรายข้อ) + แบบ 2544-3 (สรุปรายประเด็น) เป็น PDF ชุดเดียว
+  const handlePrint23 = () => {
+    if (!data) return
+    // ── แบบ 2544-2: ตารางรายข้อ จัดกลุ่มตามประเด็น + รวมท้ายประเด็น ──
+    let body2 = ''
+    for (const t of data.topics) {
+      const items = data.items.filter((i) => i.topic_no === t.no)
+      const rows = items
+        .map((it) => {
+          const st = itemState(it)
+          const got =
+            st.answer === 'yes' ? it.weight : st.answer === 'na' ? 'N/A' : 0
+          return `<tr>
+            <td class="center" style="width:8%">${esc(it.item_code)}</td>
+            <td>${esc(it.label)}</td>
+            <td class="num" style="width:10%">${it.weight}</td>
+            <td class="center" style="width:11%">${esc(ansText(st.answer))}</td>
+            <td class="num" style="width:10%">${got}</td>
+          </tr>`
+        })
+        .join('')
+      const earned = round2(live?.perTopic[t.no]?.earned ?? 0)
+      body2 += `<table><thead>
+        <tr><th colspan="5" style="text-align:left">${esc(`${t.no}. ${t.name}`)}</th></tr>
+        <tr><th>ข้อ</th><th>รายการ</th><th>คะแนนเต็ม</th><th>ผล</th><th>คะแนนที่ได้</th></tr>
+        </thead><tbody>${rows}
+        <tr><td colspan="2" class="right"><b>รวมประเด็นที่ ${t.no}</b></td>
+        <td class="num"><b>${t.max}</b></td><td></td><td class="num"><b>${earned}</b></td></tr>
+        </tbody></table>`
+    }
+    body2 += `<div class="meta" style="margin-top:4mm"><div><b>รวมทั้งสิ้น:</b> ${live?.total ?? 0} / ${live?.max ?? 100} คะแนน (${live?.percent ?? 0}%)</div><div><b>ระดับ:</b> ${live?.levelLabel ?? ''}</div></div>`
+
+    // ── แบบ 2544-3: สรุปรายประเด็น (ขึ้นหน้าใหม่) ──
+    const rows3 = data.topics
+      .map((t) => {
+        const earned = round2(live?.perTopic[t.no]?.earned ?? 0)
+        const possible = round2(live?.perTopic[t.no]?.possible ?? t.max)
+        return `<tr>
+          <td>${esc(`${t.no}. ${t.name}`)}</td>
+          <td class="num">${t.max}</td>
+          <td class="num">${possible}</td>
+          <td class="num">${earned}</td>
+        </tr>`
+      })
+      .join('')
+    const body3 = `
+      <div style="page-break-before: always"></div>
+      ${makeHeader({
+        title: 'แบบรายงานผลการประเมินการปฏิบัติงาน (แบบ 2544-3)',
+        subtitle: `ด้านการเงิน การบัญชีของสถานศึกษาที่ปฏิบัติตามระบบควบคุมทางการเงินของหน่วยงานย่อย พ.ศ. 2544 · ปีงบประมาณ พ.ศ. ${budgetYear}`,
+        scName: scName || undefined,
+        docDate: data.head.as_of_date || undefined,
+      })}
+      <table><thead>
+        <tr><th>ประเด็นการประเมิน</th><th>คะแนนเต็ม</th><th>ฐานคะแนน (หลังตัด N/A)</th><th>คะแนนที่ได้</th></tr>
+      </thead><tbody>${rows3}
+        <tr><td class="right"><b>รวมทั้งสิ้น</b></td>
+        <td class="num"><b>100</b></td>
+        <td class="num"><b>${live?.max ?? 100}</b></td>
+        <td class="num"><b>${live?.total ?? 0}</b></td></tr>
+      </tbody></table>
+      <div class="meta" style="margin-top:4mm">
+        <div><b>คิดเป็นร้อยละ:</b> ${live?.percent ?? 0}%</div>
+        <div><b>ผลการประเมินการปฏิบัติงานอยู่ในระดับ:</b> ${live?.levelLabel ?? ''} (${live?.level ?? 1})</div>
+      </div>
+      <div class="sign-row">
+        <div class="sign-box"><div class="sign-line"></div><div class="sign-label">(..............................................)</div><div class="sign-label">ผู้ประเมิน</div></div>
+        <div class="sign-box"><div class="sign-line"></div><div class="sign-label">(..............................................)</div><div class="sign-label">ผู้อำนวยการสถานศึกษา</div></div>
+      </div>`
+
+    openPrintWindow({
+      title: `แบบ2544-2-3_${budgetYear}`,
+      body:
+        makeHeader({
+          title: 'แบบสรุปผลการประเมินการปฏิบัติงาน (แบบ 2544-2)',
+          subtitle: `ด้านการเงิน การบัญชีของสถานศึกษาที่ปฏิบัติตามระบบควบคุมทางการเงินของหน่วยงานย่อย พ.ศ. 2544 · ปีงบประมาณ พ.ศ. ${budgetYear} · จำนวนนักเรียน ${data.head.student_count || '-'} คน`,
+          scName: scName || undefined,
+          docDate: data.head.as_of_date || undefined,
+        }) +
+        body2 +
+        body3,
+      paper: 'A4',
+    })
+  }
+
   // พิมพ์แบบ 2544-1 (Checklist A4)
   const handlePrint = () => {
     if (!data) return
@@ -361,7 +446,10 @@ export default function SelfAssessmentPage() {
               </Button>
             )}
             <Button variant="outline" onClick={handlePrint} className="gap-1.5">
-              <Printer className="h-4 w-4" /> พิมพ์ 2544-1
+              <Printer className="h-4 w-4" /> PDF 2544-1
+            </Button>
+            <Button variant="outline" onClick={handlePrint23} className="gap-1.5">
+              <Printer className="h-4 w-4" /> PDF 2544-2+3
             </Button>
             <ExportButton onExport={handleExport} label="Excel 2544-2/3" />
             {!locked && (

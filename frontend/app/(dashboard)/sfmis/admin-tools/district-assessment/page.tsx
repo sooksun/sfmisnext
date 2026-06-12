@@ -1,11 +1,13 @@
 'use client'
 import { useQuery } from '@tanstack/react-query'
-import { Building2, CheckCircle2, Send, AlertTriangle } from 'lucide-react'
+import { Building2, CheckCircle2, Send, AlertTriangle, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { ExportButton } from '@/components/ui/export-button'
 import { apiGet } from '@/lib/api'
 import { exportSheets } from '@/lib/export-xlsx'
+import { openPrintWindow, makeHeader, esc } from '@/lib/print-utils'
 import { cn } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
 
@@ -126,6 +128,60 @@ export default function DistrictAssessmentPage() {
     )
   }
 
+  // พิมพ์แบบ สพท. 2544 เป็น PDF (A4 แนวนอน — คะแนนรวมรายประเด็น + สรุปท้ายแบบ)
+  const handlePrint = () => {
+    if (!data) return
+    const s = data.summary
+    const rows = data.rows
+      .map((r, idx) => {
+        const cells = data.topics
+          .map(
+            (t) =>
+              `<td class="num">${r.has_assessment ? (r.topic_earned[t.no] ?? 0) : '-'}</td>`,
+          )
+          .join('')
+        return `<tr>
+          <td class="center">${idx + 1}</td>
+          <td>${esc(r.sc_name)}</td>
+          <td class="num">${r.student_count || '-'}</td>
+          <td class="center">${esc(r.school_size)}</td>
+          ${cells}
+          <td class="num"><b>${r.has_assessment ? r.total_score : '-'}</b></td>
+          <td class="center">${r.level || '-'}</td>
+          <td class="center">${r.has_assessment ? esc(r.level_label) : 'ไม่ได้จัดส่ง'}</td>
+        </tr>`
+      })
+      .join('')
+    const topicHead = data.topics
+      .map((t) => `<th title="${esc(t.name)}">${t.no}<br/><span style="font-weight:normal">(${t.max})</span></th>`)
+      .join('')
+    const notSent = s.not_submitted.length
+      ? `<p style="margin-top:3mm"><b>4. โรงเรียนที่ไม่ได้จัดส่งแบบประเมินตนเอง จำนวน ${s.not_submitted.length} แห่ง:</b> ${s.not_submitted.map((n, i) => `${i + 1}) ${esc(n.sc_name)}`).join(' ')}</p>`
+      : ''
+    openPrintWindow({
+      title: `แบบสพท2544_${budgetYear}`,
+      body:
+        makeHeader({
+          title: 'แบบสังเคราะห์ผลการประเมินการปฏิบัติงาน (แบบ สพท. 2544)',
+          subtitle: `ด้านการเงิน การบัญชีของสถานศึกษาที่ปฏิบัติตามระบบควบคุมทางการเงินของหน่วยงานย่อย พ.ศ. 2544 · ปีงบประมาณ พ.ศ. ${budgetYear}`,
+        }) +
+        `<table><thead>
+          <tr><th>ลำดับ</th><th>โรงเรียน</th><th>นักเรียน</th><th>ขนาด</th>${topicHead}<th>รวม<br/>(100)</th><th>ระดับ</th><th>ผลการประเมิน</th></tr>
+        </thead><tbody>${rows}</tbody></table>
+        <div style="margin-top:5mm; font-size:14pt">
+          <p><b>สรุปผลการประเมิน</b></p>
+          <p>1. จำนวนโรงเรียนที่เป็นหน่วยงานย่อยในสังกัด จำนวน ${s.total_schools} แห่ง</p>
+          <p>2. จำนวนโรงเรียนที่มีการจัดส่งแบบประเมินตนเอง จำนวน ${s.evaluated} แห่ง</p>
+          <p>3. ผลการประเมินตนเองของโรงเรียนในสังกัด:
+            ระดับดีมาก ${s.level_4} แห่ง · ระดับดี ${s.level_3} แห่ง ·
+            ระดับพอใช้ ${s.level_2} แห่ง · ระดับปรับปรุง ${s.level_1} แห่ง</p>
+          ${notSent}
+        </div>
+        <p class="footer-note">หมายเหตุ: คะแนนรายข้อครบ 52 ช่องตามแบบ สพท. 2544 อยู่ในไฟล์ Excel ที่ส่งออกจากระบบ</p>`,
+      paper: 'A4 landscape',
+    })
+  }
+
   if (userType !== 1)
     return (
       <div className="p-6 text-gray-500">
@@ -141,7 +197,14 @@ export default function DistrictAssessmentPage() {
       <PageHeader
         title="แบบ สพท. 2544 — สังเคราะห์ผลการประเมินระดับเขต"
         subtitle={`ผลการประเมินตนเองด้านการเงิน การบัญชีของสถานศึกษาในสังกัด · ปีงบประมาณ ${budgetYear}`}
-        actions={<ExportButton onExport={handleExport} label="Excel แบบ สพท." />}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handlePrint} className="gap-1.5">
+              <Printer className="h-4 w-4" /> PDF แบบ สพท.
+            </Button>
+            <ExportButton onExport={handleExport} label="Excel แบบ สพท." />
+          </div>
+        }
       />
 
       <div className="px-3 sm:px-5 space-y-5">

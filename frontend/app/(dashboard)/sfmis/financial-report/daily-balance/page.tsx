@@ -101,9 +101,10 @@ export default function DailyBalancePage() {
   })
 
   const { data: cashLimit } = useQuery({
-    queryKey: ['cash-limit', scId],
-    queryFn: () => apiGet<CashLimitCheck>(`ReportDailyBalance/cashLimitCheck/${scId}`),
-    enabled: scId > 0,
+    queryKey: ['cash-limit', scId, syId],
+    // เช็คเงินสดเกินวงเงิน "เฉพาะปีงบที่เลือก" — กันยอดข้ามปีปนกัน
+    queryFn: () => apiGet<CashLimitCheck>(`ReportDailyBalance/cashLimitCheck/${scId}/${syId}`),
+    enabled: scId > 0 && syId > 0,
     refetchInterval: 60000,
   })
 

@@ -336,7 +336,7 @@ export class ReportDailyBalanceService {
     return summary;
   }
 
-  async loadCashLimitCheck(scId: number) {
+  async loadCashLimitCheck(scId: number, syId?: number) {
     // ดึง limit ที่ตั้งไว้ (ถ้ายังไม่ตั้ง ใช้ค่า default)
     const limitRecord = await this.cashReserveLimitRepository.findOne({
       where: { scId },
@@ -345,14 +345,21 @@ export class ReportDailyBalanceService {
       ? limitRecord.limitAmount
       : DEFAULT_CASH_LIMIT;
 
+    // กรองตามปีงบ (syId) เสมอเมื่อระบุ — กันยอดข้ามปีปนกัน (ยอดยกมาของแต่ละปี
+    // รวมยอดสะสมปีก่อนไว้แล้วใน opening_balance จึงต้องคิดทีละปี ไม่ใช่รวมทุกปี)
+    const byYear = (qb: import('typeorm').SelectQueryBuilder<FinancialTransactions>) =>
+      syId ? qb.andWhere('ft.sy_id = :syId', { syId }) : qb;
+
     // ── แยก cash vs bank ตาม money_channel ─────────────────────────────
     // cash (money_channel=1 หรือ 0 สำหรับ legacy) ต้องไม่เกินวงเงินสำรองจ่าย
     // bank (money_channel=2) แสดงเพิ่มเติมเป็น informational
-    const cashResult = await this.financialTransactionsRepository
-      .createQueryBuilder('ft')
-      .where('ft.sc_id = :scId', { scId })
-      .andWhere('ft.del = :del', { del: '0' })
-      .andWhere('(ft.money_channel = 1 OR ft.money_channel = 0)')
+    const cashResult = await byYear(
+      this.financialTransactionsRepository
+        .createQueryBuilder('ft')
+        .where('ft.sc_id = :scId', { scId })
+        .andWhere('ft.del = :del', { del: '0' })
+        .andWhere('(ft.money_channel = 1 OR ft.money_channel = 0)'),
+    )
       .select(
         'SUM(CASE WHEN ft.type = 1 THEN ft.amount ELSE 0 END)',
         'total_income',
@@ -363,11 +370,13 @@ export class ReportDailyBalanceService {
       )
       .getRawOne<{ total_income: string; total_expense: string }>();
 
-    const bankResult = await this.financialTransactionsRepository
-      .createQueryBuilder('ft')
-      .where('ft.sc_id = :scId', { scId })
-      .andWhere('ft.del = :del', { del: '0' })
-      .andWhere('ft.money_channel = 2')
+    const bankResult = await byYear(
+      this.financialTransactionsRepository
+        .createQueryBuilder('ft')
+        .where('ft.sc_id = :scId', { scId })
+        .andWhere('ft.del = :del', { del: '0' })
+        .andWhere('ft.money_channel = 2'),
+    )
       .select(
         'SUM(CASE WHEN ft.type = 1 THEN ft.amount ELSE 0 END)',
         'total_income',
@@ -380,7 +389,7 @@ export class ReportDailyBalanceService {
 
     // รวมยอดยกมาต้นปี (opening_balance): storage_type 1=เงินสด, 2=ธนาคาร
     const openingRows = await this.openingBalanceRepository.find({
-      where: { scId, del: 0 },
+      where: syId ? { scId, syId, del: 0 } : { scId, del: 0 },
     });
     const openingCash = openingRows
       .filter((o) => o.storageType === 1)
@@ -402,6 +411,7 @@ export class ReportDailyBalanceService {
 
     return {
       limit_amount: limitAmount,
+      sy_id: syId ?? 0, // 0 = รวมทุกปี (legacy), >0 = เฉพาะปีงบนั้น
       current_balance: cashBalance, // ← คงความ compatible กับ frontend เดิม (คือเงินสด)
       cash_balance: cashBalance, // เงินสด/เช็คในมือ (ใช้เทียบกับ limit)
       bank_balance: bankBalance, // เงินฝากธนาคาร (informational)

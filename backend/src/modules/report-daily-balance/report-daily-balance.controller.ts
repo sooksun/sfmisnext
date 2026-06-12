@@ -60,6 +60,18 @@ export class ReportDailyBalanceController {
     return this.reportDailyBalanceService.loadCashLimitCheck(scId);
   }
 
+  /** เช็คเงินสดเกินวงเงิน "เฉพาะปีงบ" — กันยอดข้ามปีปนกัน (แนะนำให้ frontend ใช้) */
+  @Get('cashLimitCheck/:scId/:syId')
+  @HttpCode(HttpStatus.OK)
+  cashLimitCheckByYear(
+    @Param('scId', ParseIntPipe) scId: number,
+    @Param('syId', ParseIntPipe) syId: number,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, scId);
+    return this.reportDailyBalanceService.loadCashLimitCheck(scId, syId);
+  }
+
   @Post('setCashLimit')
   @HttpCode(HttpStatus.OK)
   setCashLimit(

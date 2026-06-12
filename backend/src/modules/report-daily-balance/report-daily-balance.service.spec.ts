@@ -288,6 +288,30 @@ describe('ReportDailyBalanceService', () => {
       expect(result.excess_amount).toBe(0);
     });
 
+    it('ระบุ syId → กรองยอดยกมา + รายการ เฉพาะปีงบนั้น (กันยอดข้ามปี)', async () => {
+      setupCheck({
+        limit: 30000,
+        cash: { total_income: '5000', total_expense: '1000' },
+        opening: [{ storageType: 1, amount: '2000' }],
+      });
+      const result = await service.loadCashLimitCheck(1, 2);
+      // opening_balance ต้องถูกกรองด้วย syId
+      expect(openingRepo.find).toHaveBeenCalledWith({
+        where: { scId: 1, syId: 2, del: 0 },
+      });
+      expect(result.sy_id).toBe(2);
+      expect(result.cash_balance).toBe(6000); // 2000 + 5000 - 1000 (เฉพาะปี 2)
+    });
+
+    it('ไม่ระบุ syId → legacy รวมทุกปี (sy_id=0)', async () => {
+      setupCheck({ limit: 15000, opening: [] });
+      const result = await service.loadCashLimitCheck(1);
+      expect(openingRepo.find).toHaveBeenCalledWith({
+        where: { scId: 1, del: 0 },
+      });
+      expect(result.sy_id).toBe(0);
+    });
+
     it('bank_balance แยกจาก cash; total = cash + bank', async () => {
       setupCheck({
         limit: 50000,

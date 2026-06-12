@@ -111,3 +111,6 @@ CREDITS
 
 # tool backup snapshots
 .codex-backups/
+
+# database backups (local only)
+backups/

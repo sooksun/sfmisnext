@@ -50,7 +50,7 @@ export class FinancialAssessmentController {
   @HttpCode(HttpStatus.OK)
   save(@Body() dto: SaveAssessmentDto, @CurrentUser() user: JwtUser) {
     assertSameSchool(user, dto.sc_id);
-    return this.service.saveAssessment(dto);
+    return this.service.saveAssessment(dto, user);
   }
 
   @Post('saveAttestation')

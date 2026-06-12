@@ -155,7 +155,8 @@ export class FinancialAssessmentService {
     const head = await this.faRepo.findOne({ where: { faId, del: 0 } });
     if (!head) throw new NotFoundException('ไม่พบชุดประเมิน');
     assertSameSchool(user, head.scId);
-    if (head.status >= 2)
+    // หลังยืนยันแล้วล็อก — ยกเว้น super admin (type=1) (PRD §10.5)
+    if (head.status >= 2 && user.type !== 1)
       return { flag: false, ms: 'ชุดประเมินถูกยืนยันแล้ว แก้ไขไม่ได้', applied: 0 };
 
     const evalMap = await this.ruleEngine.evaluate({
@@ -307,12 +308,13 @@ export class FinancialAssessmentService {
   /**
    * บันทึก header + รายข้อ → คำนวณคะแนนใหม่
    */
-  async saveAssessment(dto: SaveAssessmentDto) {
+  async saveAssessment(dto: SaveAssessmentDto, user?: JwtUser) {
     const head = await this.faRepo.findOne({
       where: { scId: dto.sc_id, budgetYear: dto.budget_year, del: 0 },
     });
     if (!head) throw new NotFoundException('ไม่พบชุดประเมิน (โหลดก่อนบันทึก)');
-    if (head.status >= 2) {
+    // หลังยืนยันแล้วล็อก — ยกเว้น super admin (type=1) ที่แก้ย้อนหลังได้ (PRD §10.5)
+    if (head.status >= 2 && user?.type !== 1) {
       return { flag: false, ms: 'ชุดประเมินถูกยืนยันแล้ว แก้ไขไม่ได้' };
     }
 

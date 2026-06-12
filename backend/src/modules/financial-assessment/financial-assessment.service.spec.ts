@@ -142,6 +142,26 @@ describe('FinancialAssessmentService — scoring', () => {
     expect(r.flag).toBe(false);
   });
 
+  // ── PRD §10.5: super admin override lock หลัง confirm ──
+  it('saveAssessment: super admin (type=1) แก้ได้แม้ยืนยันแล้ว', async () => {
+    faRepo.findOne.mockResolvedValue({ faId: 3, scId: 1, status: 2, del: 0 });
+    itemRepo.find.mockResolvedValue([]);
+    const r = await service.saveAssessment(
+      { sc_id: 1, sy_id: 1, budget_year: '2569' } as any,
+      { admin_id: 1, sc_id: 99, type: 1, username: 'root' } as any,
+    );
+    expect(r.flag).toBe(true);
+  });
+
+  it('runAuto: super admin (type=1) รันได้แม้ยืนยันแล้ว', async () => {
+    faRepo.findOne.mockResolvedValue({ faId: 3, scId: 1, status: 2, del: 0 });
+    itemRepo.find.mockResolvedValue([]);
+    const r = await service.runAuto(3, {
+      admin_id: 1, sc_id: 99, type: 1, username: 'root',
+    } as any);
+    expect(r.flag).toBe(true);
+  });
+
   // ── G1: tenant guard บน endpoint ที่รับ fa_id ──
   describe('cross-tenant guard (fa_id endpoints)', () => {
     const headSchool1: any = { faId: 9, scId: 1, status: 1, del: 0 };

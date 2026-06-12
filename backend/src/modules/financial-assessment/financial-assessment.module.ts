@@ -27,6 +27,7 @@ import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { PlnReceive } from '../receive/entities/pln-receive.entity';
 import { BudgetIncomeTypeSchool } from '../bank/entities/budget-income-type-school.entity';
 import { FiscalYearBalance } from '../fiscal-year-balance/entities/fiscal-year-balance.entity';
+import { School } from '../school/entities/school.entity';
 import { FinanceAnnualAttestation } from './entities/finance-annual-attestation.entity';
 
 @Module({
@@ -57,6 +58,7 @@ import { FinanceAnnualAttestation } from './entities/finance-annual-attestation.
       PlnReceive,
       BudgetIncomeTypeSchool,
       FiscalYearBalance,
+      School,
     ]),
   ],
   controllers: [FinancialAssessmentController],

@@ -97,4 +97,12 @@ export class FinancialAssessmentController {
   ) {
     return this.service.exportData(faId, user);
   }
+
+  /** แบบ สพท. 2544 — สังเคราะห์ระดับเขต (super admin/เขตพื้นที่เท่านั้น) */
+  @Get('districtSummary/:budget_year')
+  @Roles(1)
+  @HttpCode(HttpStatus.OK)
+  districtSummary(@Param('budget_year') budgetYear: string) {
+    return this.service.districtSummary(budgetYear);
+  }
 }

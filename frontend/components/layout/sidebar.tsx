@@ -232,6 +232,7 @@ const navGroups: NavItem[] = [
       { label: '6.7 งบห้องเรียน',          href: '/sfmis/classroom-budget', icon: GraduationCap, roles: SUPER },
       { label: '6.8 นโยบาย อปท.',          href: '/sfmis/sao-policy',      icon: BookMarked, roles: SUPER },
       { label: '6.9 อปท.',                 href: '/sfmis/sao',             icon: Building2, roles: SUPER },
+      { label: '6.10 แบบ สพท. 2544 (สังเคราะห์เขต)', href: '/sfmis/admin-tools/district-assessment', icon: ClipboardCheck, roles: SUPER },
       // 6.10 Receipt เดิมซ้ำกับ 2.4 ใบเสร็จรับเงิน — เอาออก (เข้าผ่านงานการเงินแทน)
     ],
   },

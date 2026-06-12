@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { School } from '../school/entities/school.entity';
 import { FinancialAssessment } from './entities/financial-assessment.entity';
 import { FinancialAssessmentItem } from './entities/financial-assessment-item.entity';
 import { FinanceAnnualAttestation } from './entities/finance-annual-attestation.entity';
@@ -30,8 +31,91 @@ export class FinancialAssessmentService {
     private readonly itemRepo: Repository<FinancialAssessmentItem>,
     @InjectRepository(FinanceAnnualAttestation)
     private readonly attestRepo: Repository<FinanceAnnualAttestation>,
+    @InjectRepository(School)
+    private readonly schoolRepo: Repository<School>,
     private readonly ruleEngine: RuleEngineService,
   ) {}
+
+  /**
+   * แบบ สพท. 2544 — สังเคราะห์ผลการประเมินของทุกโรงเรียนในสังกัด (เฉพาะ super admin/เขตพื้นที่)
+   * คืน: นิยามข้อ (จาก catalog) + แถวรายโรงเรียน (คะแนนรายข้อ/รายประเด็น/รวม/ระดับ/สถานะ) + สรุปจำนวนตามระดับ
+   */
+  async districtSummary(budgetYear: string) {
+    const schools = await this.schoolRepo.find({ where: { del: 0 } });
+    const assessments = await this.faRepo.find({
+      where: { budgetYear, del: 0 },
+    });
+    const items = assessments.length
+      ? await this.itemRepo.find({
+          where: { assessmentId: In(assessments.map((a) => a.faId)) },
+        })
+      : [];
+    const itemsByFa = new Map<number, FinancialAssessmentItem[]>();
+    for (const it of items) {
+      const arr = itemsByFa.get(it.assessmentId) ?? [];
+      arr.push(it);
+      itemsByFa.set(it.assessmentId, arr);
+    }
+    const faBySchool = new Map(assessments.map((a) => [a.scId, a]));
+
+    const rows = schools.map((sc) => {
+      const fa = faBySchool.get(sc.scId);
+      const faItems = fa ? (itemsByFa.get(fa.faId) ?? []) : [];
+      const scoreByCode: Record<string, number | 'NA'> = {};
+      const topicEarned: Record<number, number> = {};
+      for (const it of faItems) {
+        scoreByCode[it.itemCode] = it.answer === 'na' ? 'NA' : it.score;
+        if (it.answer !== 'na') {
+          topicEarned[it.topicNo] =
+            (topicEarned[it.topicNo] ?? 0) + (it.score || 0);
+        }
+      }
+      return {
+        sc_id: sc.scId,
+        sc_name: sc.scName,
+        student_count: fa?.studentCount ?? 0,
+        school_size: schoolSize(fa?.studentCount ?? 0),
+        has_assessment: !!fa,
+        status: fa?.status ?? 0,
+        total_score: fa?.totalScore ?? 0,
+        max_score: fa?.maxScore ?? 100,
+        percent: fa?.percent ?? 0,
+        level: fa ? fa.level : 0,
+        level_label: fa ? assessLevel(fa.percent).label : '-',
+        topic_earned: topicEarned,
+        score_by_code: scoreByCode,
+      };
+    });
+
+    // สรุปผลตามท้ายแบบ สพท. — นับเฉพาะชุดที่ยืนยันแล้ว (status ≥ 2)
+    const evaluated = rows.filter((r) => r.status >= 2);
+    const levelCount: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    for (const r of evaluated) levelCount[r.level] = (levelCount[r.level] ?? 0) + 1;
+    const notSubmitted = rows
+      .filter((r) => r.status < 2)
+      .map((r) => ({ sc_id: r.sc_id, sc_name: r.sc_name, status: r.status }));
+
+    return {
+      budget_year: budgetYear,
+      item_defs: ASSESS_ITEMS.map((d) => ({
+        code: d.code,
+        topic: d.topic,
+        weight: d.weight,
+      })),
+      topics: ASSESS_TOPICS,
+      rows,
+      summary: {
+        total_schools: schools.length,
+        evaluated: evaluated.length,
+        submitted: rows.filter((r) => r.status === 3).length,
+        level_4: levelCount[4],
+        level_3: levelCount[3],
+        level_2: levelCount[2],
+        level_1: levelCount[1],
+        not_submitted: notSubmitted,
+      },
+    };
+  }
 
   /** บันทึกข้อมูลรับรองประจำปี (ความเห็นชอบ กก. — ข้อ 1.4) */
   async saveAttestation(dto: {
@@ -319,4 +403,13 @@ export class FinancialAssessmentService {
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/** ขนาดโรงเรียนตามเกณฑ์ สพฐ. (จากจำนวนนักเรียน) */
+function schoolSize(students: number): string {
+  if (!students) return '-';
+  if (students <= 120) return 'เล็ก';
+  if (students <= 600) return 'กลาง';
+  if (students <= 1500) return 'ใหญ่';
+  return 'ใหญ่พิเศษ';
 }

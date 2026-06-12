@@ -16,7 +16,10 @@ import {
   ConfirmAssessmentDto,
 } from './dto/financial-assessment.dto';
 import { RuleEngineService } from './rules/rule-engine.service';
-import { type JwtUser } from '../../common/utils/tenant-guard';
+import {
+  assertSameSchool,
+  type JwtUser,
+} from '../../common/utils/tenant-guard';
 
 @Injectable()
 export class FinancialAssessmentService {
@@ -64,9 +67,10 @@ export class FinancialAssessmentService {
    * - evalMode 'prefill' → บันทึกเป็นข้อเสนอ (autoResult/autoDetail) ไม่แตะ answer
    * - result 'unknown'   → ไม่แตะ answer
    */
-  async runAuto(faId: number) {
+  async runAuto(faId: number, user: JwtUser) {
     const head = await this.faRepo.findOne({ where: { faId, del: 0 } });
     if (!head) throw new NotFoundException('ไม่พบชุดประเมิน');
+    assertSameSchool(user, head.scId);
     if (head.status >= 2)
       return { flag: false, ms: 'ชุดประเมินถูกยืนยันแล้ว แก้ไขไม่ได้', applied: 0 };
 
@@ -283,6 +287,7 @@ export class FinancialAssessmentService {
       where: { faId: dto.fa_id, del: 0 },
     });
     if (!head) throw new NotFoundException('ไม่พบชุดประเมิน');
+    assertSameSchool(user, head.scId);
     if (head.status >= 2) return { flag: false, ms: 'ยืนยันไปแล้ว' };
     await this.recompute(head);
     head.status = 2;
@@ -292,9 +297,10 @@ export class FinancialAssessmentService {
     return { flag: true, ms: 'ยืนยันผลการประเมินเรียบร้อย' };
   }
 
-  async markSubmitted(faId: number) {
+  async markSubmitted(faId: number, user: JwtUser) {
     const head = await this.faRepo.findOne({ where: { faId, del: 0 } });
     if (!head) throw new NotFoundException('ไม่พบชุดประเมิน');
+    assertSameSchool(user, head.scId);
     if (head.status < 2)
       return { flag: false, ms: 'ต้องยืนยันก่อนจึงทำเครื่องหมายส่งเขตได้' };
     head.status = 3;
@@ -303,7 +309,10 @@ export class FinancialAssessmentService {
   }
 
   /** ข้อมูลสำหรับ Export Excel (แบบ 2544-2/3) */
-  async exportData(faId: number) {
+  async exportData(faId: number, user: JwtUser) {
+    const head = await this.faRepo.findOne({ where: { faId, del: 0 } });
+    if (!head) throw new NotFoundException('ไม่พบชุดประเมิน');
+    assertSameSchool(user, head.scId);
     return this.buildView(faId);
   }
 }

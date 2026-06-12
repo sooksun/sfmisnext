@@ -16,6 +16,12 @@ import { ReceiptBook } from '../../receipt-book/entities/receipt-book.entity';
 import { Project } from '../../project/entities/project.entity';
 import { Receipt } from '../../receipt/entities/receipt.entity';
 import { WithholdingCertificate } from '../../registration-certificate/entities/withholding-certificate.entity';
+import { CashReserveLimit } from '../../report-daily-balance/entities/cash-reserve-limit.entity';
+import { CashKeepingRecord } from '../../cash-keeping/entities/cash-keeping-record.entity';
+import { RequestWithdraw } from '../../invoice/entities/request-withdraw.entity';
+import { PlnReceive } from '../../receive/entities/pln-receive.entity';
+import { BudgetIncomeTypeSchool } from '../../bank/entities/budget-income-type-school.entity';
+import { FiscalYearBalance } from '../../fiscal-year-balance/entities/fiscal-year-balance.entity';
 import { FinanceAnnualAttestation } from '../entities/finance-annual-attestation.entity';
 
 function qbStub(rows: any[]) {
@@ -63,6 +69,12 @@ describe('RuleEngineService', () => {
       [Receipt, 'receipt'],
       [WithholdingCertificate, 'wht'],
       [FinanceAnnualAttestation, 'attest'],
+      [CashReserveLimit, 'crl'],
+      [CashKeepingRecord, 'ckr'],
+      [RequestWithdraw, 'rw'],
+      [PlnReceive, 'pr'],
+      [BudgetIncomeTypeSchool, 'bits'],
+      [FiscalYearBalance, 'fyb'],
     ];
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -202,5 +214,116 @@ describe('RuleEngineService', () => {
     });
     const r = await (await build({ wht })).evaluate(ctx);
     expect(r['3.5'].result).toBe('no');
+  });
+
+  it('3.3 เงินสดเกินวงเงินเก็บรักษา → no ; ไม่ตั้งวงเงิน → unknown', async () => {
+    const svc1 = await build({
+      crl: repoMock({ findOne: { limitAmount: 15000 } }),
+      ft: repoMock({
+        find: [
+          { type: 1, amount: 20000, moneyChannel: 1 },
+          { type: -1, amount: 2000, moneyChannel: 1 },
+        ],
+        count: 2,
+      }),
+    });
+    expect((await svc1.evaluate(ctx))['3.3'].result).toBe('no'); // คงเหลือ 18,000 > 15,000
+
+    const svc2 = await build({ crl: repoMock({ findOne: null }) });
+    expect((await svc2.evaluate(ctx))['3.3'].result).toBe('unknown');
+  });
+
+  it('4.3 รับเงินยืนยันแล้วแต่ไม่มีใบเสร็จ → no', async () => {
+    const svc = await build({
+      pr: repoMock({ find: [{ prId: 1 }, { prId: 2 }] }),
+      receipt: repoMock({ find: [{ prId: 1, status: '1' }], count: 1 }),
+    });
+    const r = await svc.evaluate(ctx);
+    expect(r['4.3'].result).toBe('no'); // pr 2 ไม่มีใบเสร็จ
+    expect(r['4.5'].result).toBe('yes'); // single-source
+  });
+
+  it('5.2 จ่ายผูกใบขอเบิกที่ยังไม่ผ่าน ผอ. → no ; ผ่านครบ → yes', async () => {
+    const ftPays = [
+      { type: -1, amount: 100, rwId: 11 },
+      { type: -1, amount: 200, rwId: 12 },
+    ];
+    const svc1 = await build({
+      ft: repoMock({ find: ftPays, count: 2 }),
+      rw: repoMock({
+        find: [
+          { rwId: 11, status: 202 },
+          { rwId: 12, status: 100 }, // ยังไม่ถึง ผอ.อนุมัติ
+        ],
+      }),
+    });
+    expect((await svc1.evaluate(ctx))['5.2'].result).toBe('no');
+
+    const svc2 = await build({
+      ft: repoMock({ find: ftPays, count: 2 }),
+      rw: repoMock({
+        find: [
+          { rwId: 11, status: 200 },
+          { rwId: 12, status: 202 },
+        ],
+      }),
+    });
+    expect((await svc2.evaluate(ctx))['5.2'].result).toBe('yes');
+  });
+
+  it('5.3 ใบขอเบิกจ่ายแล้วไม่มีใบสำคัญคู่จ่าย → no', async () => {
+    const svc = await build({
+      rw: repoMock({
+        find: [
+          { rwId: 1, status: 202, receiptNumber: 'ร.1', receiptPicture: null },
+          { rwId: 2, status: 202, receiptNumber: null, receiptPicture: null },
+        ],
+      }),
+    });
+    expect((await svc.evaluate(ctx))['5.3'].result).toBe('no');
+  });
+
+  it('6.7 ผอ. (role 3) ไม่ลงนามครบทุกวันที่มีรายการ → no', async () => {
+    const svc = await build({
+      ft: repoMock({ qbRows: [{ d: '2026-01-05' }, { d: '2026-01-06' }], count: 2 }),
+      audit: repoMock({
+        count: 2,
+        qbRows: [
+          { d: '2026-01-05', role: 3 },
+          { d: '2026-01-06', role: 1 }, // วันที่ 6 มีแต่การเงิน ผอ.ไม่ลงนาม
+        ],
+      }),
+    });
+    const r = await svc.evaluate(ctx);
+    expect(r['2.1'].result).toBe('yes'); // มีลงนาม (role ใดก็ได้) ครบ
+    expect(r['6.7'].result).toBe('no'); // ผอ. ไม่ครบ
+  });
+
+  it('7.5/10.5 ปีงบอนาคต → unknown (ยังไม่ถึงกำหนด)', async () => {
+    const future = String(new Date().getFullYear() + 543 + 2); // ปีงบอนาคตแน่นอน
+    const svc = await build({
+      rb: repoMock({ find: [{ budgetYear: future, currentNo: 1, toNo: 50 }] }),
+    });
+    const r = await svc.evaluate({ scId: 1, syId: 1, budgetYear: future });
+    expect(r['7.5'].result).toBe('unknown');
+    expect(r['10.5'].result).toBe('unknown');
+  });
+
+  it('1.3 แผนครอบคลุมแหล่งเงิน: ครบ → yes / ขาด → no', async () => {
+    const types = [{ bgTypeId: 1 }, { bgTypeId: 2 }];
+    const svc1 = await build({
+      proj: repoMock({
+        find: [{ projBudgetType: 'อุดหนุนรายหัว' }, { projBudgetType: 'เรียนฟรี' }],
+        count: 2,
+      }),
+      bits: repoMock({ find: types }),
+    });
+    expect((await svc1.evaluate(ctx))['1.3'].result).toBe('yes');
+
+    const svc2 = await build({
+      proj: repoMock({ find: [{ projBudgetType: 'อุดหนุนรายหัว' }], count: 1 }),
+      bits: repoMock({ find: types }),
+    });
+    expect((await svc2.evaluate(ctx))['1.3'].result).toBe('no');
   });
 });

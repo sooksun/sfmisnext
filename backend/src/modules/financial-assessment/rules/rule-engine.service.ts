@@ -16,12 +16,20 @@ import { ReceiptBook } from '../../receipt-book/entities/receipt-book.entity';
 import { Project } from '../../project/entities/project.entity';
 import { Receipt } from '../../receipt/entities/receipt.entity';
 import { WithholdingCertificate } from '../../registration-certificate/entities/withholding-certificate.entity';
+import { CashReserveLimit } from '../../report-daily-balance/entities/cash-reserve-limit.entity';
+import { CashKeepingRecord } from '../../cash-keeping/entities/cash-keeping-record.entity';
+import { RequestWithdraw } from '../../invoice/entities/request-withdraw.entity';
+import { PlnReceive } from '../../receive/entities/pln-receive.entity';
+import { BudgetIncomeTypeSchool } from '../../bank/entities/budget-income-type-school.entity';
+import { FiscalYearBalance } from '../../fiscal-year-balance/entities/fiscal-year-balance.entity';
 import { FinanceAnnualAttestation } from '../entities/finance-annual-attestation.entity';
 import { AssessContext, EvalMap, EvalOutcome } from './rule-engine.types';
 
 const LOAN_OUTSTANDING = 1;
 const LOAN_RETURNED = 2;
 const AUDIT_DAILY = 1;
+const SIGNER_DIRECTOR = 3; // financial_audit_log.signer_role: 1=finance, 2=committee, 3=director
+const RW_APPROVED_MIN = 200; // request_withdraw.status: 200=ผอ.อนุมัติ, 202=ออกเช็ค
 const MS_PER_DAY = 86400000;
 
 /**
@@ -63,6 +71,18 @@ export class RuleEngineService {
     private readonly whtRepo: Repository<WithholdingCertificate>,
     @InjectRepository(FinanceAnnualAttestation)
     private readonly attestRepo: Repository<FinanceAnnualAttestation>,
+    @InjectRepository(CashReserveLimit)
+    private readonly crlRepo: Repository<CashReserveLimit>,
+    @InjectRepository(CashKeepingRecord)
+    private readonly ckrRepo: Repository<CashKeepingRecord>,
+    @InjectRepository(RequestWithdraw)
+    private readonly rwRepo: Repository<RequestWithdraw>,
+    @InjectRepository(PlnReceive)
+    private readonly prRepo: Repository<PlnReceive>,
+    @InjectRepository(BudgetIncomeTypeSchool)
+    private readonly bitsRepo: Repository<BudgetIncomeTypeSchool>,
+    @InjectRepository(FiscalYearBalance)
+    private readonly fybRepo: Repository<FiscalYearBalance>,
   ) {}
 
   async evaluate(ctx: AssessContext): Promise<EvalMap> {
@@ -78,6 +98,10 @@ export class RuleEngineService {
       this.evalPlanAndReceipts(ctx, set),
       this.evalCashBalance(ctx, set),
       this.evalWithholding(ctx, set),
+      this.evalCashKeeping(ctx, set),
+      this.evalReceiveSide(ctx, set),
+      this.evalPaySide(ctx, set),
+      this.evalYearEnd(ctx, set),
     ]);
 
     return out;
@@ -177,27 +201,45 @@ export class RuleEngineService {
     const auditDates = await this.auditRepo
       .createQueryBuilder('a')
       .select('a.audit_date', 'd')
+      .addSelect('a.signer_role', 'role')
       .where('a.sc_id = :scId AND a.sy_id = :syId AND a.audit_type = :t', {
         scId,
         syId,
         t: AUDIT_DAILY,
       })
       .andWhere('a.audit_date IS NOT NULL')
-      .getRawMany<{ d: string }>();
+      .getRawMany<{ d: string; role: number }>();
 
     if (txDates.length === 0) {
-      set('2.1', unknown('ยังไม่มีรายการรับ-จ่ายในระบบ จึงประเมินไม่ได้'));
+      const u = unknown('ยังไม่มีรายการรับ-จ่ายในระบบ จึงประเมินไม่ได้');
+      set('2.1', u);
+      set('6.7', u);
     } else {
+      const allDays = txDates.map((r) => String(r.d));
       const audited = new Set(auditDates.map((r) => String(r.d)));
-      const missing = txDates
-        .map((r) => String(r.d))
-        .filter((d) => !audited.has(d));
+      const missing = allDays.filter((d) => !audited.has(d));
       set(
         '2.1',
         missing.length === 0
           ? yes(`มีรายงานเงินคงเหลือ+ลงนามครบทุกวันที่มีรายการ (${txDates.length} วัน)`)
           : no(
               `มีวันที่มีรายการแต่ยังไม่ลงนาม ${missing.length}/${txDates.length} วัน (เช่น ${missing.slice(0, 3).join(', ')})`,
+            ),
+      );
+
+      // 6.7 ผอ. (signer_role=3) ตรวจสอบรายการเคลื่อนไหวทุกสิ้นวัน
+      const directorDays = new Set(
+        auditDates
+          .filter((r) => Number(r.role) === SIGNER_DIRECTOR)
+          .map((r) => String(r.d)),
+      );
+      const missDir = allDays.filter((d) => !directorDays.has(d));
+      set(
+        '6.7',
+        missDir.length === 0
+          ? yes(`ผอ. ลงนามตรวจสอบครบทุกวันที่มีรายการ (${allDays.length} วัน)`)
+          : no(
+              `วันที่มีรายการแต่ ผอ. ยังไม่ลงนามตรวจสอบ ${missDir.length}/${allDays.length} วัน`,
             ),
       );
     }
@@ -231,6 +273,17 @@ export class RuleEngineService {
         : na('ไม่มีบัญชีกระแสรายวัน/งบเทียบยอดในระบบ');
     set('7.2', reconOutcome);
     set('7.4', reconOutcome);
+
+    // 7.1 รายงานสิ้นเดือนตรงทะเบียนคุม — ระบบสร้างรายงานจากทะเบียนชุดเดียวกัน
+    const ftCount = await this.ftRepo.count({ where: { scId, syId, del: 0 } });
+    set(
+      '7.1',
+      ftCount > 0
+        ? yes(
+            'ระบบสร้างรายงานเงินคงเหลือสิ้นเดือนจากทะเบียนคุมชุดเดียวกัน ยอดตรงกันอัตโนมัติ',
+          )
+        : unknown('ยังไม่มีรายการเคลื่อนไหวให้เทียบยอด'),
+    );
   }
 
   // ── ประเด็น 9 เงินยืม ──
@@ -380,6 +433,34 @@ export class RuleEngineService {
             ),
       );
     }
+
+    // 10.5 รายงานการใช้ใบเสร็จสิ้นปีงบ ภายใน 31 ต.ค. ของปีงบถัดไป
+    // เกณฑ์ตรวจ: ทุกเล่มของปีงบนั้นถูกปิด/ยกเลิก/เลิกใช้ ภายในกำหนด (= สำรวจการใช้ครบทั้งปีแล้ว)
+    const deadline105 = receiptReportDeadline(budgetYear);
+    if (!deadline105) {
+      set('10.5', unknown('รูปแบบปีงบประมาณไม่ถูกต้อง'));
+    } else if (new Date() < deadline105) {
+      set(
+        '10.5',
+        unknown(
+          `ยังไม่ถึงกำหนดรายงานการใช้ใบเสร็จ (ภายใน ${deadline105.toISOString().slice(0, 10)})`,
+        ),
+      );
+    } else if (thisYear.length === 0) {
+      set('10.5', unknown('ไม่มีเล่มใบเสร็จของปีงบประมาณนี้ให้รายงาน'));
+    } else {
+      const openPastDeadline = thisYear.filter(
+        (b) => !b.closedDate && !b.voidedDate && !b.retiredDate,
+      );
+      set(
+        '10.5',
+        openPastDeadline.length === 0
+          ? yes('สำรวจ/ปิดการใช้ใบเสร็จครบทุกเล่มภายในกำหนด 31 ต.ค.')
+          : no(
+              `พ้นกำหนด 31 ต.ค. แล้วแต่ยังมีเล่มไม่สรุปการใช้ ${openPastDeadline.length} เล่ม`,
+            ),
+      );
+    }
   }
 
   // ── ประเด็น 1 แผน + ประเด็น 4.4 ใบเสร็จ ──
@@ -432,6 +513,53 @@ export class RuleEngineService {
       receiptCount > 0
         ? yes(`มีใบเสร็จรับเงินที่ออกในระบบ ${receiptCount} ฉบับ (ข้อมูลครบตามแบบฟอร์ม)`)
         : unknown('ยังไม่มีใบเสร็จรับเงินในระบบ'),
+    );
+
+    // 1.3 (prefill) แผนครอบคลุมแหล่งเงินทุกประเภท — เทียบประเภทเงินในโครงการ vs ประเภทเงินของโรงเรียน
+    const [projects, schoolTypes] = await Promise.all([
+      this.projRepo.find({ where: { scId, syId, del: 0 } }),
+      this.bitsRepo.find({ where: { scId, del: 0 } }),
+    ]);
+    const typeCount = new Set(schoolTypes.map((t) => t.bgTypeId)).size;
+    const planTypeCount = new Set(
+      projects.map((p) => p.projBudgetType).filter(Boolean),
+    ).size;
+    if (projects.length === 0) {
+      set('1.3', unknown('ยังไม่มีโครงการในแผนให้ตรวจความครอบคลุม'));
+    } else if (typeCount === 0) {
+      set('1.3', unknown('ยังไม่ตั้งค่าประเภทเงินของโรงเรียน'));
+    } else {
+      set(
+        '1.3',
+        planTypeCount >= typeCount
+          ? yes(
+              `แผนใช้แหล่งเงิน ${planTypeCount} ประเภท ครอบคลุมประเภทเงินของโรงเรียน (${typeCount} ประเภท)`,
+            )
+          : no(
+              `แผนใช้แหล่งเงิน ${planTypeCount}/${typeCount} ประเภท — โปรดตรวจว่าครอบคลุมทุกแหล่งเงินหรือไม่`,
+            ),
+      );
+    }
+
+    // 1.5 (auto) มีทะเบียน/เอกสารควบคุมการใช้จ่ายโครงการ — ระบบบันทึกจ่ายผ่านทะเบียนคุม+ใบขอเบิกเสมอ
+    const payCount = await this.ftRepo.count({
+      where: { scId, syId, del: 0, type: -1 },
+    });
+    set(
+      '1.5',
+      payCount > 0
+        ? yes(
+            `การใช้จ่ายถูกควบคุมผ่านทะเบียนคุม+เอกสารขอเบิกในระบบ (${payCount} รายการจ่าย)`,
+          )
+        : unknown('ยังไม่มีรายการจ่ายในระบบ'),
+    );
+
+    // 1.6 (prefill) ใช้จ่ายตามแผน — ระบบยังไม่เชื่อมยอดจ่ายรายโครงการ
+    set(
+      '1.6',
+      unknown(
+        'ระบบยังไม่เชื่อมยอดจ่ายจริงรายโครงการกับแผน — โปรดเทียบรายงานการใช้จ่ายกับแผนปฏิบัติการแล้วยืนยัน',
+      ),
     );
   }
 
@@ -514,6 +642,235 @@ export class RuleEngineService {
         : no(`มีการนำส่งภาษีเกินกำหนด ${late.length}/${withRemit.length} รายการ`),
     );
   }
+
+  // ── ประเด็น 3.2/3.3/3.4 การเก็บรักษาเงิน ──
+  private async evalCashKeeping(
+    ctx: AssessContext,
+    set: (c: string, o: EvalOutcome) => void,
+  ) {
+    const { scId, syId, budgetYear } = ctx;
+
+    // 3.2 (prefill) กก.เก็บรักษาเงินปฏิบัติหน้าที่ — มีบันทึกรับเงินเพื่อเก็บรักษา
+    const ckrCount = await this.ckrRepo.count({
+      where: { scId, syId, del: 0 },
+    });
+    set(
+      '3.2',
+      ckrCount > 0
+        ? yes(`มีบันทึกการรับเงินเพื่อเก็บรักษา ${ckrCount} ครั้ง`)
+        : unknown(
+            'ไม่มีบันทึกรับเงินเพื่อเก็บรักษาในระบบ (อาจไม่มีเงินสดค้างคืน) — โปรดยืนยัน',
+          ),
+    );
+
+    // 3.3 (auto) เก็บรักษาเงินสดไม่เกินวงเงินอำนาจ
+    const limit = await this.crlRepo.findOne({ where: { scId } });
+    if (!limit) {
+      set('3.3', unknown('ยังไม่ตั้งวงเงินเก็บรักษา (เมนูเงินคงเหลือประจำวัน)'));
+    } else {
+      const cashRows = await this.ftRepo.find({
+        where: { scId, syId, del: 0, moneyChannel: 1 },
+      });
+      const cashBal = cashRows.reduce(
+        (s, r) => s + (Number(r.type) || 0) * (Number(r.amount) || 0),
+        0,
+      );
+      set(
+        '3.3',
+        cashBal <= limit.limitAmount
+          ? yes(
+              `เงินสดคงเหลือ ${cashBal.toLocaleString()} ≤ วงเงินเก็บรักษา ${limit.limitAmount.toLocaleString()} บาท`,
+            )
+          : no(
+              `เงินสดคงเหลือ ${cashBal.toLocaleString()} เกินวงเงินเก็บรักษา ${limit.limitAmount.toLocaleString()} บาท`,
+            ),
+      );
+    }
+
+    // 3.4 (auto) นำส่งเงินรายได้แผ่นดิน ≥ เดือนละครั้ง / >10,000 ภายใน 3 วันทำการ
+    const govRows = await this.govRepo.find({
+      where: { scId, budgetYear, del: 0 },
+    });
+    if (govRows.length === 0) {
+      set('3.4', unknown('ยังไม่มีรายการเงินรายได้แผ่นดินในระบบ'));
+    } else {
+      const received = govRows
+        .filter((r) => r.entryType === 1)
+        .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const remitted = govRows
+        .filter((r) => r.entryType === 2)
+        .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const outstanding = received - remitted;
+      if (outstanding <= 0.005) {
+        set('3.4', yes(`นำส่งเงินรายได้แผ่นดินครบถ้วน (รับ ${received.toLocaleString()} / นำส่ง ${remitted.toLocaleString()} บาท)`));
+      } else {
+        const lastReceive = govRows
+          .filter((r) => r.entryType === 1 && r.docDate)
+          .map((r) => new Date(r.docDate as unknown as string).getTime())
+          .sort((a, b) => b - a)[0];
+        const daysHeld = lastReceive
+          ? Math.floor((Date.now() - lastReceive) / MS_PER_DAY)
+          : 0;
+        const limitDays = outstanding > 10000 ? 5 : 31; // >10k: 3 วันทำการ (≈5 วันปฏิทิน) | ปกติ: รอบเดือน
+        set(
+          '3.4',
+          daysHeld <= limitDays
+            ? yes(
+                `มีเงินรายได้แผ่นดินรอนำส่ง ${outstanding.toLocaleString()} บาท ยังอยู่ในกรอบเวลานำส่ง (${daysHeld} วัน)`,
+              )
+            : no(
+                `เงินรายได้แผ่นดินค้างนำส่ง ${outstanding.toLocaleString()} บาท นาน ${daysHeld} วัน เกินกำหนด`,
+              ),
+        );
+      }
+    }
+  }
+
+  // ── ประเด็น 4.3/4.5 การรับเงิน-ใบเสร็จ ──
+  private async evalReceiveSide(
+    ctx: AssessContext,
+    set: (c: string, o: EvalOutcome) => void,
+  ) {
+    const { scId, syId } = ctx;
+
+    // 4.3 (auto) ออกใบเสร็จทุกครั้งที่รับเงิน — ทุก pln_receive ที่ยืนยันแล้วต้องมีใบเสร็จผูก
+    const [receives, receipts] = await Promise.all([
+      this.prRepo.find({ where: { scId, syId, del: 0, cfTransaction: 1 } }),
+      this.receiptRepo.find({ where: { scId, syId } }),
+    ]);
+    if (receives.length === 0) {
+      set('4.3', unknown('ยังไม่มีรายการรับเงินที่ยืนยันแล้วในระบบ'));
+    } else {
+      // receipt.pr_id เป็น varchar / pln_receive.pr_id เป็น int — normalize เป็น string
+      const receiptedPr = new Set(
+        receipts.filter((r) => r.status !== '0').map((r) => String(r.prId)),
+      );
+      const missing = receives.filter(
+        (rv) => !receiptedPr.has(String(rv.prId)),
+      );
+      set(
+        '4.3',
+        missing.length === 0
+          ? yes(`รายการรับเงิน ${receives.length} รายการ มีใบเสร็จครบทุกรายการ`)
+          : no(
+              `มีรายการรับเงินที่ยังไม่ออกใบเสร็จ ${missing.length}/${receives.length} รายการ`,
+            ),
+      );
+    }
+
+    // 4.5 (auto) ยอดรวมใบเสร็จต่อวันตรงสรุปท้ายสำเนา — ระบบสรุปจากฐานข้อมูลเดียวกัน
+    set(
+      '4.5',
+      receipts.length > 0
+        ? yes('ระบบสรุปยอดรวมใบเสร็จรายวันจากฐานข้อมูลเดียวกับทะเบียนรับเงิน ยอดตรงกันอัตโนมัติ')
+        : unknown('ยังไม่มีใบเสร็จรับเงินในระบบ'),
+    );
+  }
+
+  // ── ประเด็น 5.1/5.2/5.3 การจ่ายเงิน ──
+  private async evalPaySide(
+    ctx: AssessContext,
+    set: (c: string, o: EvalOutcome) => void,
+  ) {
+    const { scId, syId } = ctx;
+
+    // 5.1 (prefill) จ่ายตรงวัตถุประสงค์ — ระบบมี hard-block กันจ่ายผิดประเภทตั้งแต่ขั้นบันทึก
+    set(
+      '5.1',
+      yes(
+        'ระบบมีตัวกันการจ่ายผิดประเภทเงิน (cross-domain-guard G1-G6) บล็อกตั้งแต่ขั้นบันทึก — โปรดยืนยันรายการยกเว้น (ถ้ามี)',
+      ),
+    );
+
+    const rws = await this.rwRepo.find({ where: { scId, syId, del: 0 } });
+    const paid = rws.filter((r) => r.status >= RW_APPROVED_MIN);
+
+    // 5.2 (auto) ทุกการจ่ายได้รับอนุมัติ ผอ. — รายการจ่าย (FT) ต้องผูกใบขอเบิกที่ status ≥ 200
+    const payRows = await this.ftRepo.find({
+      where: { scId, syId, del: 0, type: -1 },
+    });
+    if (payRows.length === 0) {
+      set('5.2', unknown('ยังไม่มีรายการจ่ายในระบบ'));
+    } else {
+      const statusByRw = new Map(rws.map((r) => [r.rwId, r.status]));
+      const linked = payRows.filter((p) => p.rwId > 0);
+      const notApproved = linked.filter(
+        (p) => (statusByRw.get(p.rwId) ?? 0) < RW_APPROVED_MIN,
+      );
+      const unlinked = payRows.length - linked.length;
+      if (notApproved.length > 0) {
+        set(
+          '5.2',
+          no(
+            `มีรายการจ่ายที่ใบขอเบิกยังไม่ผ่านอนุมัติ ผอ. ${notApproved.length}/${linked.length} รายการ`,
+          ),
+        );
+      } else {
+        set(
+          '5.2',
+          yes(
+            `รายการจ่ายที่ผูกใบขอเบิก ${linked.length} รายการ ผ่านอนุมัติ ผอ. ครบ` +
+              (unlinked > 0 ? ` (อีก ${unlinked} รายการเป็นรายการพิเศษ เช่น เงินยืม/ฝากถอน)` : ''),
+          ),
+        );
+      }
+    }
+
+    // 5.3 (prefill) หลักฐานการจ่ายครบ — ใบขอเบิกที่จ่ายแล้วมีเลข/รูปใบสำคัญคู่จ่าย
+    if (paid.length === 0) {
+      set('5.3', unknown('ยังไม่มีใบขอเบิกที่จ่ายแล้วในระบบ'));
+    } else {
+      const noEvidence = paid.filter(
+        (r) => !r.receiptNumber && !r.receiptPicture,
+      );
+      set(
+        '5.3',
+        noEvidence.length === 0
+          ? yes(`ใบขอเบิกที่จ่ายแล้ว ${paid.length} รายการ มีใบสำคัญคู่จ่ายครบ`)
+          : no(
+              `มีใบขอเบิกจ่ายแล้วแต่ยังไม่แนบใบสำคัญคู่จ่าย ${noEvidence.length}/${paid.length} รายการ`,
+            ),
+      );
+    }
+  }
+
+  // ── ประเด็น 7.5 รายงานรับ-จ่ายเงินรายได้สถานศึกษาประจำปี (ภายใน 30 วันหลังสิ้นปีงบ) ──
+  private async evalYearEnd(
+    ctx: AssessContext,
+    set: (c: string, o: EvalOutcome) => void,
+  ) {
+    const { scId, budgetYear } = ctx;
+    const deadline = yearEndReportDeadline(budgetYear);
+    if (!deadline) {
+      set('7.5', unknown('รูปแบบปีงบประมาณไม่ถูกต้อง'));
+      return;
+    }
+    if (new Date() < fiscalYearEnd(budgetYear)!) {
+      set('7.5', unknown('ยังไม่สิ้นปีงบประมาณ — ประเมินเมื่อปิดปีแล้ว'));
+      return;
+    }
+    const closes = await this.fybRepo.find({ where: { scId, budgetYear } });
+    if (closes.length === 0) {
+      set(
+        '7.5',
+        new Date() <= deadline
+          ? unknown(
+              `ยังไม่ปิดปีงบประมาณในระบบ (กำหนดส่งรายงานภายใน ${deadline.toISOString().slice(0, 10)})`,
+            )
+          : no('พ้นกำหนด 30 วันหลังสิ้นปีงบแล้ว ยังไม่ปิดปี/จัดทำรายงานประจำปี'),
+      );
+      return;
+    }
+    const lateClose = closes.filter(
+      (c) => c.closingDate && new Date(c.closingDate as unknown as string) > deadline,
+    );
+    set(
+      '7.5',
+      lateClose.length === 0
+        ? yes('ปิดปี/จัดทำรายงานรับ-จ่ายประจำปีภายใน 30 วันหลังสิ้นปีงบประมาณ')
+        : no(`ปิดปี/รายงานประจำปีช้ากว่ากำหนด 30 วัน (${lateClose.length} รายการ)`),
+    );
+  }
 }
 
 // ── helpers ──
@@ -536,4 +893,24 @@ function existence(count: number, name: string, unit: string): EvalOutcome {
 }
 function endOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+}
+
+/** สิ้นปีงบประมาณ พ.ศ. B = 30 ก.ย. ของ ค.ศ. B-543 (เช่น ปีงบ 2569 → 30 ก.ย. 2026) */
+function fiscalYearEnd(budgetYearBE: string): Date | null {
+  const be = parseInt(budgetYearBE, 10);
+  if (!be || be < 2400) return null;
+  return new Date(be - 543, 8, 30, 23, 59, 59);
+}
+
+/** กำหนดส่งรายงานรับ-จ่ายประจำปี = 30 วันหลังสิ้นปีงบ (≈ 30 ต.ค.) */
+function yearEndReportDeadline(budgetYearBE: string): Date | null {
+  const end = fiscalYearEnd(budgetYearBE);
+  return end ? new Date(end.getTime() + 30 * MS_PER_DAY) : null;
+}
+
+/** กำหนดรายงานการใช้ใบเสร็จ = 31 ต.ค. ของปีงบถัดไป (ค.ศ. B-543) */
+function receiptReportDeadline(budgetYearBE: string): Date | null {
+  const be = parseInt(budgetYearBE, 10);
+  if (!be || be < 2400) return null;
+  return new Date(be - 543, 9, 31, 23, 59, 59);
 }

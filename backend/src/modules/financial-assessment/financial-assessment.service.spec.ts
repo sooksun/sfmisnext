@@ -77,7 +77,7 @@ describe('FinancialAssessmentService — scoring', () => {
   });
 
   it('confirm: yes ทุกข้อ → 100 คะแนน ระดับ 4 และ status=2', async () => {
-    const head: any = { faId: 1, status: 1, del: 0 };
+    const head: any = { faId: 1, scId: 1, status: 1, del: 0 };
     faRepo.findOne.mockResolvedValue(head);
     itemRepo.find.mockResolvedValue(
       ASSESS_ITEMS.map((d) => ({
@@ -102,7 +102,7 @@ describe('FinancialAssessmentService — scoring', () => {
   });
 
   it('กฎ N/A: ตัดออกจากฐานคะแนน ไม่นับเป็น 0', async () => {
-    const head: any = { faId: 2, status: 1, del: 0 };
+    const head: any = { faId: 2, scId: 1, status: 1, del: 0 };
     faRepo.findOne.mockResolvedValue(head);
     // เงินยืม (ประเด็น 9, รวม 5) ตอบ na ทั้งหมด, ข้ออื่น yes ทั้งหมด
     itemRepo.find.mockResolvedValue(
@@ -133,5 +133,46 @@ describe('FinancialAssessmentService — scoring', () => {
       budget_year: '2569',
     } as any);
     expect(r.flag).toBe(false);
+  });
+
+  // ── G1: tenant guard บน endpoint ที่รับ fa_id ──
+  describe('cross-tenant guard (fa_id endpoints)', () => {
+    const headSchool1: any = { faId: 9, scId: 1, status: 1, del: 0 };
+    const intruder = { admin_id: 99, sc_id: 2, type: 5, username: 'x' } as any; // โรงเรียนอื่น ไม่ใช่ super
+    const superAdmin = { admin_id: 1, sc_id: 99, type: 1, username: 'root' } as any;
+
+    it('confirm ข้ามโรงเรียน → ForbiddenException', async () => {
+      faRepo.findOne.mockResolvedValue({ ...headSchool1 });
+      await expect(
+        service.confirm({ fa_id: 9 } as any, intruder),
+      ).rejects.toThrow('ไม่สามารถดูหรือแก้ไขข้อมูลของโรงเรียนอื่นได้');
+    });
+
+    it('runAuto ข้ามโรงเรียน → ForbiddenException', async () => {
+      faRepo.findOne.mockResolvedValue({ ...headSchool1 });
+      await expect(service.runAuto(9, intruder)).rejects.toThrow(
+        'ไม่สามารถดูหรือแก้ไขข้อมูลของโรงเรียนอื่นได้',
+      );
+    });
+
+    it('markSubmitted ข้ามโรงเรียน → ForbiddenException', async () => {
+      faRepo.findOne.mockResolvedValue({ ...headSchool1, status: 2 });
+      await expect(service.markSubmitted(9, intruder)).rejects.toThrow(
+        'ไม่สามารถดูหรือแก้ไขข้อมูลของโรงเรียนอื่นได้',
+      );
+    });
+
+    it('exportData ข้ามโรงเรียน → ForbiddenException', async () => {
+      faRepo.findOne.mockResolvedValue({ ...headSchool1 });
+      await expect(service.exportData(9, intruder)).rejects.toThrow(
+        'ไม่สามารถดูหรือแก้ไขข้อมูลของโรงเรียนอื่นได้',
+      );
+    });
+
+    it('super admin (type=1) ข้ามโรงเรียนได้', async () => {
+      faRepo.findOne.mockResolvedValue({ ...headSchool1, status: 2 });
+      const r = await service.markSubmitted(9, superAdmin);
+      expect(r.flag).toBe(true);
+    });
   });
 });

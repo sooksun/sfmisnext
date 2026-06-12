@@ -21,6 +21,12 @@ import { ReceiptBook } from '../receipt-book/entities/receipt-book.entity';
 import { Project } from '../project/entities/project.entity';
 import { Receipt } from '../receipt/entities/receipt.entity';
 import { WithholdingCertificate } from '../registration-certificate/entities/withholding-certificate.entity';
+import { CashReserveLimit } from '../report-daily-balance/entities/cash-reserve-limit.entity';
+import { CashKeepingRecord } from '../cash-keeping/entities/cash-keeping-record.entity';
+import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
+import { PlnReceive } from '../receive/entities/pln-receive.entity';
+import { BudgetIncomeTypeSchool } from '../bank/entities/budget-income-type-school.entity';
+import { FiscalYearBalance } from '../fiscal-year-balance/entities/fiscal-year-balance.entity';
 import { FinanceAnnualAttestation } from './entities/finance-annual-attestation.entity';
 
 @Module({
@@ -45,6 +51,12 @@ import { FinanceAnnualAttestation } from './entities/finance-annual-attestation.
       Project,
       Receipt,
       WithholdingCertificate,
+      CashReserveLimit,
+      CashKeepingRecord,
+      RequestWithdraw,
+      PlnReceive,
+      BudgetIncomeTypeSchool,
+      FiscalYearBalance,
     ]),
   ],
   controllers: [FinancialAssessmentController],

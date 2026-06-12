@@ -88,7 +88,7 @@ function modeBadge(mode: AssessItem['mode']) {
   if (mode === 'auto')
     return (
       <Badge variant="default" className="gap-1 bg-violet-100 text-violet-700">
-        <Bot className="h-3 w-3" /> ระบบตรวจให้ (เฟสถัดไป)
+        <Bot className="h-3 w-3" /> ระบบตรวจให้
       </Badge>
     )
   if (mode === 'prefill')

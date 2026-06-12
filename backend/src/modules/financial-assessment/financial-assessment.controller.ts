@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { FinancialAssessmentService } from './financial-assessment.service';
 import {
@@ -15,11 +16,20 @@ import {
   SaveAttestationDto,
 } from './dto/financial-assessment.dto';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import {
   assertSameSchool,
   type JwtUser,
 } from '../../common/utils/tenant-guard';
 
+/**
+ * ประเมินตนเองด้านการเงิน การบัญชี (แบบ 2544)
+ * จำกัดสิทธิ์กลุ่มการเงิน (1=Super, 2=ผอ., 5=จนท.การเงิน, 8=หน.การเงิน)
+ * — endpoint ที่รับ fa_id ตรวจ tenant ในชั้น service (assertSameSchool กับ head.scId)
+ */
+@UseGuards(RolesGuard)
+@Roles(1, 2, 5, 8)
 @Controller('Financial_assessment')
 export class FinancialAssessmentController {
   constructor(private readonly service: FinancialAssessmentService) {}
@@ -57,12 +67,14 @@ export class FinancialAssessmentController {
   @HttpCode(HttpStatus.OK)
   runAuto(
     @Param('fa_id', ParseIntPipe) faId: number,
-    @CurrentUser() _user: JwtUser,
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.service.runAuto(faId);
+    return this.service.runAuto(faId, user);
   }
 
+  /** ยืนยันผล — เฉพาะ ผอ. (type 2) / super admin */
   @Post('confirm')
+  @Roles(1, 2)
   @HttpCode(HttpStatus.OK)
   confirm(@Body() dto: ConfirmAssessmentDto, @CurrentUser() user: JwtUser) {
     return this.service.confirm(dto, user);
@@ -72,17 +84,17 @@ export class FinancialAssessmentController {
   @HttpCode(HttpStatus.OK)
   markSubmitted(
     @Param('fa_id', ParseIntPipe) faId: number,
-    @CurrentUser() _user: JwtUser,
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.service.markSubmitted(faId);
+    return this.service.markSubmitted(faId, user);
   }
 
   @Get('export/:fa_id')
   @HttpCode(HttpStatus.OK)
   exportData(
     @Param('fa_id', ParseIntPipe) faId: number,
-    @CurrentUser() _user: JwtUser,
+    @CurrentUser() user: JwtUser,
   ) {
-    return this.service.exportData(faId);
+    return this.service.exportData(faId, user);
   }
 }

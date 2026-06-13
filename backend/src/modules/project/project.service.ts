@@ -163,6 +163,8 @@ export class ProjectService {
         sc_id: item.scId,
         sy_id: item.syId,
         budget_year: item.budgetYear,
+        start_date: item.startDate,
+        end_date: item.endDate,
         sy_year: sy?.syYear ?? null,
         semester: sy?.semester ?? null,
         up_by: item.upBy,
@@ -214,6 +216,8 @@ export class ProjectService {
     project.scId = payload.sc_id || null;
     project.syId = payload.sy_id || null;
     project.budgetYear = payload.budget_year ?? null;
+    project.startDate = payload.start_date || null;
+    project.endDate = payload.end_date || null;
     project.upBy = payload.up_by || null;
     project.projStatus = 0;
     project.del = 0;
@@ -285,6 +289,8 @@ export class ProjectService {
     if (payload.sy_id !== undefined) project.syId = payload.sy_id;
     if (payload.budget_year !== undefined)
       project.budgetYear = payload.budget_year;
+    if (payload.start_date !== undefined) project.startDate = payload.start_date;
+    if (payload.end_date !== undefined) project.endDate = payload.end_date;
     if (payload.up_by !== undefined) project.upBy = payload.up_by;
     if (payload.proj_status !== undefined)
       project.projStatus = payload.proj_status;

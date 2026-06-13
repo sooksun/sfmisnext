@@ -21,9 +21,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ThaiDatePicker } from '@/components/ui/thai-date-picker'
 import { apiGet, apiPost } from '@/lib/api'
 import { useAppContext } from '@/hooks/use-app-context'
-import { toBE } from '@/lib/utils'
+import { toBE, fmtDateTH } from '@/lib/utils'
 import type { UserOption } from '@/lib/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -45,6 +46,8 @@ interface ProjectRow {
   sc_id: number
   sy_id: number
   budget_year: number | null
+  start_date: string | null
+  end_date: string | null
   sy_year: number | null
   semester: number | null
   up_by: number | null
@@ -93,6 +96,8 @@ export default function ProjectPage() {
   // นโยบายหลายข้อ (scp_id) + ผู้รับผิดชอบ (admin_id) จัดการแยกจาก RHF
   const [policyIds, setPolicyIds] = useState<number[]>([])
   const [ownerAdminId, setOwnerAdminId] = useState<number>(0)
+  const [startDate, setStartDate] = useState<string>('')
+  const [endDate, setEndDate] = useState<string>('')
 
   // ── Query ─────────────────────────────────────────────────────────────────
   // endpoint: GET project/load_project/:scId/:userId/:page/:pageSize/:syId
@@ -162,6 +167,8 @@ export default function ProjectPage() {
         budget_year: budgetYear,
         owner_admin_id: ownerAdminId || undefined,
         policy_ids: policyIds,
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
         up_by: userId,
       }
       if (editing) {
@@ -204,6 +211,8 @@ export default function ProjectPage() {
     reset({ proj_name: '', proj_detail: '', proj_budget_type: '', proj_budget: 0 })
     setPolicyIds([])
     setOwnerAdminId(0)
+    setStartDate('')
+    setEndDate('')
     setDialogOpen(true)
   }
 
@@ -217,6 +226,8 @@ export default function ProjectPage() {
     })
     setPolicyIds(item.policy_ids ?? [])
     setOwnerAdminId(item.owner_admin_id ?? 0)
+    setStartDate(item.start_date ?? '')
+    setEndDate(item.end_date ?? '')
     setDialogOpen(true)
   }
 
@@ -268,6 +279,19 @@ export default function ProjectPage() {
       render: (item: ProjectRow) => (
         <span className="text-sm text-gray-700">{item.proj_owner || '-'}</span>
       ),
+    },
+    {
+      header: 'ช่วงเวลา',
+      render: (item: ProjectRow) =>
+        item.start_date || item.end_date ? (
+          <span className="text-xs text-gray-600">
+            {item.start_date ? fmtDateTH(item.start_date) : '—'}
+            {' – '}
+            {item.end_date ? fmtDateTH(item.end_date) : '—'}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400">ยังไม่กำหนด</span>
+        ),
     },
     {
       header: 'วงเงิน (บาท)',
@@ -387,6 +411,16 @@ export default function ProjectPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>วันที่เริ่มต้นโครงการ</Label>
+              <ThaiDatePicker value={startDate} onChange={setStartDate} />
+            </div>
+            <div>
+              <Label>วันที่สิ้นสุดโครงการ</Label>
+              <ThaiDatePicker value={endDate} onChange={setEndDate} />
             </div>
           </div>
           <div className="rounded border border-gray-100 bg-gray-50 p-2 text-xs text-gray-500">

@@ -1,4 +1,11 @@
-import { IsArray, IsInt, IsNumber, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class UpdateProjectDto {
   @IsInt()
@@ -29,6 +36,14 @@ export class UpdateProjectDto {
   @IsInt()
   @IsOptional()
   budget_year?: number;
+
+  @IsDateString()
+  @IsOptional()
+  start_date?: string;
+
+  @IsDateString()
+  @IsOptional()
+  end_date?: string;
 
   @IsString()
   @IsOptional()

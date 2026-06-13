@@ -289,12 +289,12 @@ export class AreaService {
         [scId, budgetYear],
       ),
       this.ds.query(
-        `SELECT pf.fup_id, pf.period, pf.fup_status, pf.progress_percent,
-                pf.actual_amount, pf.fup_detail, pf.create_date
+        `SELECT pf.pf_id, pf.report_period, pf.status AS fup_status, pf.percent_complete,
+                pf.actual_amount, pf.output_quality, pf.create_date
          FROM pln_project_followup pf
          JOIN pln_project p ON p.proj_id = pf.project_id AND p.del = 0
          WHERE p.sc_id = ? AND pf.del = 0 AND p.budget_year = ?
-         ORDER BY pf.period, pf.create_date DESC`,
+         ORDER BY pf.report_period, pf.create_date DESC`,
         [scId, budgetYear],
       ),
     ]);
@@ -344,24 +344,24 @@ export class AreaService {
       ),
       // รายรับ (pln_receive + pln_receive_detail)
       this.ds.query(
-        `SELECT pr.receive_id, pr.receive_no, pr.receive_date,
-                COALESCE(SUM(prd.amount),0) AS amount
+        `SELECT pr.pr_id AS receive_id, pr.pr_no AS receive_no, pr.receive_date,
+                COALESCE(SUM(prd.prd_budget),0) AS amount
          FROM pln_receive pr
-         LEFT JOIN pln_receive_detail prd ON prd.receive_id=pr.receive_id AND prd.del=0
-         WHERE pr.sc_id=? AND pr.del=0 AND prd.budget_year=?
-         GROUP BY pr.receive_id, pr.receive_no, pr.receive_date
+         LEFT JOIN pln_receive_detail prd ON prd.pr_id=pr.pr_id AND prd.del=0
+         WHERE pr.sc_id=? AND pr.del=0 AND pr.budget_year=?
+         GROUP BY pr.pr_id, pr.pr_no, pr.receive_date
          ORDER BY pr.receive_date DESC
          LIMIT 50`,
         [scId, budgetYear],
       ),
-      // รายจ่าย (request_withdraw)
+      // รายจ่าย (request_withdraw) — year เป็น varchar BE เช่น '2569'
       this.ds.query(
-        `SELECT rw_id, rw_no, rw_date, rw_total, rw_status
+        `SELECT rw_id, no_doc AS rw_no, date_request AS rw_date, amount AS rw_total, status AS rw_status
          FROM request_withdraw
-         WHERE sc_id=? AND del=0 AND budget_year=?
-         ORDER BY rw_date DESC
+         WHERE sc_id=? AND del=0 AND year=?
+         ORDER BY date_request DESC
          LIMIT 50`,
-        [scId, budgetYear],
+        [scId, String(budgetYear)],
       ),
     ]);
 
@@ -395,14 +395,14 @@ export class AreaService {
       ),
       // วัสดุ-ครุภัณฑ์ที่รับเข้า
       this.ds.query(
-        `SELECT rpo.rpo_id, rpo.create_date, rpo.order_id,
-                COUNT(rpd.rpd_id) AS item_count
+        `SELECT rpo.receive_id AS rpo_id, rpo.receive_date AS create_date, rpo.order_id,
+                COUNT(rpd.rp_id) AS item_count
          FROM receive_parcel_order rpo
-         LEFT JOIN receive_parcel_detail rpd ON rpd.rpo_id=rpo.rpo_id AND rpd.del=0
+         LEFT JOIN receive_parcel_detail rpd ON rpd.receive_id=rpo.receive_id AND rpd.del=0
          WHERE rpo.sc_id=? AND rpo.del=0
          AND EXISTS (SELECT 1 FROM parcel_order po WHERE po.order_id=rpo.order_id AND po.acad_year=?)
-         GROUP BY rpo.rpo_id, rpo.create_date, rpo.order_id
-         ORDER BY rpo.create_date DESC`,
+         GROUP BY rpo.receive_id, rpo.receive_date, rpo.order_id
+         ORDER BY rpo.receive_date DESC`,
         [scId, budgetYear],
       ),
     ]);

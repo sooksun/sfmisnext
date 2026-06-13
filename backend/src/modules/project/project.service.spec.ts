@@ -26,6 +26,8 @@ describe('ProjectService', () => {
       create: jest.fn().mockImplementation((p) => p),
       save: jest.fn(),
       update: jest.fn(),
+      // updateProject sync ใช้ find → save (ใบเดียว sync, หลายใบไม่ sync)
+      find: jest.fn().mockResolvedValue([]),
     };
     syRepo = {
       findOne: jest

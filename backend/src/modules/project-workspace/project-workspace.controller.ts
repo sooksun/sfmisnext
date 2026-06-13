@@ -21,6 +21,7 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateExecutionDto } from './dto/update-execution.dto';
 import { CloseProjectDto } from './dto/close-project.dto';
+import { CreateProcurementDto } from './dto/create-procurement.dto';
 
 /**
  * Project Workspace (Phase 1) — พื้นที่ทำงานโครงการแบบ Minimal
@@ -147,6 +148,16 @@ export class ProjectWorkspaceController {
     @CurrentUser() user: JwtUser,
   ) {
     return this.svc.getBudgetSummary(id, user);
+  }
+
+  @Post(':id/procurements')
+  @HttpCode(HttpStatus.OK)
+  createProcurement(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateProcurementDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    return this.svc.createProcurement(id, dto, user);
   }
 
   @Get(':id/evidence')

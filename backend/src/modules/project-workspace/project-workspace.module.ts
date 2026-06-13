@@ -9,6 +9,7 @@ import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { ProjectFollowup } from '../project-followup/entities/project-followup.entity';
 import { Admin } from '../admin/entities/admin.entity';
+import { SchoolYear } from '../school-year/entities/school-year.entity';
 import { AttachmentModule } from '../attachment/attachment.module';
 
 @Module({
@@ -21,6 +22,7 @@ import { AttachmentModule } from '../attachment/attachment.module';
       RequestWithdraw,
       ProjectFollowup,
       Admin,
+      SchoolYear,
     ]),
     AttachmentModule,
   ],

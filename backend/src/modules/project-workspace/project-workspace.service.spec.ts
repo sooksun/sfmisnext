@@ -9,6 +9,7 @@ import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { ProjectFollowup } from '../project-followup/entities/project-followup.entity';
 import { Admin } from '../admin/entities/admin.entity';
+import { SchoolYear } from '../school-year/entities/school-year.entity';
 import { AttachmentService } from '../attachment/attachment.service';
 import type { JwtUser } from '../../common/utils/tenant-guard';
 
@@ -74,6 +75,7 @@ describe('ProjectWorkspaceService', () => {
         { provide: getRepositoryToken(RequestWithdraw), useFactory: repoFactory },
         { provide: getRepositoryToken(ProjectFollowup), useFactory: repoFactory },
         { provide: getRepositoryToken(Admin), useFactory: repoFactory },
+        { provide: getRepositoryToken(SchoolYear), useFactory: repoFactory },
         {
           provide: AttachmentService,
           useValue: { list: jest.fn().mockResolvedValue({ data: [], count: 0 }) },
@@ -282,6 +284,35 @@ describe('ProjectWorkspaceService', () => {
       projectRepo.findOne.mockResolvedValue({ projId: 1, scId: 5, del: 0 });
       await expect(
         service.updateExecution(1, { execution_status: 9 }, schoolUser),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  // ─────────────── createProcurement (จัดซื้อหลายครั้ง) ───────────────
+  describe('createProcurement', () => {
+    it('สร้าง parcel_order ใบใหม่ผูกโครงการ + acad_year = budget_year', async () => {
+      projectRepo.findOne.mockResolvedValue({
+        projId: 1, scId: 5, del: 0, syId: 3, projName: 'โครงการ A', executionStatus: 3,
+      });
+      const schoolYearRepo = (service as unknown as { schoolYearRepo: jest.Mocked<any> }).schoolYearRepo;
+      schoolYearRepo.findOne.mockResolvedValue({ syId: 3, budgetYear: 2569, syYear: 1 });
+      parcelOrderRepo.save.mockResolvedValue({ orderId: 77 });
+      const res = await service.createProcurement(1, { project_type: 2, budgets: 5000 }, schoolUser);
+      expect(res.flag).toBe(true);
+      expect(res.order_id).toBe(77);
+      const created = parcelOrderRepo.create.mock.calls[0][0];
+      expect(created.projectId).toBe(1);
+      expect(created.projectType).toBe(2);
+      expect(created.acadYear).toBe(2569);
+      expect(created.orderStatus).toBe(1);
+    });
+
+    it('โครงการปิดแล้ว → block', async () => {
+      projectRepo.findOne.mockResolvedValue({
+        projId: 1, scId: 5, del: 0, executionStatus: 5,
+      });
+      await expect(
+        service.createProcurement(1, {}, schoolUser),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });

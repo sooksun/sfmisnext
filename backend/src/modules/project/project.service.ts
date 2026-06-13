@@ -163,17 +163,27 @@ export class ProjectService {
     project.updateDate = new Date();
     await this.projectRepository.save(project);
 
-    // sync รายละเอียด/วงเงิน ไปยัง parcel_order ที่ผูกกัน (ถ้ายังไม่จัดซื้อจริง)
-    const orderPatch: Partial<ParcelOrder> = {};
-    if (payload.proj_name !== undefined) orderPatch.details = payload.proj_name;
-    if (payload.proj_budget !== undefined)
-      orderPatch.budgets = payload.proj_budget;
-    if (Object.keys(orderPatch).length > 0) {
-      orderPatch.updateDate = new Date();
-      await this.parcelOrderRepository.update(
-        { projectId: project.projId, del: 0 },
-        orderPatch,
-      );
+    // sync รายละเอียด/วงเงิน ไปยัง parcel_order หลัก (ใบแรก) เฉพาะกรณีมีใบเดียว
+    // ถ้าโครงการมีรายการจัดซื้อหลายใบแล้ว → ผู้ใช้จัดการวงเงินรายใบเอง ไม่ sync ทับ
+    const orders = await this.parcelOrderRepository.find({
+      where: { projectId: project.projId, del: 0 },
+      order: { orderId: 'ASC' },
+    });
+    if (orders.length === 1) {
+      const primary = orders[0];
+      let changed = false;
+      if (payload.proj_name !== undefined) {
+        primary.details = payload.proj_name;
+        changed = true;
+      }
+      if (payload.proj_budget !== undefined) {
+        primary.budgets = payload.proj_budget;
+        changed = true;
+      }
+      if (changed) {
+        primary.updateDate = new Date();
+        await this.parcelOrderRepository.save(primary);
+      }
     }
 
     return { flag: true, ms: 'อัปเดตข้อมูลสำเร็จ' };

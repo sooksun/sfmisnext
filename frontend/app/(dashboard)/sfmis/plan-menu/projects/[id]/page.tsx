@@ -123,7 +123,7 @@ export default function ProjectWorkspacePage({
       <div className="p-4">
         {tab === 'overview' && <OverviewTab ws={ws} users={users} onDone={refresh} readOnly={isClosed} />}
         {tab === 'tasks' && <TasksTab ws={ws} users={users} onDone={refresh} readOnly={isClosed} scId={scId} syId={syId} />}
-        {tab === 'budget' && <BudgetTab ws={ws} />}
+        {tab === 'budget' && <BudgetTab ws={ws} onDone={refresh} readOnly={isClosed} />}
         {tab === 'evidence' && <EvidenceTab projectId={projectId} scId={scId} readOnly={isClosed} />}
         {tab === 'report' && <ReportTab projectId={projectId} ws={ws} scId={scId} syId={syId} budgetYear={budgetYear} adminId={adminId} onDone={refresh} />}
       </div>
@@ -545,8 +545,31 @@ function TasksTab({
 
 // ───────────────────────── Budget tab ─────────────────────────
 
-function BudgetTab({ ws }: { ws: ProjectWorkspaceData }) {
+const ORDER_STATUS: Record<number, string> = {
+  0: 'ทบทวน', 1: 'รออนุมัติ (แผน)', 2: 'แผน', 3: 'การเงิน', 4: 'พัสดุ',
+  5: 'ผอ.', 6: 'ตั้งกรรมการ', 7: 'จัดซื้อ', 8: 'สำเร็จ', 9: 'ยกเลิก',
+}
+
+function BudgetTab({ ws, onDone, readOnly }: { ws: ProjectWorkspaceData; onDone: () => void; readOnly: boolean }) {
   const b = ws.budget
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ project_type: 1, details: '', budgets: 0 })
+
+  const create = useMutation({
+    mutationFn: () =>
+      apiPost<{ flag: boolean; ms: string }>(`projects/${ws.project.proj_id}/procurements`, {
+        project_type: form.project_type,
+        details: form.details || undefined,
+        budgets: Number(form.budgets) || 0,
+      }),
+    onSuccess: (res) => {
+      if (res?.flag) { toast.success(res.ms); onDone(); setOpen(false); setForm({ project_type: 1, details: '', budgets: 0 }) }
+      else toast.error(res?.ms || 'ไม่สำเร็จ')
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด'),
+  })
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -561,23 +584,76 @@ function BudgetTab({ ws }: { ws: ProjectWorkspaceData }) {
         </div>
       )}
       <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 className="mb-2 font-semibold text-gray-700">เอกสารต้นทาง (จัดซื้อ/จัดจ้าง)</h3>
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="font-semibold text-gray-700">รายการจัดซื้อ/จัดจ้าง ({b.orders.length} ครั้ง)</h3>
+          {!readOnly && (
+            <Button size="sm" onClick={() => setOpen(true)}>
+              <Plus className="h-4 w-4" /> สร้างรายการจัดซื้อ/จัดจ้าง
+            </Button>
+          )}
+        </div>
         {b.orders.length === 0 ? (
           <p className="py-3 text-center text-sm text-gray-400">ยังไม่มีรายการจัดซื้อ/จัดจ้างในโครงการนี้</p>
         ) : (
           <ul className="divide-y divide-gray-100">
             {b.orders.map((o) => (
-              <li key={o.order_id} className="flex items-center justify-between py-2 text-sm">
-                <span className="text-gray-600">คำสั่งซื้อ #{o.order_id}</span>
-                <span className="font-mono text-gray-800">{fmt(o.budgets)} บาท</span>
+              <li key={o.order_id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-600">คำสั่งซื้อ #{o.order_id}</span>
+                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
+                    {ORDER_STATUS[o.order_status] ?? o.order_status}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-gray-800">{fmt(o.budgets)} บาท</span>
+                  <button
+                    onClick={() => router.push('/sfmis/plan-menu/proj-approve')}
+                    className="text-indigo-600 hover:underline"
+                  >
+                    ดำเนินการ
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
         <p className="mt-2 text-xs text-gray-400">
-          ยอดใช้จริง/ผูกพันคำนวณจากเอกสารการเงินต้นทาง — แก้ไขผ่าน workflow จัดซื้อ/การเงินเท่านั้น
+          1 โครงการสร้างรายการจัดซื้อ/จัดจ้างได้หลายครั้ง — ยอดใช้จริง/ผูกพันรวมจากทุกใบโดยอัตโนมัติ
+          (แก้ยอดผ่าน workflow จัดซื้อ/การเงินเท่านั้น)
         </p>
       </div>
+
+      <FormDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="สร้างรายการจัดซื้อ/จัดจ้าง"
+        onSubmit={() => create.mutate()}
+        loading={create.isPending}
+      >
+        <div className="space-y-3">
+          <div>
+            <Label>ประเภท</Label>
+            <Select value={String(form.project_type)} onValueChange={(v) => setForm((f) => ({ ...f, project_type: Number(v) }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">จัดซื้อ</SelectItem>
+                <SelectItem value="2">จัดจ้าง</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>รายละเอียด</Label>
+            <Input value={form.details} onChange={(e) => setForm((f) => ({ ...f, details: e.target.value }))} placeholder="เว้นว่าง = ใช้ชื่อโครงการ" />
+          </div>
+          <div>
+            <Label>วงเงิน (บาท)</Label>
+            <Input type="number" min={0} step="0.01" value={form.budgets} onChange={(e) => setForm((f) => ({ ...f, budgets: Number(e.target.value) }))} />
+          </div>
+          <p className="text-xs text-gray-500">
+            ระบบจะสร้างใบจัดซื้อใหม่และส่งเข้าขั้นตอนอนุมัติ (หน้า "อนุมัติโครงการ") โดยอัตโนมัติ
+          </p>
+        </div>
+      </FormDialog>
     </div>
   )
 }

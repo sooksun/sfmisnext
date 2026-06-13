@@ -12,6 +12,7 @@ import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
 import { RequestWithdraw } from '../invoice/entities/request-withdraw.entity';
 import { ProjectFollowup } from '../project-followup/entities/project-followup.entity';
 import { Admin } from '../admin/entities/admin.entity';
+import { SchoolYear } from '../school-year/entities/school-year.entity';
 import { AttachmentService } from '../attachment/attachment.service';
 import { assertSameSchool, type JwtUser } from '../../common/utils/tenant-guard';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -19,6 +20,7 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 import { CreateMemberDto } from './dto/create-member.dto';
 import { UpdateExecutionDto } from './dto/update-execution.dto';
 import { CloseProjectDto } from './dto/close-project.dto';
+import { CreateProcurementDto } from './dto/create-procurement.dto';
 
 // ── สถานะงาน (task.status) ──
 const TASK_DONE = 4;
@@ -72,6 +74,8 @@ export class ProjectWorkspaceService {
     private readonly followupRepo: Repository<ProjectFollowup>,
     @InjectRepository(Admin)
     private readonly adminRepo: Repository<Admin>,
+    @InjectRepository(SchoolYear)
+    private readonly schoolYearRepo: Repository<SchoolYear>,
     private readonly attachmentService: AttachmentService,
   ) {}
 
@@ -532,6 +536,48 @@ export class ProjectWorkspaceService {
   async getBudgetSummary(id: number, user: JwtUser) {
     const project = await this.getProjectOrThrow(id, user);
     return this.computeBudget(project);
+  }
+
+  /**
+   * สร้างรายการจัดซื้อ/จัดจ้าง (parcel_order) ใบใหม่ผูกกับโครงการ
+   * → 1 โครงการมีได้หลายใบ (จัดซื้อหลายครั้ง) ใบใหม่เข้า workflow อนุมัติ (status=1)
+   */
+  async createProcurement(id: number, dto: CreateProcurementDto, user: JwtUser) {
+    const project = await this.getProjectOrThrow(id, user);
+    if (project.executionStatus === EXEC_CLOSED) {
+      throw new BadRequestException(
+        'โครงการปิดแล้ว ไม่สามารถสร้างรายการจัดซื้อ/จัดจ้างได้',
+      );
+    }
+
+    // acad_year ต้องเป็น budget_year (ปีจริง) เพื่อให้โผล่ในหน้าอนุมัติโครงการ
+    let acadYear: number | null = null;
+    if (project.syId) {
+      const sy = await this.schoolYearRepo.findOne({
+        where: { syId: project.syId },
+      });
+      acadYear = sy?.budgetYear ?? sy?.syYear ?? null;
+    }
+
+    const order = this.parcelOrderRepo.create({
+      projectId: project.projId,
+      projectType: dto.project_type ?? 1,
+      scId: project.scId ?? user.sc_id,
+      adminId: user.admin_id,
+      orderDate: new Date(),
+      orderStatus: 1,
+      acadYear,
+      details: dto.details?.trim() || project.projName,
+      budgets: dto.budgets ?? 0,
+      upBy: user.admin_id,
+      del: 0,
+    });
+    const saved = await this.parcelOrderRepo.save(order);
+    return {
+      flag: true,
+      ms: 'สร้างรายการจัดซื้อ/จัดจ้างแล้ว — ส่งเข้าขั้นตอนอนุมัติ',
+      order_id: saved.orderId,
+    };
   }
 
   // ───────────────────────── evidence ─────────────────────────

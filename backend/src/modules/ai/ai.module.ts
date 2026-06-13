@@ -9,6 +9,7 @@ import { ChatService } from './services/chat.service';
 import { ValidationService } from './services/validation.service';
 import { AnalysisService } from './services/analysis.service';
 import { MergeService } from './services/merge.service';
+import { ProjectExtractService } from './services/project-extract.service';
 
 @Module({
   imports: [ConfigModule],
@@ -24,6 +25,7 @@ import { MergeService } from './services/merge.service';
     ValidationService,
     AnalysisService,
     MergeService,
+    ProjectExtractService,
   ],
   exports: [AiRouterService, ChatService, ValidationService, AnalysisService],
 })

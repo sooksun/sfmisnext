@@ -30,6 +30,8 @@ import {
   AnalyzeSpendingTrendDto,
 } from './dto/analysis.dto';
 import { MergeExcelImportDto, MergeReconcileDto } from './dto/merge.dto';
+import { ParseProjectDto } from './dto/parse-project.dto';
+import { ProjectExtractService } from './services/project-extract.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -58,6 +60,7 @@ export class AiController {
     private readonly analysisService: AnalysisService,
     private readonly mergeService: MergeService,
     private readonly crossDomainGuard: CrossDomainGuardService,
+    private readonly projectExtractService: ProjectExtractService,
   ) {}
 
   /** สร้าง ChatContext จาก DTO */
@@ -78,6 +81,20 @@ export class AiController {
   async getStatus() {
     const status = await this.router.getStatus();
     return { flag: true, data: status };
+  }
+
+  // ═══════════════════════════════════════════════════
+  // สกัดข้อมูลโครงการจากข้อความ (สร้างโครงการด้วย AI)
+  // ═══════════════════════════════════════════════════
+
+  @Post('parse-project')
+  @HttpCode(HttpStatus.OK)
+  async parseProject(
+    @Body() dto: ParseProjectDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, dto.sc_id);
+    return this.projectExtractService.parse(dto);
   }
 
   // ═══════════════════════════════════════════════════

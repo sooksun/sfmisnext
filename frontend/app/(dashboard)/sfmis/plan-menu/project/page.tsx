@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Sparkles } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { FormDialog } from '@/components/shared/form-dialog'
@@ -27,6 +27,7 @@ import { apiGet, apiPost } from '@/lib/api'
 import { useAppContext } from '@/hooks/use-app-context'
 import { toBE, fmtDateTH } from '@/lib/utils'
 import type { UserOption } from '@/lib/types'
+import { AiProjectDialog, type AiParsedFields } from './ai-project-dialog'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // field names ตรงกับสิ่งที่ backend project.service.ts map ออกมา
@@ -61,6 +62,7 @@ interface ProjectResponse {
   page: number
   pageSize: number
 }
+
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -99,6 +101,7 @@ export default function ProjectPage() {
   const [ownerAdminId, setOwnerAdminId] = useState<number>(0)
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
+  const [aiOpen, setAiOpen] = useState(false)
 
   // ── Query ─────────────────────────────────────────────────────────────────
   // endpoint: GET project/load_project/:scId/:userId/:page/:pageSize/:syId
@@ -232,6 +235,19 @@ export default function ProjectPage() {
     setDialogOpen(true)
   }
 
+  // นำผลที่ AI สกัดได้ มาเติมในฟอร์ม (ผู้ใช้ตรวจ/แก้ก่อนบันทึก)
+  function applyAi(f: AiParsedFields) {
+    if (f.proj_name != null) setValue('proj_name', f.proj_name, { shouldValidate: true })
+    if (f.proj_detail != null) setValue('proj_detail', f.proj_detail)
+    if (f.proj_budget != null) setValue('proj_budget', f.proj_budget, { shouldValidate: true })
+    if (f.proj_budget_type != null) setValue('proj_budget_type', f.proj_budget_type)
+    if (Array.isArray(f.policy_ids)) setPolicyIds(f.policy_ids)
+    if (f.start_date != null) setStartDate(f.start_date)
+    if (f.end_date != null) setEndDate(f.end_date)
+    setAiOpen(false)
+    toast.success('นำข้อมูลจาก AI มากรอกฟอร์มแล้ว — ตรวจสอบและกดบันทึก')
+  }
+
   // ── Columns ───────────────────────────────────────────────────────────────
 
   const columns = useMemo(() => [
@@ -345,6 +361,17 @@ export default function ProjectPage() {
         size="2xl"
       >
         <div className="space-y-3">
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="border-violet-300 text-violet-700 hover:bg-violet-50"
+              onClick={() => setAiOpen(true)}
+            >
+              <Sparkles className="h-4 w-4" />
+              สร้างโครงการด้วย AI
+            </Button>
+          </div>
           <div>
             <Label>ชื่อโครงการ *</Label>
             <Input {...register('proj_name')} placeholder="ชื่อโครงการ" />
@@ -443,6 +470,18 @@ export default function ProjectPage() {
           </div>
         </div>
       </FormDialog>
+
+      {/* ── AI: สร้างโครงการด้วย AI ─────────────────────────────────────────── */}
+      <AiProjectDialog
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        scId={scId}
+        syId={syId}
+        budgetYear={budgetYear}
+        policies={policyList.map((p) => ({ scp_id: p.sp_id, name: p.sp_name }))}
+        budgetTypes={moneyTypeList.map((m) => m.budget_type)}
+        onApply={applyAi}
+      />
 
       {/* ── Delete Confirm ─────────────────────────────────────────────────── */}
       <ConfirmDialog

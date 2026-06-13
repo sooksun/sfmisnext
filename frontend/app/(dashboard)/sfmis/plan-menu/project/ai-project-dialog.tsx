@@ -57,8 +57,10 @@ export function AiProjectDialog({
   const [answers, setAnswers] = useState<Record<string, string>>({})
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recogRef = useRef<any>(null)
+  const keepListeningRef = useRef(false)
 
   function stopVoice() {
+    keepListeningRef.current = false
     try { recogRef.current?.stop() } catch { /* ignore */ }
     setListening(false)
   }
@@ -75,12 +77,24 @@ export function AiProjectDialog({
     : null
   const voiceSupported = !!SR
 
-  function startVoice() {
-    if (!SR) { toast.error('เบราว์เซอร์นี้ไม่รองรับการรับเสียง'); return }
-    const recog = new SR()
+  async function startVoice() {
+    if (!SR) { toast.error('เบราว์เซอร์นี้ไม่รองรับการรับเสียง (แนะนำ Chrome/Edge)'); return }
+    // ขอสิทธิ์ไมโครโฟนก่อน เพื่อให้ error ชัดเจน
+    try {
+      if (navigator.mediaDevices?.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        stream.getTracks().forEach((t) => t.stop())
+      }
+    } catch {
+      toast.error('กรุณาอนุญาตให้เว็บใช้ไมโครโฟน แล้วลองใหม่')
+      return
+    }
+
+    let recog: any // eslint-disable-line @typescript-eslint/no-explicit-any
+    try { recog = new SR() } catch { toast.error('เริ่มไมโครโฟนไม่สำเร็จ'); return }
     recog.lang = 'th-TH'
     recog.continuous = true
-    recog.interimResults = false
+    recog.interimResults = true
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recog.onresult = (e: any) => {
       let chunk = ''
@@ -89,11 +103,35 @@ export function AiProjectDialog({
       }
       if (chunk) setText((prev) => (prev ? prev + ' ' : '') + chunk.trim())
     }
-    recog.onerror = () => setListening(false)
-    recog.onend = () => setListening(false)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recog.onerror = (e: any) => {
+      const code = e?.error
+      if (code === 'not-allowed' || code === 'service-not-allowed') {
+        keepListeningRef.current = false
+        toast.error('ไมโครโฟนถูกบล็อก — อนุญาตในเบราว์เซอร์แล้วลองใหม่')
+      } else if (code === 'no-speech' || code === 'aborted') {
+        // เงียบ/ถูกหยุด — ไม่ต้องแจ้ง ปล่อยให้ onend จัดการ (auto-restart)
+      } else {
+        toast.error('ไมโครโฟนผิดพลาด: ' + (code || 'unknown'))
+      }
+    }
+    recog.onend = () => {
+      // Chrome หยุดเองเมื่อเงียบ — ต่อเนื่องด้วยการเริ่มใหม่ ถ้าผู้ใช้ยังไม่กดหยุด
+      if (keepListeningRef.current) {
+        try { recog.start() } catch { setListening(false) }
+      } else {
+        setListening(false)
+      }
+    }
     recogRef.current = recog
-    recog.start()
-    setListening(true)
+    keepListeningRef.current = true
+    try {
+      recog.start()
+      setListening(true)
+    } catch {
+      // start ซ้ำขณะกำลังทำงาน — ข้าม
+      setListening(true)
+    }
   }
 
   async function analyze() {

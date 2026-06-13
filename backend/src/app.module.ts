@@ -78,6 +78,7 @@ import { CrossDomainGuardModule } from './modules/cross-domain-guard/cross-domai
 import { FundBorrowingModule } from './modules/fund-borrowing/fund-borrowing.module';
 import { FundBalanceModule } from './modules/fund-balance/fund-balance.module';
 import { AttachmentModule } from './modules/attachment/attachment.module';
+import { AreaModule } from './modules/area/area.module';
 
 @Module({
   imports: [
@@ -183,6 +184,7 @@ import { AttachmentModule } from './modules/attachment/attachment.module';
     FundBalanceModule,
     CrossDomainGuardModule,
     AttachmentModule,
+    AreaModule,
   ],
   controllers: [AppController],
   providers: [

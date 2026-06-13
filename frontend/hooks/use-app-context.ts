@@ -18,6 +18,7 @@ export function useAppContext() {
     userName: user?.name ?? '',
     userType: user?.type ?? 0,
     scName: user?.sc_name ?? '',
+    areacode: user?.areacode ?? '',
 
     syId: yearData?.sy_date?.sy_id ?? 0,
     syYear: yearData?.sy_date?.sy_year ?? 0,

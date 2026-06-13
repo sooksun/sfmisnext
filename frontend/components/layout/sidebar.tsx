@@ -69,6 +69,10 @@ import {
   FolderKanban,
   ListTodo,
   GanttChartSquare,
+  MapPin,
+  BarChart3,
+  ShoppingCart,
+  ClipboardCheck as ClipboardCheckDistrict,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
@@ -243,7 +247,18 @@ const navGroups: NavItem[] = [
       { label: '6.8 นโยบาย อปท.',          href: '/sfmis/sao-policy',      icon: BookMarked, roles: SUPER },
       { label: '6.9 อปท.',                 href: '/sfmis/sao',             icon: Building2, roles: SUPER },
       { label: '6.10 แบบ สพท. 2544 (สังเคราะห์เขต)', href: '/sfmis/admin-tools/district-assessment', icon: ClipboardCheck, roles: DISTRICT },
-      // 6.10 Receipt เดิมซ้ำกับ 2.4 ใบเสร็จรับเงิน — เอาออก (เข้าผ่านงานการเงินแทน)
+    ],
+  },
+  {
+    label: 'สำนักงานเขตพื้นที่',
+    icon: MapPin,
+    roles: DISTRICT,
+    children: [
+      { label: 'ภาพรวมเขตพื้นที่',         href: '/sfmis/area/dashboard',  icon: BarChart3,              roles: DISTRICT },
+      { label: 'แผนงาน/โครงการ',           href: '/sfmis/area/plan',       icon: FolderKanban,           roles: DISTRICT },
+      { label: 'การเงิน',                  href: '/sfmis/area/finance',    icon: DollarSign,             roles: DISTRICT },
+      { label: 'พัสดุ/จัดซื้อ',            href: '/sfmis/area/supply',     icon: ShoppingCart,           roles: DISTRICT },
+      { label: 'ประเมินตนเอง (สพท.2544)', href: '/sfmis/admin-tools/district-assessment', icon: ClipboardCheckDistrict, roles: DISTRICT },
     ],
   },
   {

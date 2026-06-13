@@ -425,6 +425,7 @@ export class AdminService {
       type: admin.type,
       position: admin.position,
       sc_id: admin.scId,
+      areacode: admin.areacode ?? undefined,
       avata: avataFormatted,
       license: licenseFormatted,
       code_login: admin.codeLogin,

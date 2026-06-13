@@ -7,7 +7,8 @@ export interface User {
   avata: string | { full: string; thumb: string }
   sc_id: number
   sc_name: string
-  type: number // 1=SuperAdmin, 2=SchoolAdmin, 3=PlanningStaff, 4=SupplyStaff, 5=FinanceStaff, 6=PlanningHead, 7=SupplyHead, 8=FinanceHead
+  type: number // 1=SuperAdmin, 2=SchoolAdmin, 3=PlanningStaff, 4=SupplyStaff, 5=FinanceStaff, 6=PlanningHead, 7=SupplyHead, 8=FinanceHead, 9=DistrictStaff
+  areacode?: string // เฉพาะ type=9 (เจ้าหน้าที่เขตพื้นที่)
   del: number
   up_by: string
   up_date: string
@@ -442,4 +443,93 @@ export interface UserOption {
   username: string
   position: number | null
   type: number | null
+}
+
+// ── Area (เขตพื้นที่) types ───────────────────────────────────────────────────
+
+export interface AreaSchoolRow {
+  sc_id: number
+  sc_name: string
+  total_in: number
+  total_out: number
+  balance: number
+  students: number
+  projects_total: number
+  projects_active: number
+  projects_done: number
+  projects_blocked: number
+  assessment_status: number   // 0=ยังไม่ประเมิน 1=ร่าง 2=ยืนยัน 3=ส่งสพท.
+  assessment_percent: number
+  assessment_level: number    // 1-4
+}
+
+export interface AreaDashboard {
+  areacode: string
+  budget_year: number
+  schools: AreaSchoolRow[]
+  aggregate: {
+    total_in: number
+    total_out: number
+    balance: number
+    total_schools: number
+    total_students: number
+  }
+}
+
+export interface AreaPlanProject {
+  proj_id: number
+  sc_id: number
+  proj_name: string
+  proj_status: number
+  execution_status: number
+  progress_percent: number
+  start_date: string | null
+  end_date: string | null
+  proj_budget: number
+}
+
+export interface AreaPlanSchool {
+  sc_id: number
+  sc_name: string
+  projects: AreaPlanProject[]
+  procurement: {
+    cnt: number
+    total_budget: number
+    approved_budget: number
+    approved_cnt: number
+  } | null
+}
+
+export interface AreaFinanceType {
+  bg_type_id: number
+  bg_name: string
+  total_in: number
+  total_out: number
+}
+
+export interface AreaFinanceSchool {
+  sc_id: number
+  sc_name: string
+  total_in: number
+  total_out: number
+  by_type: AreaFinanceType[]
+  monthly: { ym: string; in: number; out: number }[]
+}
+
+export interface AreaSupplyOrder {
+  order_id: number
+  sc_id: number
+  doc_no: string
+  order_status: number
+  budgets: number
+  order_date: string
+  details: string
+}
+
+export interface AreaSupplySchool {
+  sc_id: number
+  sc_name: string
+  orders: AreaSupplyOrder[]
+  total_budget: number
+  approved_budget: number
 }

@@ -23,6 +23,8 @@ import {
 } from '@/components/ui/select'
 import { apiGet, apiPost } from '@/lib/api'
 import { useAppContext } from '@/hooks/use-app-context'
+import { toBE } from '@/lib/utils'
+import type { UserOption } from '@/lib/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 // field names ตรงกับสิ่งที่ backend project.service.ts map ออกมา
@@ -33,12 +35,18 @@ interface ProjectRow {
   proj_name: string
   proj_detail: string | null
   proj_policy: string | null
+  policies?: { scp_id: number; sp_name: string }[]
+  policy_ids?: number[]
   proj_budget_type: string | null
   proj_owner: string | null
+  owner_admin_id: number | null
   proj_budget: number
   proj_status: number
   sc_id: number
   sy_id: number
+  budget_year: number | null
+  sy_year: number | null
+  semester: number | null
   up_by: number | null
   update_date: string | null
 }
@@ -55,9 +63,7 @@ interface ProjectResponse {
 const projectSchema = z.object({
   proj_name:        z.string().min(1, 'กรุณากรอกชื่อโครงการ'),
   proj_detail:      z.string().optional(),
-  proj_policy:      z.string().optional(),
   proj_budget_type: z.string().optional(),
-  proj_owner:       z.string().optional(),
   proj_budget:      z.number().min(0, 'กรุณากรอกวงเงิน'),
 })
 type ProjectForm = z.infer<typeof projectSchema>
@@ -76,7 +82,7 @@ const fmt = (n: number) =>
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ProjectPage() {
-  const { scId, adminId, syId } = useAppContext()
+  const { scId, adminId, syId, budgetYear, syYear } = useAppContext()
   const userId = adminId
   const qc = useQueryClient()
   const [page, setPage] = useState(0)
@@ -84,6 +90,9 @@ export default function ProjectPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ProjectRow | null>(null)
   const [editing, setEditing] = useState<ProjectRow | null>(null)
+  // นโยบายหลายข้อ (scp_id) + ผู้รับผิดชอบ (admin_id) จัดการแยกจาก RHF
+  const [policyIds, setPolicyIds] = useState<number[]>([])
+  const [ownerAdminId, setOwnerAdminId] = useState<number>(0)
 
   // ── Query ─────────────────────────────────────────────────────────────────
   // endpoint: GET project/load_project/:scId/:userId/:page/:pageSize/:syId
@@ -123,18 +132,38 @@ export default function ProjectPage() {
     (m) => m.perhead === 1,
   )
 
+  // ผู้ใช้ในโรงเรียน (สำหรับเลือกผู้รับผิดชอบ — ผูกกับโรงเรียน)
+  const { data: userData } = useQuery({
+    queryKey: ['user-options', scId],
+    queryFn: () => apiGet<{ data: UserOption[] }>(`B_admin/load_user_options/${scId}`),
+    enabled: scId > 0,
+  })
+  const userList = userData?.data ?? []
+
+  function togglePolicy(id: number) {
+    setPolicyIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
   // ── Form ──────────────────────────────────────────────────────────────────
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<ProjectForm>({
     resolver: zodResolver(projectSchema),
-    defaultValues: { proj_name: '', proj_detail: '', proj_policy: '', proj_budget_type: '', proj_owner: '', proj_budget: 0 },
+    defaultValues: { proj_name: '', proj_detail: '', proj_budget_type: '', proj_budget: 0 },
   })
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
   const saveMutation = useMutation({
     mutationFn: (form: ProjectForm) => {
-      const payload = { ...form, sc_id: scId, sy_id: syId, up_by: userId }
+      const payload = {
+        ...form,
+        sc_id: scId,
+        sy_id: syId,
+        budget_year: budgetYear,
+        owner_admin_id: ownerAdminId || undefined,
+        policy_ids: policyIds,
+        up_by: userId,
+      }
       if (editing) {
         return apiPost('Project/updateProject', { ...payload, proj_id: editing.proj_id })
       }
@@ -172,7 +201,9 @@ export default function ProjectPage() {
 
   function openAdd() {
     setEditing(null)
-    reset({ proj_name: '', proj_detail: '', proj_policy: '', proj_budget_type: '', proj_owner: '', proj_budget: 0 })
+    reset({ proj_name: '', proj_detail: '', proj_budget_type: '', proj_budget: 0 })
+    setPolicyIds([])
+    setOwnerAdminId(0)
     setDialogOpen(true)
   }
 
@@ -181,11 +212,11 @@ export default function ProjectPage() {
     reset({
       proj_name:        item.proj_name ?? '',
       proj_detail:      item.proj_detail ?? '',
-      proj_policy:      item.proj_policy ?? '',
       proj_budget_type: item.proj_budget_type ?? '',
-      proj_owner:       item.proj_owner ?? '',
       proj_budget:      Number(item.proj_budget),
     })
+    setPolicyIds(item.policy_ids ?? [])
+    setOwnerAdminId(item.owner_admin_id ?? 0)
     setDialogOpen(true)
   }
 
@@ -220,7 +251,22 @@ export default function ProjectPage() {
           {item.proj_detail && (
             <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{item.proj_detail}</p>
           )}
+          {item.policies && item.policies.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {item.policies.map((p) => (
+                <span key={p.scp_id} className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-700">
+                  {p.sp_name}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
+      ),
+    },
+    {
+      header: 'ผู้รับผิดชอบ',
+      render: (item: ProjectRow) => (
+        <span className="text-sm text-gray-700">{item.proj_owner || '-'}</span>
       ),
     },
     {
@@ -285,20 +331,29 @@ export default function ProjectPage() {
             <Input {...register('proj_detail')} placeholder="รายละเอียดโครงการ (ไม่บังคับ)" />
           </div>
           <div>
-            <Label>สอดคล้องกับนโยบายโรงเรียน</Label>
-            <Select
-              value={watch('proj_policy') || ''}
-              onValueChange={(v) => setValue('proj_policy', v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={policyList.length ? 'เลือกนโยบายโรงเรียน' : 'ยังไม่มีนโยบายโรงเรียน (เพิ่มที่หน้านโยบายโรงเรียน)'} />
-              </SelectTrigger>
-              <SelectContent>
+            <Label>สอดคล้องกับนโยบายโรงเรียน (เลือกได้หลายข้อ)</Label>
+            {policyList.length === 0 ? (
+              <p className="rounded border border-dashed border-gray-200 p-2 text-xs text-gray-400">
+                ยังไม่มีนโยบายโรงเรียน (เพิ่มที่หน้านโยบายโรงเรียน)
+              </p>
+            ) : (
+              <div className="max-h-40 space-y-1 overflow-y-auto rounded border border-gray-200 p-2">
                 {policyList.map((p) => (
-                  <SelectItem key={p.sp_id} value={p.sp_name}>{p.sp_name}</SelectItem>
+                  <label key={p.sp_id} className="flex cursor-pointer items-start gap-2 rounded px-1 py-0.5 text-sm hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={policyIds.includes(p.sp_id)}
+                      onChange={() => togglePolicy(p.sp_id)}
+                    />
+                    <span>{p.sp_name}</span>
+                  </label>
                 ))}
-              </SelectContent>
-            </Select>
+              </div>
+            )}
+            {policyIds.length > 0 && (
+              <p className="mt-1 text-xs text-gray-500">เลือกแล้ว {policyIds.length} ข้อ</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -319,8 +374,23 @@ export default function ProjectPage() {
             </div>
             <div>
               <Label>ผู้รับผิดชอบโครงการ</Label>
-              <Input {...register('proj_owner')} placeholder="ชื่อ-สกุล ผู้รับผิดชอบ" />
+              <Select
+                value={ownerAdminId ? String(ownerAdminId) : ''}
+                onValueChange={(v) => setOwnerAdminId(Number(v))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="เลือกผู้รับผิดชอบ" />
+                </SelectTrigger>
+                <SelectContent>
+                  {userList.map((u) => (
+                    <SelectItem key={u.admin_id} value={String(u.admin_id)}>{u.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+          </div>
+          <div className="rounded border border-gray-100 bg-gray-50 p-2 text-xs text-gray-500">
+            ผูกกับ: โรงเรียนปัจจุบัน · ปีการศึกษา {toBE(syYear)} · ปีงบประมาณ {toBE(budgetYear)}
           </div>
           <div>
             <Label>วงเงินงบประมาณ (บาท) *</Label>

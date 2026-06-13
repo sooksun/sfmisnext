@@ -1,4 +1,4 @@
-import { IsInt, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsInt, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class UpdateProjectDto {
   @IsInt()
@@ -15,6 +15,20 @@ export class UpdateProjectDto {
   @IsString()
   @IsOptional()
   proj_policy?: string;
+
+  /** นโยบายโรงเรียน (master_sc_policy.scp_id) ได้หลายข้อ — ส่งมาเพื่อแทนที่ทั้งชุด */
+  @IsArray()
+  @IsInt({ each: true })
+  @IsOptional()
+  policy_ids?: number[];
+
+  @IsInt()
+  @IsOptional()
+  owner_admin_id?: number;
+
+  @IsInt()
+  @IsOptional()
+  budget_year?: number;
 
   @IsString()
   @IsOptional()

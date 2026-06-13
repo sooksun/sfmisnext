@@ -3,8 +3,11 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ForbiddenException } from '@nestjs/common';
 import { ProjectService } from './project.service';
 import { Project } from './entities/project.entity';
+import { ProjectPolicy } from './entities/project-policy.entity';
 import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
 import { SchoolYear } from '../school-year/entities/school-year.entity';
+import { MasterScPolicy } from '../settings/entities/master-sc-policy.entity';
+import { Admin } from '../admin/entities/admin.entity';
 import { type JwtUser } from '../../common/utils/tenant-guard';
 
 const superAdmin: JwtUser = { type: 1, sc_id: 1 } as JwtUser;
@@ -15,6 +18,9 @@ describe('ProjectService', () => {
   let repo: jest.Mocked<any>;
   let parcelRepo: jest.Mocked<any>;
   let syRepo: jest.Mocked<any>;
+  let policyRepo: jest.Mocked<any>;
+  let scPolicyRepo: jest.Mocked<any>;
+  let adminRepo: jest.Mocked<any>;
 
   beforeEach(async () => {
     repo = {
@@ -32,15 +38,30 @@ describe('ProjectService', () => {
     syRepo = {
       findOne: jest
         .fn()
-        .mockResolvedValue({ syId: 1, syYear: 2569, budgetYear: 2569 }),
+        .mockResolvedValue({ syId: 1, syYear: 2569, semester: 1, budgetYear: 2569 }),
+    };
+    policyRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      update: jest.fn(),
+      create: jest.fn().mockImplementation((p) => p),
+      save: jest.fn(),
+    };
+    scPolicyRepo = {
+      find: jest.fn().mockResolvedValue([]),
+    };
+    adminRepo = {
+      findOne: jest.fn().mockResolvedValue({ adminId: 9, name: 'ครูเอ', scId: 1 }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProjectService,
         { provide: getRepositoryToken(Project), useValue: repo },
+        { provide: getRepositoryToken(ProjectPolicy), useValue: policyRepo },
         { provide: getRepositoryToken(ParcelOrder), useValue: parcelRepo },
         { provide: getRepositoryToken(SchoolYear), useValue: syRepo },
+        { provide: getRepositoryToken(MasterScPolicy), useValue: scPolicyRepo },
+        { provide: getRepositoryToken(Admin), useValue: adminRepo },
       ],
     }).compile();
 
@@ -184,6 +205,34 @@ describe('ProjectService', () => {
       await service.addProject({ proj_name: 'x', sc_id: 1 }); // ไม่มี sy_id
       expect(repo.findOne).not.toHaveBeenCalled();
       expect(repo.save).toHaveBeenCalled();
+    });
+
+    it('owner_admin_id + policy_ids + budget_year → resolve ชื่อ, เขียนตารางเชื่อม, set budget_year', async () => {
+      repo.findOne.mockResolvedValue(null); // ไม่ซ้ำ
+      adminRepo.findOne.mockResolvedValue({ adminId: 9, name: 'ครูเอ', scId: 1 });
+      scPolicyRepo.find.mockResolvedValue([
+        { scpId: 11, scPolicy: 'นโยบาย A', scId: 1 },
+        { scpId: 12, scPolicy: 'นโยบาย B', scId: 1 },
+      ]);
+      await service.addProject({
+        proj_name: 'p', sc_id: 1, sy_id: 1, owner_admin_id: 9,
+        budget_year: 2569, policy_ids: [11, 12],
+      } as any);
+      // owner snapshot
+      const savedProject = repo.save.mock.calls[0][0];
+      expect(savedProject.ownerAdminId).toBe(9);
+      expect(savedProject.projOwner).toBe('ครูเอ');
+      expect(savedProject.budgetYear).toBe(2569);
+      // เขียน junction 2 แถว
+      expect(policyRepo.save).toHaveBeenCalledTimes(2);
+    });
+
+    it('owner คนละโรงเรียน → ForbiddenException', async () => {
+      repo.findOne.mockResolvedValue(null);
+      adminRepo.findOne.mockResolvedValue({ adminId: 9, name: 'x', scId: 999 });
+      await expect(
+        service.addProject({ proj_name: 'p', sc_id: 1, sy_id: 1, owner_admin_id: 9 } as any),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 

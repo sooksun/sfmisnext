@@ -54,6 +54,10 @@ export class Project {
   @Column({ name: 'sy_id', type: 'int', nullable: true })
   syId: number | null;
 
+  /** ปีงบประมาณ (เก็บแยกชัดเจน — อาจต่างจาก school_year ของ sy_id) */
+  @Column({ name: 'budget_year', type: 'int', nullable: true })
+  budgetYear: number | null;
+
   /**
    * ฝ่ายงาน: 1=วิชาการ 2=บริหารทั่วไป 3=แผนและงบประมาณ 4=บุคคล
    * 5=งบประจำ 6=ปฐมวัย 7=สนับสนุนอบต./เทศบาล 8=สนับสนุนจากหน่วยงานอื่น

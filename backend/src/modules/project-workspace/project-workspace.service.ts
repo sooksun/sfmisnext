@@ -746,6 +746,7 @@ export class ProjectWorkspaceService {
         execution_status: p.executionStatus,
         execution_status_name: EXEC_STATUS_NAME[p.executionStatus] ?? '',
         progress_percent: progress,
+        start_date: p.startDate,
         end_date: p.endDate,
         overdue,
         at_risk: atRisk,

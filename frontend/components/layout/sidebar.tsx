@@ -68,6 +68,7 @@ import {
   History,
   FolderKanban,
   ListTodo,
+  GanttChartSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppContext } from '@/hooks/use-app-context'
@@ -124,6 +125,7 @@ const navGroups: NavItem[] = [
       { label: '1.9 ติดตามแผน-โครงการ',       href: '/sfmis/plan-menu/plan-trace',        icon: GitBranch,     roles: PLAN },
       { label: '1.10 พื้นที่ทำงานโครงการ',     href: '/sfmis/plan-menu/projects',          icon: FolderKanban,  roles: [...PLAN, 4, 5, 7, 8] },
       { label: '1.11 งานของฉัน',              href: '/sfmis/my-tasks',                    icon: ListTodo,      roles: [1, 2, 3, 4, 5, 6, 7, 8] },
+      { label: '1.12 รายงาน Gantt โครงการ',   href: '/sfmis/plan-menu/project-gantt',     icon: GanttChartSquare, roles: [...PLAN, 4, 7] },
       { label: 'การจัดสรรงบประมาณ',          href: '/sfmis/budget-allocation',           icon: Wallet,        roles: PLAN, hidden: true },
       { label: 'งบประมาณที่ได้รับจริง',       href: '/sfmis/real-budget',                 icon: ArrowUpDown,   roles: PLAN, hidden: true },
       { label: 'ประกาศ e-GP',                 href: '/sfmis/plan-menu/egp-announcement', icon: FileBarChart2, roles: [...PLAN, 4, 7], hidden: true },

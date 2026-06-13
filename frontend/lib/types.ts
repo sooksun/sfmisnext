@@ -400,6 +400,7 @@ export interface ProjectDashboardRow {
   execution_status: number
   execution_status_name: string
   progress_percent: number
+  start_date: string | null
   end_date: string | null
   overdue: boolean
   at_risk: boolean

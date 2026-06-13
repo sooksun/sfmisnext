@@ -13,9 +13,16 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-const SC_ID = 1;
-const ADMIN_ID = 1;
-const SCHOOL_NAME = 'โรงเรียนบ้านพญาไพร จำลอง';
+// ── ตั้งค่าได้ผ่าน env เพื่อรันหลายโรงเรียน (คนละ process = state สดใหม่) ──
+//   SEED_SC_ID, SEED_ADMIN_ID, SEED_SCHOOL_NAME, SEED_AREACODE
+//   SEED_TRUNCATE=0 → ไม่ล้างข้อมูล (ใช้กับโรงเรียนที่ 2+)
+//   SEED_SCALE=0.65 → ปรับสเกลจำนวนเงิน/นักเรียน ให้แต่ละโรงเรียนต่างกัน
+const SC_ID = Number(process.env.SEED_SC_ID || 1);
+const ADMIN_ID = Number(process.env.SEED_ADMIN_ID || 1);
+const SCHOOL_NAME = process.env.SEED_SCHOOL_NAME || 'โรงเรียนบ้านพญาไพร จำลอง';
+const AREACODE = process.env.SEED_AREACODE || '36';
+const DO_TRUNCATE = process.env.SEED_TRUNCATE !== '0';
+const SCALE = Number(process.env.SEED_SCALE || 1);
 
 // ปีงบประมาณ 2569 ครอบคลุม 1 ต.ค. 2568 – 30 ก.ย. 2569
 // ⚠ frontend อ่าน school_year.budget_year (BE) แล้วลบ 543 ก่อนส่ง API
@@ -52,6 +59,11 @@ function isoDateTime(d: Date): string {
 }
 function padLeft(n: number, width: number): string {
   return String(n).padStart(width, '0');
+}
+
+/** ปรับสเกลจำนวน (เงิน/นับ) ตาม SEED_SCALE — ให้แต่ละโรงเรียนมีตัวเลขต่างกัน */
+function S(n: number): number {
+  return Math.round(n * SCALE);
 }
 
 let counter = 1;
@@ -135,6 +147,10 @@ const TRANSACTIONAL_TABLES = [
   'bankaccount',
   // ── log ──
   'tb_delete_log',
+  // ── project workspace (Phase 1) ──
+  'pln_project_policy',
+  'pln_project_member',
+  'pln_project_task',
   // เก็บ school_year ไว้ก่อน แล้ว reseed
   'school_year',
 ];
@@ -159,7 +175,7 @@ async function truncateTransactional() {
 async function seedSchool() {
   await AppDataSource.query(
     `UPDATE school SET sc_name = ?, areacode = ?, tumbol = ?, p_code = ?, tel = ?, low_class = ?, top_clsass = ?, del = 0 WHERE sc_id = ?`,
-    [SCHOOL_NAME, '36', 'เทอดไทย', 57, '053-730222', 'อ.1', 'ม.3', SC_ID],
+    [SCHOOL_NAME, AREACODE, 'เทอดไทย', 57, '053-730222', 'อ.1', 'ม.3', SC_ID],
   );
   console.log(`▶ School: ${SCHOOL_NAME}`);
 }
@@ -379,6 +395,7 @@ const STUDENT_COUNTS: Array<{ classId: number; count: number }> = [
   { classId: 8, count: 12 }, // ป.5
   { classId: 9, count: 16 }, // ป.6
 ];
+if (SCALE !== 1) STUDENT_COUNTS.forEach((s) => { s.count = Math.max(1, S(s.count)); });
 
 async function seedStudents() {
   // Seed ทั้ง 2 school_year ที่อยู่ในปีงบประมาณ 2569
@@ -428,7 +445,7 @@ async function seedStudents() {
 // 6. Budget allocation (PlnBudgetCategory + Detail + PlnRealBudget + TbEstimate)
 // -----------------------------------------------------------------------------
 // งบประมาณรวมที่จัดสรร (จำลองค่าคำนวณรายหัว)
-const TOTAL_BUDGET = 350000; // บาท
+const TOTAL_BUDGET = S(350000); // บาท (ปรับสเกลตาม SEED_SCALE)
 const CATEGORY_ALLOC: Array<{
   bgCateId: number;
   pct: number;
@@ -527,6 +544,7 @@ async function seedBudgetAllocation() {
       offsetDays: 60,
     },
   ];
+  if (SCALE !== 1) realBudgets.forEach((rb) => { rb.amount = S(rb.amount); });
   let prbCounter = 1;
   for (const rb of realBudgets) {
     await AppDataSource.query(
@@ -572,6 +590,7 @@ async function seedOpeningBalance() {
     { moneyType: 3, storage: 2, amount: 18000, baId: baIds.raidai },
     { moneyType: 6, storage: 2, amount: 12000, baId: baIds.bongchak },
   ];
+  if (SCALE !== 1) rows.forEach((r) => { r.amount = S(r.amount); });
   for (const r of rows) {
     await AppDataSource.query(
       `INSERT INTO opening_balance (sc_id, sy_id, budget_year, money_type_id, storage_type, bank_account_id, amount, up_by, del, create_date, update_date)
@@ -623,6 +642,7 @@ const PROJECTS: Array<{
     dept: 2,
   },
 ];
+if (SCALE !== 1) PROJECTS.forEach((p) => { p.budget = S(p.budget); });
 
 const projectIds: number[] = [];
 
@@ -673,6 +693,7 @@ const SUPPLIES: Array<{
   { name: 'กระดาษโปสเตอร์', price: 12, tsId: 6, unId: 7, init: 100 },
   { name: 'ฟิวเจอร์บอร์ด ขนาด 65x80', price: 45, tsId: 6, unId: 7, init: 50 },
 ];
+if (SCALE !== 1) SUPPLIES.forEach((s) => { s.price = Math.max(1, S(s.price)); });
 
 const suppIds: number[] = [];
 
@@ -837,6 +858,7 @@ const RECEIVES: ReceiveSeed[] = [
     money: 2,
   },
 ];
+if (SCALE !== 1) RECEIVES.forEach((r) => { r.amount = S(r.amount); });
 
 type ReceiveRow = {
   prId: number;
@@ -1000,6 +1022,7 @@ const PARCELS: ParcelSeed[] = [
     items: [],
   },
 ];
+if (SCALE !== 1) PARCELS.forEach((p) => { p.amount = S(p.amount); });
 
 const parcelOrders: Array<{ orderId: number; data: ParcelSeed }> = [];
 
@@ -1386,6 +1409,7 @@ const WITHDRAWS: WithdrawSeed[] = [
     isCheck: 1,
   },
 ];
+if (SCALE !== 1) WITHDRAWS.forEach((w) => { w.amount = S(w.amount); });
 
 const withdrawIds: Array<{ rwId: number; data: WithdrawSeed }> = [];
 
@@ -1654,6 +1678,7 @@ async function seedBudgetRequests() {
       detail: 'ขออนุมัติทัศนศึกษา ป.6',
     },
   ];
+  if (SCALE !== 1) requests.forEach((r) => { r.amount = S(r.amount); });
   for (let i = 0; i < requests.length; i++) {
     const req = requests[i];
     await AppDataSource.query(
@@ -1691,7 +1716,11 @@ async function run() {
     console.log(`  ปีงบประมาณ ${BUDGET_YEAR} (1 ต.ค. 2568 – 10 พ.ค. 2569)`);
     console.log(`================================================\n`);
 
-    await truncateTransactional();
+    if (DO_TRUNCATE) {
+      await truncateTransactional();
+    } else {
+      console.log('▶ ข้ามการล้างข้อมูล (SEED_TRUNCATE=0) — seed เพิ่มเติม');
+    }
     console.log('');
 
     await seedSchool();

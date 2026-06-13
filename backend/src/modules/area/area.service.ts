@@ -173,13 +173,13 @@ export class AreaService {
     const [byType, monthly]: [any[], any[]] = await Promise.all([
       this.ds.query(
         `SELECT ft.sc_id, ft.bg_type_id,
-           COALESCE(bit.bg_name, CONCAT('ประเภท ',ft.bg_type_id)) AS bg_name,
+           COALESCE(mbit.budget_type, CONCAT('ประเภท ',ft.bg_type_id)) AS bg_name,
            COALESCE(SUM(CASE WHEN ft.type=1  THEN ft.amount ELSE 0 END),0) AS total_in,
            COALESCE(SUM(CASE WHEN ft.type=-1 THEN ft.amount ELSE 0 END),0) AS total_out
          FROM financial_transactions ft
-         LEFT JOIN budget_income_type bit ON bit.bg_type_id=ft.bg_type_id AND bit.del=0
+         LEFT JOIN master_budget_income_type mbit ON mbit.bg_type_id=ft.bg_type_id AND mbit.del=0
          WHERE ft.sc_id IN (?) AND ft.del=0 AND ft.budget_year=?
-         GROUP BY ft.sc_id, ft.bg_type_id, bit.bg_name
+         GROUP BY ft.sc_id, ft.bg_type_id, mbit.budget_type
          ORDER BY ft.sc_id, ft.bg_type_id`,
         [scIds, ceYear],
       ),
@@ -243,5 +243,184 @@ export class AreaService {
       if (o.order_status >= 200) bySchool[o.sc_id].approved_budget += Number(o.budgets ?? 0);
     }
     return { schools: Object.values(bySchool).sort((a, b) => a.sc_id - b.sc_id), budget_year: budgetYear };
+  }
+
+  // ────────────────────────────────────────────────
+  // 5. รายชื่อโรงเรียนในเขต (สำหรับ dropdown)
+  // ────────────────────────────────────────────────
+  async listSchools(areacode: string) {
+    return this.getSchools(areacode);
+  }
+
+  // ────────────────────────────────────────────────
+  // 6. รายงานรายโรงเรียน — ตรวจ areacode ก่อน
+  // ────────────────────────────────────────────────
+  private async verifySchoolInArea(areacode: string, scId: number): Promise<{ sc_id: number; sc_name: string }> {
+    const rows: any[] = await this.ds.query(
+      'SELECT sc_id, sc_name, areacode FROM school WHERE sc_id = ? AND del = 0 LIMIT 1',
+      [scId],
+    );
+    if (!rows.length) throw new Error('ไม่พบโรงเรียน');
+    if (rows[0].areacode !== areacode) throw new Error('โรงเรียนไม่อยู่ในเขตพื้นที่ของท่าน');
+    return rows[0];
+  }
+
+  async getSchoolPlanDetail(areacode: string, scId: number, budgetYear: number) {
+    const school = await this.verifySchoolInArea(areacode, scId);
+
+    const [projects, orders, followups]: [any[], any[], any[]] = await Promise.all([
+      this.ds.query(
+        `SELECT p.proj_id, p.proj_name, p.proj_status, p.execution_status,
+                p.progress_percent, p.start_date, p.end_date, p.proj_budget,
+                p.proj_detail, p.owner_admin_id,
+                a.name AS owner_name
+         FROM pln_project p
+         LEFT JOIN admin a ON a.admin_id = p.owner_admin_id AND a.del = 0
+         WHERE p.sc_id = ? AND p.del = 0 AND p.budget_year = ?
+         ORDER BY p.proj_status, p.proj_id`,
+        [scId, budgetYear],
+      ),
+      this.ds.query(
+        `SELECT po.order_id, po.numbers AS doc_no, po.order_status,
+                po.budgets, po.order_date, po.details, po.job_type
+         FROM parcel_order po
+         WHERE po.sc_id = ? AND po.del = 0 AND po.acad_year = ?
+         ORDER BY po.order_date DESC`,
+        [scId, budgetYear],
+      ),
+      this.ds.query(
+        `SELECT pf.fup_id, pf.period, pf.fup_status, pf.progress_percent,
+                pf.actual_amount, pf.fup_detail, pf.create_date
+         FROM pln_project_followup pf
+         JOIN pln_project p ON p.proj_id = pf.project_id AND p.del = 0
+         WHERE p.sc_id = ? AND pf.del = 0 AND p.budget_year = ?
+         ORDER BY pf.period, pf.create_date DESC`,
+        [scId, budgetYear],
+      ),
+    ]);
+
+    const budgetSummary = {
+      total_budget: projects.reduce((a, p) => a + Number(p.proj_budget ?? 0), 0),
+      total_procurement: orders.reduce((a, o) => a + Number(o.budgets ?? 0), 0),
+      approved_procurement: orders.filter((o) => o.order_status >= 200).reduce((a, o) => a + Number(o.budgets ?? 0), 0),
+    };
+
+    return {
+      sc_id: scId,
+      sc_name: school.sc_name,
+      budget_year: budgetYear,
+      projects,
+      orders,
+      followups,
+      budget_summary: budgetSummary,
+    };
+  }
+
+  async getSchoolFinanceDetail(areacode: string, scId: number, budgetYear: number) {
+    const ceYear = this.toCE(budgetYear);
+    const school = await this.verifySchoolInArea(areacode, scId);
+
+    const [byType, monthly, receives, withdraws]: [any[], any[], any[], any[]] = await Promise.all([
+      this.ds.query(
+        `SELECT ft.bg_type_id,
+           COALESCE(mbit.budget_type, CONCAT('ประเภท ',ft.bg_type_id)) AS bg_name,
+           COALESCE(SUM(CASE WHEN ft.type=1  THEN ft.amount ELSE 0 END),0) AS total_in,
+           COALESCE(SUM(CASE WHEN ft.type=-1 THEN ft.amount ELSE 0 END),0) AS total_out
+         FROM financial_transactions ft
+         LEFT JOIN master_budget_income_type mbit ON mbit.bg_type_id=ft.bg_type_id AND mbit.del=0
+         WHERE ft.sc_id=? AND ft.del=0 AND ft.budget_year=?
+         GROUP BY ft.bg_type_id, mbit.budget_type
+         ORDER BY ft.bg_type_id`,
+        [scId, ceYear],
+      ),
+      this.ds.query(
+        `SELECT DATE_FORMAT(create_date,'%Y-%m') AS ym,
+           COALESCE(SUM(CASE WHEN type=1  THEN amount ELSE 0 END),0) AS total_in,
+           COALESCE(SUM(CASE WHEN type=-1 THEN amount ELSE 0 END),0) AS total_out
+         FROM financial_transactions
+         WHERE sc_id=? AND del=0 AND budget_year=?
+         GROUP BY ym ORDER BY ym`,
+        [scId, ceYear],
+      ),
+      // รายรับ (pln_receive + pln_receive_detail)
+      this.ds.query(
+        `SELECT pr.receive_id, pr.receive_no, pr.receive_date,
+                COALESCE(SUM(prd.amount),0) AS amount
+         FROM pln_receive pr
+         LEFT JOIN pln_receive_detail prd ON prd.receive_id=pr.receive_id AND prd.del=0
+         WHERE pr.sc_id=? AND pr.del=0 AND prd.budget_year=?
+         GROUP BY pr.receive_id, pr.receive_no, pr.receive_date
+         ORDER BY pr.receive_date DESC
+         LIMIT 50`,
+        [scId, budgetYear],
+      ),
+      // รายจ่าย (request_withdraw)
+      this.ds.query(
+        `SELECT rw_id, rw_no, rw_date, rw_total, rw_status
+         FROM request_withdraw
+         WHERE sc_id=? AND del=0 AND budget_year=?
+         ORDER BY rw_date DESC
+         LIMIT 50`,
+        [scId, budgetYear],
+      ),
+    ]);
+
+    const totalIn = byType.reduce((a, r) => a + Number(r.total_in), 0);
+    const totalOut = byType.reduce((a, r) => a + Number(r.total_out), 0);
+
+    return {
+      sc_id: scId,
+      sc_name: school.sc_name,
+      budget_year: budgetYear,
+      summary: { total_in: totalIn, total_out: totalOut, balance: totalIn - totalOut },
+      by_type: byType.map((r) => ({ ...r, total_in: Number(r.total_in), total_out: Number(r.total_out) })),
+      monthly: monthly.map((r) => ({ ym: r.ym, in: Number(r.total_in), out: Number(r.total_out) })),
+      receives: receives.map((r) => ({ ...r, amount: Number(r.amount) })),
+      withdraws: withdraws.map((r) => ({ ...r, rw_total: Number(r.rw_total) })),
+    };
+  }
+
+  async getSchoolSupplyDetail(areacode: string, scId: number, budgetYear: number) {
+    const school = await this.verifySchoolInArea(areacode, scId);
+
+    const [orders, supplies]: [any[], any[]] = await Promise.all([
+      this.ds.query(
+        `SELECT po.order_id, po.numbers AS doc_no, po.order_status,
+                po.budgets, po.order_date, po.details, po.job_type,
+                po.buy_date, po.departments
+         FROM parcel_order po
+         WHERE po.sc_id=? AND po.del=0 AND po.acad_year=?
+         ORDER BY po.order_date DESC`,
+        [scId, budgetYear],
+      ),
+      // วัสดุ-ครุภัณฑ์ที่รับเข้า
+      this.ds.query(
+        `SELECT rpo.rpo_id, rpo.create_date, rpo.order_id,
+                COUNT(rpd.rpd_id) AS item_count
+         FROM receive_parcel_order rpo
+         LEFT JOIN receive_parcel_detail rpd ON rpd.rpo_id=rpo.rpo_id AND rpd.del=0
+         WHERE rpo.sc_id=? AND rpo.del=0
+         AND EXISTS (SELECT 1 FROM parcel_order po WHERE po.order_id=rpo.order_id AND po.acad_year=?)
+         GROUP BY rpo.rpo_id, rpo.create_date, rpo.order_id
+         ORDER BY rpo.create_date DESC`,
+        [scId, budgetYear],
+      ),
+    ]);
+
+    const summary = {
+      total_orders: orders.length,
+      total_budget: orders.reduce((a, o) => a + Number(o.budgets ?? 0), 0),
+      approved_budget: orders.filter((o) => o.order_status >= 200).reduce((a, o) => a + Number(o.budgets ?? 0), 0),
+      received_count: supplies.length,
+    };
+
+    return {
+      sc_id: scId,
+      sc_name: school.sc_name,
+      budget_year: budgetYear,
+      summary,
+      orders: orders.map((o) => ({ ...o, budgets: Number(o.budgets ?? 0) })),
+      receive_records: supplies,
+    };
   }
 }

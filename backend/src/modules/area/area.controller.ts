@@ -3,6 +3,8 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseIntPipe,
   Query,
   ForbiddenException,
 } from '@nestjs/common';
@@ -79,5 +81,58 @@ export class AreaController {
     const areacode = resolveAreacode(user, areacodeParam);
     const budgetYear = budgetYearStr ? Number(budgetYearStr) : new Date().getFullYear() + 543;
     return this.areaService.getSupplySummary(areacode, budgetYear);
+  }
+
+  /** รายชื่อโรงเรียนในเขต (สำหรับ dropdown selector) */
+  @Get('schools')
+  @HttpCode(HttpStatus.OK)
+  listSchools(
+    @CurrentUser() user: JwtUser,
+    @Query('areacode') areacodeParam?: string,
+  ) {
+    const areacode = resolveAreacode(user, areacodeParam);
+    return this.areaService.listSchools(areacode);
+  }
+
+  /** รายงานแผนงาน/โครงการ รายโรงเรียน */
+  @Get('school/:scId/plan')
+  @HttpCode(HttpStatus.OK)
+  getSchoolPlan(
+    @Param('scId', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+    @Query('budget_year') budgetYearStr?: string,
+    @Query('areacode') areacodeParam?: string,
+  ) {
+    const areacode = resolveAreacode(user, areacodeParam);
+    const budgetYear = budgetYearStr ? Number(budgetYearStr) : new Date().getFullYear() + 543;
+    return this.areaService.getSchoolPlanDetail(areacode, scId, budgetYear);
+  }
+
+  /** รายงานการเงิน รายโรงเรียน */
+  @Get('school/:scId/finance')
+  @HttpCode(HttpStatus.OK)
+  getSchoolFinance(
+    @Param('scId', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+    @Query('budget_year') budgetYearStr?: string,
+    @Query('areacode') areacodeParam?: string,
+  ) {
+    const areacode = resolveAreacode(user, areacodeParam);
+    const budgetYear = budgetYearStr ? Number(budgetYearStr) : new Date().getFullYear() + 543;
+    return this.areaService.getSchoolFinanceDetail(areacode, scId, budgetYear);
+  }
+
+  /** รายงานพัสดุ รายโรงเรียน */
+  @Get('school/:scId/supply')
+  @HttpCode(HttpStatus.OK)
+  getSchoolSupply(
+    @Param('scId', ParseIntPipe) scId: number,
+    @CurrentUser() user: JwtUser,
+    @Query('budget_year') budgetYearStr?: string,
+    @Query('areacode') areacodeParam?: string,
+  ) {
+    const areacode = resolveAreacode(user, areacodeParam);
+    const budgetYear = budgetYearStr ? Number(budgetYearStr) : new Date().getFullYear() + 543;
+    return this.areaService.getSchoolSupplyDetail(areacode, scId, budgetYear);
   }
 }

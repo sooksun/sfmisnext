@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { ProcessFlow } from '@/components/shared/process-flow'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -341,6 +342,7 @@ export default function ProjectPage() {
         title={editing ? 'แก้ไขโครงการ' : 'เพิ่มโครงการ'}
         onSubmit={handleSubmit((d) => saveMutation.mutate(d))}
         loading={saveMutation.isPending}
+        size="2xl"
       >
         <div className="space-y-3">
           <div>
@@ -352,7 +354,7 @@ export default function ProjectPage() {
           </div>
           <div>
             <Label>รายละเอียด</Label>
-            <Input {...register('proj_detail')} placeholder="รายละเอียดโครงการ (ไม่บังคับ)" />
+            <Textarea {...register('proj_detail')} rows={4} placeholder="รายละเอียดโครงการ (ไม่บังคับ)" />
           </div>
           <div>
             <Label>สอดคล้องกับนโยบายโรงเรียน (เลือกได้หลายข้อ)</Label>

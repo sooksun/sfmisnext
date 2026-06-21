@@ -16,7 +16,7 @@ import {
   Plane,
 } from 'lucide-react'
 import { openPrintWindow } from '@/lib/print-utils'
-import { officialTravel8708, type Travel8708TravelerRow } from '@/lib/official-forms'
+import { officialTravel8708, officialBor111, type Travel8708TravelerRow, type Bor111Row } from '@/lib/official-forms'
 import { toast } from 'sonner'
 
 import { PageHeader } from '@/components/shared/page-header'
@@ -334,6 +334,28 @@ export default function TravelReimbursementPage() {
     openPrintWindow({ title: `แบบ8708_${it.bc_no || it.tr_id}`, body })
   }
 
+  // แบบ บก.111 — ใบรับรองแทนใบเสร็จรับเงิน (รายจ่ายที่ไม่มีใบเสร็จ: ค่าพาหนะ/ค่าใช้จ่ายอื่น)
+  async function printBor111(it: TravelItem) {
+    const travelers = await apiGet<TravelerRow[]>(`TravelReimbursement/loadTravelers/${it.tr_id}`)
+    const list = travelers ?? []
+    const rows: Bor111Row[] = []
+    for (const t of list) {
+      const who = t.name || it.requester_name || ''
+      if (Number(t.transport) > 0) rows.push({ date: it.depart_date, detail: `ค่าพาหนะเดินทาง — ${who}`, amount: t.transport })
+      if (Number(t.other) > 0) rows.push({ date: it.depart_date, detail: `ค่าใช้จ่ายอื่น — ${who}`, amount: t.other })
+    }
+    if (!rows.length) {
+      if (Number(it.transport_total) > 0) rows.push({ date: it.depart_date, detail: 'ค่าพาหนะเดินทาง', amount: it.transport_total })
+      if (Number(it.other_total) > 0) rows.push({ date: it.depart_date, detail: 'ค่าใช้จ่ายอื่น', amount: it.other_total })
+    }
+    const body = officialBor111({
+      scName, rows,
+      certifierName: it.requester_name, certifierPosition: it.requester_position,
+      affiliation: it.affiliation, signDate: it.receipt_date ?? it.depart_date,
+    })
+    openPrintWindow({ title: `บก111_${it.bc_no || it.tr_id}`, body })
+  }
+
   function handleExport() {
     exportToXlsx(items.map((l) => ({
       'เลขที่ บค.': l.bc_no ?? '-', 'ผู้เดินทาง': l.requester_name ?? '-',
@@ -360,6 +382,7 @@ export default function TravelReimbursementPage() {
       render: (it: TravelItem) => (
         <div className="flex flex-wrap items-center gap-1">
           <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => printForm(it)} title="พิมพ์แบบ 8708"><Printer className="h-3 w-3" /></Button>
+          <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => printBor111(it)} title="พิมพ์แบบ บก.111 (ใบรับรองแทนใบเสร็จรับเงิน)"><Printer className="h-3 w-3 mr-1" />บก.111</Button>
           {it.status === ST.PENDING_VERIFY && isFinance && (
             <Button variant="outline" size="sm" className="h-7 px-2 text-xs text-indigo-600" onClick={() => openVerify(it)}><ClipboardCheck className="h-3 w-3 mr-1" />ตรวจสอบ</Button>
           )}

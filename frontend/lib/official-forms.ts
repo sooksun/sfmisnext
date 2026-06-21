@@ -1307,6 +1307,99 @@ export function officialTravel8708(o: Travel8708Opts): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// แบบ บก.111 — ใบรับรองแทนใบเสร็จรับเงิน (แนบแบบ 8708 / ใช้ทั่วไป)
+// ใช้รับรองรายจ่ายที่ไม่อาจเรียกใบเสร็จรับเงินได้ (เช่น ค่าพาหนะ/ค่าใช้จ่ายอื่น)
+// ═══════════════════════════════════════════════════════════════════════════
+export interface Bor111Row {
+  date?: string | null // วัน เดือน ปี ที่จ่าย
+  detail?: string | null // รายละเอียดการจ่าย
+  amount?: number | null // จำนวนเงิน
+  note?: string | null // หมายเหตุ
+}
+export interface Bor111Opts {
+  /** ส่วนราชการ — ถ้าไม่ส่ง ใช้ "โรงเรียน{scName}" */
+  department?: string | null
+  scName?: string | null
+  rows: Bor111Row[]
+  certifierName?: string | null // ข้าพเจ้า (ผู้รับรอง)
+  certifierPosition?: string | null // ตำแหน่ง
+  certifierLevel?: string | null // ระดับ
+  /** สังกัด — ถ้าไม่ส่ง ใช้ค่าเดียวกับ department */
+  affiliation?: string | null
+  signDate?: string | null // วันที่ลงนามรับรอง
+  /** จำนวนแถวอย่างน้อย (เผื่อเขียนด้วยมือ) — ค่าเริ่มต้น 8 */
+  minRows?: number
+}
+
+export function officialBor111(o: Bor111Opts): string {
+  const dept = o.department ? esc(o.department) : schoolName(o.scName)
+  const affiliation = o.affiliation ? esc(o.affiliation) : dept
+  const rows = o.rows ?? []
+  const total = rows.reduce((s, r) => s + Number(r.amount || 0), 0)
+
+  const dot = (v: string | null | undefined, min: string) =>
+    `<span class="of-dotted" style="min-width:${min}">${v ? esc(v) : ''}</span>`
+
+  const bodyRows = rows
+    .map((r) => {
+      const { baht, sat } = bahtSatang(r.amount)
+      return `<tr style="height:10mm">
+      <td class="ctr">${r.date ? esc(thaiFullDate(r.date)) : ''}</td>
+      <td>${r.detail ? esc(r.detail) : ''}</td>
+      <td class="num">${baht}</td><td class="ctr">${sat}</td>
+      <td>${r.note ? esc(r.note) : ''}</td>
+    </tr>`
+    })
+    .join('')
+  const pad = Math.max(0, (o.minRows ?? 8) - rows.length)
+  const padRows = Array.from({ length: pad })
+    .map(() => `<tr style="height:10mm"><td></td><td></td><td></td><td></td><td></td></tr>`)
+    .join('')
+  const { baht: tBaht, sat: tSat } = bahtSatang(total)
+
+  const table = `<table class="of" style="margin-top:2mm">
+    <thead>
+      <tr>
+        <th rowspan="2" style="width:32mm">วัน เดือน ปี</th>
+        <th rowspan="2">รายละเอียดการจ่าย</th>
+        <th colspan="2">จำนวนเงิน</th>
+        <th rowspan="2" style="width:28mm">หมายเหตุ</th>
+      </tr>
+      <tr><th style="width:24mm">บาท</th><th style="width:14mm">สต.</th></tr>
+    </thead>
+    <tbody>${bodyRows}${padRows}
+      <tr>
+        <td colspan="2" class="ctr"><b>รวมเงิน</b></td>
+        <td class="num"><b>${tBaht}</b></td><td class="ctr">${tSat}</td><td></td>
+      </tr>
+    </tbody>
+  </table>`
+
+  const certify = `<div style="font-size:14pt;line-height:1.9;margin-top:3mm">
+    <div>รวมทั้งสิ้น (ตัวอักษร) ${dot(total > 0 ? numberToThaiBaht(total) : '', '120mm')}</div>
+    <div style="margin-top:2mm">ข้าพเจ้า ${dot(o.certifierName, '55mm')} ตำแหน่ง ${dot(o.certifierPosition, '45mm')} ระดับ ${dot(o.certifierLevel, '25mm')}</div>
+    <div>สังกัด ${o.affiliation || o.department || o.scName ? affiliation : dot('', '50mm')} ขอรับรองว่ารายจ่ายข้างต้นนี้ไม่อาจเรียกใบเสร็จรับเงินจาก</div>
+    <div>ผู้รับเงินได้ และข้าพเจ้าได้จ่ายไปในงานของราชการโดยแท้</div>
+    <div class="of-sign-c" style="margin-top:8mm;text-align:right;padding-right:18mm">
+      <div>ลงชื่อ ${dot('', '50mm')} ผู้รับรอง</div>
+      <div>( ${dot(o.certifierName, '45mm')} )</div>
+      <div>ตำแหน่ง ${dot(o.certifierPosition, '50mm')}</div>
+      <div>วันที่ ${dot(o.signDate ? thaiFullDate(o.signDate) : '', '50mm')}</div>
+    </div>
+  </div>`
+
+  const header = `<div style="position:relative">
+    <div style="position:absolute;top:0;left:0;font-size:13pt;font-weight:bold">แบบ บก.111</div>
+    <div class="of-title" style="margin-bottom:3mm">
+      <div class="of-h1" style="font-size:16pt">แบบใบรับรองแทนใบเสร็จรับเงิน</div>
+    </div>
+  </div>
+  <div style="font-size:14pt">ส่วนราชการ ${o.department || o.scName ? dept : dot('', '80mm')}</div>`
+
+  return FORM_CSS + header + table + certify
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ทะเบียนคุมเพิ่มเติม (คู่มือ ตย.4,5,6,17,18) — แบบฟอร์มที่ขาด
 // ═══════════════════════════════════════════════════════════════════════════
 

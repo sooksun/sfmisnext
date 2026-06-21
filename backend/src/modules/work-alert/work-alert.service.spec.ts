@@ -5,6 +5,7 @@ import { WorkAlert } from './entities/work-alert.entity';
 import { School } from '../school/entities/school.entity';
 import { DeadlineEngineService } from './deadline-engine.service';
 import { DailyCheckService } from './daily-check.service';
+import { CrossDepartmentAuditService } from './cross-department-audit.service';
 import type { ComputedAlert } from './deadline-rules';
 
 const computed = (over: Partial<ComputedAlert> = {}): ComputedAlert => ({
@@ -24,6 +25,7 @@ describe('WorkAlertService', () => {
   let waRepo: jest.Mocked<any>;
   let engine: { computeForSchool: jest.Mock };
   let daily: { computeForSchool: jest.Mock };
+  let crossDepartment: { computeForSchool: jest.Mock };
 
   beforeEach(async () => {
     waRepo = {
@@ -34,6 +36,7 @@ describe('WorkAlertService', () => {
     };
     engine = { computeForSchool: jest.fn().mockResolvedValue([]) };
     daily = { computeForSchool: jest.fn().mockResolvedValue([]) };
+    crossDepartment = { computeForSchool: jest.fn().mockResolvedValue([]) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -42,6 +45,7 @@ describe('WorkAlertService', () => {
         { provide: getRepositoryToken(School), useValue: { find: jest.fn() } },
         { provide: DeadlineEngineService, useValue: engine },
         { provide: DailyCheckService, useValue: daily },
+        { provide: CrossDepartmentAuditService, useValue: crossDepartment },
       ],
     }).compile();
     service = module.get(WorkAlertService);
@@ -105,15 +109,18 @@ describe('WorkAlertService', () => {
     expect(r.unread).toBe(1);
   });
 
-  it('sync: รวมทั้ง calendar + daily_check (แยก source ไม่ชนกัน)', async () => {
+  it('sync: รวม calendar + daily_check + cross_department (แยก source ไม่ชนกัน)', async () => {
     engine.computeForSchool.mockResolvedValue([computed({ rule_code: 'WHT_REMIT' })]);
     daily.computeForSchool.mockResolvedValue([
       computed({ rule_code: 'UNCLOSED_DAYS', period: '2569' }),
     ]);
-    waRepo.find.mockResolvedValue([]); // ไม่มีของเดิมทั้งสอง source
+    crossDepartment.computeForSchool.mockResolvedValue([
+      computed({ rule_code: 'PROCUREMENT_STALE', period: '15' }),
+    ]);
+    waRepo.find.mockResolvedValue([]); // ไม่มีของเดิมทั้งสาม source
     const r = await service.sync(1, '2569');
-    expect(r.computed).toBe(2);
+    expect(r.computed).toBe(3);
     const sources = waRepo.create.mock.calls.map((c: any[]) => c[0].source);
-    expect(sources).toEqual(expect.arrayContaining(['calendar', 'daily_check']));
+    expect(sources).toEqual(expect.arrayContaining(['calendar', 'daily_check', 'cross_department']));
   });
 });

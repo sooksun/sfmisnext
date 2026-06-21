@@ -22,7 +22,7 @@ export class WorkAlert {
   @Column({ name: 'budget_year', type: 'varchar', length: 10, nullable: true })
   budgetYear: string | null;
 
-  /** calendar | daily_check | anomaly | guard | ai */
+  /** calendar | daily_check | cross_department | anomaly | guard | ai */
   @Column({ type: 'varchar', length: 20, default: 'calendar' })
   source: string;
 

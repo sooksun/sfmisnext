@@ -5,6 +5,7 @@ import { WorkAlert } from './entities/work-alert.entity';
 import { School } from '../school/entities/school.entity';
 import { DeadlineEngineService } from './deadline-engine.service';
 import { DailyCheckService } from './daily-check.service';
+import { CrossDepartmentAuditService } from './cross-department-audit.service';
 import type { ComputedAlert } from './deadline-rules';
 import { type JwtUser } from '../../common/utils/tenant-guard';
 import { currentBudgetYearBE } from '../../common/utils/year.util';
@@ -21,19 +22,28 @@ export class WorkAlertService {
     private readonly schoolRepo: Repository<School>,
     private readonly engine: DeadlineEngineService,
     private readonly dailyCheck: DailyCheckService,
+    private readonly crossDepartmentAudit: CrossDepartmentAuditService,
   ) {}
 
-  /** sync ทั้งเตือนปฏิทิน (calendar) + ตรวจปิดวัน (daily_check) */
+  /** sync เตือนปฏิทิน + ตรวจปิดวัน + ตรวจความสอดคล้องข้าม 3 ฝ่าย */
   async sync(scId: number, budgetYear: string, now: Date = new Date()) {
-    const [calendar, daily] = await Promise.all([
+    const [calendar, daily, crossDepartment] = await Promise.all([
       this.engine.computeForSchool(scId, budgetYear, now),
       this.dailyCheck.computeForSchool(scId, budgetYear, now),
+      this.crossDepartmentAudit.computeForSchool(scId, budgetYear, now),
     ]);
     const r1 = await this.syncSource(scId, budgetYear, 'calendar', calendar, now);
     const r2 = await this.syncSource(scId, budgetYear, 'daily_check', daily, now);
+    const r3 = await this.syncSource(
+      scId,
+      budgetYear,
+      'cross_department',
+      crossDepartment,
+      now,
+    );
     return {
-      computed: r1.computed + r2.computed,
-      resolved: r1.resolved + r2.resolved,
+      computed: r1.computed + r2.computed + r3.computed,
+      resolved: r1.resolved + r2.resolved + r3.resolved,
     };
   }
 
@@ -203,4 +213,3 @@ function toDto(r: WorkAlert) {
     status: r.status,
   };
 }
-

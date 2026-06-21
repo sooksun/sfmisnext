@@ -4,6 +4,7 @@ import { WorkAlertController } from './work-alert.controller';
 import { WorkAlertService } from './work-alert.service';
 import { DeadlineEngineService } from './deadline-engine.service';
 import { DailyCheckService } from './daily-check.service';
+import { CrossDepartmentAuditService } from './cross-department-audit.service';
 import { WorkAlertCron } from './work-alert.cron';
 import { WorkAlert } from './entities/work-alert.entity';
 import { School } from '../school/entities/school.entity';
@@ -45,6 +46,7 @@ import { DepositRegister } from '../deposit-register/entities/deposit-register.e
     WorkAlertService,
     DeadlineEngineService,
     DailyCheckService,
+    CrossDepartmentAuditService,
     WorkAlertCron,
   ],
   exports: [WorkAlertService],

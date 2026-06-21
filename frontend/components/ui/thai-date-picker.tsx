@@ -90,6 +90,23 @@ export function ThaiDatePicker({
 
   useEffect(() => setMounted(true), [])
 
+  // รับแบบร่างจาก AI แบบ read-only: เปลี่ยนค่าในฟอร์ม แต่ไม่ submit
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ label?: string; value?: string }>).detail
+      if (!detail?.label || !detail.value) return
+      const scope = containerRef.current?.parentElement
+      const scopeText = (scope?.textContent ?? '').replace(/\s+/g, ' ').trim()
+      const label = detail.label.replace(/\s+/g, ' ').trim()
+      if (scopeText.includes(label) || label.includes(scopeText.split('*')[0].trim())) {
+        onChange?.(detail.value)
+        containerRef.current?.classList.add('ring-2', 'ring-emerald-400', 'rounded-md')
+      }
+    }
+    window.addEventListener('sfmis:ai-prefill-date', handler)
+    return () => window.removeEventListener('sfmis:ai-prefill-date', handler)
+  }, [onChange])
+
   // ── sync view เมื่อ value เปลี่ยนจากภายนอก ───────────────────────────────
   useEffect(() => {
     if (value) {

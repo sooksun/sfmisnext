@@ -12,8 +12,12 @@ interface AiChatState {
   messages: ChatMessage[]
   isOpen: boolean
   isLoading: boolean
+  suggestionsEnabled: boolean
+  position: { x: number; y: number } | null
   setOpen: (open: boolean) => void
   toggle: () => void
+  setSuggestionsEnabled: (enabled: boolean) => void
+  setPosition: (position: { x: number; y: number }) => void
   addMessage: (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => string
   updateMessage: (id: string, content: string) => void
   appendToMessage: (id: string, chunk: string) => void
@@ -29,9 +33,13 @@ export const useAiChatStore = create<AiChatState>()(
       messages: [],
       isOpen: false,
       isLoading: false,
+      suggestionsEnabled: true,
+      position: null,
 
       setOpen: (open) => set({ isOpen: open }),
       toggle: () => set((s) => ({ isOpen: !s.isOpen })),
+      setSuggestionsEnabled: (enabled) => set({ suggestionsEnabled: enabled }),
+      setPosition: (position) => set({ position }),
 
       addMessage: (msg) => {
         const id = `msg-${Date.now()}-${++msgCounter}`
@@ -64,7 +72,11 @@ export const useAiChatStore = create<AiChatState>()(
     }),
     {
       name: 'sfmis-ai-chat',
-      partialize: (s) => ({ messages: s.messages.slice(-50) }), // เก็บแค่ 50 ข้อความล่าสุด
+      partialize: (s) => ({
+        messages: s.messages.slice(-50),
+        suggestionsEnabled: s.suggestionsEnabled,
+        position: s.position,
+      }), // เก็บแค่ 50 ข้อความล่าสุด + ตำแหน่ง/การเปิดคำแนะนำ
     },
   ),
 )

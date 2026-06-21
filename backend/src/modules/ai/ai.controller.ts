@@ -4,6 +4,7 @@ import {
   Get,
   Body,
   Param,
+  Query,
   HttpCode,
   HttpStatus,
   Res,
@@ -32,6 +33,9 @@ import {
 import { MergeExcelImportDto, MergeReconcileDto } from './dto/merge.dto';
 import { ParseProjectDto } from './dto/parse-project.dto';
 import { ProjectExtractService } from './services/project-extract.service';
+import { AssistantCommandDto } from './dto/assistant-command.dto';
+import { AssistantCommandService } from './services/assistant-command.service';
+import { AssistantBriefingService } from './services/assistant-briefing.service';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -61,6 +65,8 @@ export class AiController {
     private readonly mergeService: MergeService,
     private readonly crossDomainGuard: CrossDomainGuardService,
     private readonly projectExtractService: ProjectExtractService,
+    private readonly assistantCommandService: AssistantCommandService,
+    private readonly assistantBriefingService: AssistantBriefingService,
   ) {}
 
   /** สร้าง ChatContext จาก DTO */
@@ -95,6 +101,40 @@ export class AiController {
   ) {
     assertSameSchool(user, dto.sc_id);
     return this.projectExtractService.parse(dto);
+  }
+
+  /** วิเคราะห์คำสั่งและเตรียมแบบร่างเท่านั้น ไม่มีการบันทึกข้อมูล */
+  @Post('assistant/command')
+  @HttpCode(HttpStatus.OK)
+  async assistantCommand(
+    @Body() dto: AssistantCommandDto,
+    @CurrentUser() user: JwtUser,
+  ) {
+    assertSameSchool(user, dto.sc_id);
+    return {
+      flag: true,
+      data: await this.assistantCommandService.interpret(dto),
+    };
+  }
+
+  /**
+   * บทสรุปสถานการณ์เชิงรุก (เปิดแชทแล้วทักทาย + ชี้งานค้าง + ปุ่มลัดตามบริบท)
+   * rule-based ล้วน ไม่เรียก LLM → เร็วและฟรี
+   */
+  @Get('assistant/briefing/:scId/:budgetYear')
+  async assistantBriefing(
+    @Param('scId', ParseIntPipe) scId: number,
+    @Param('budgetYear') budgetYear: string,
+    @CurrentUser() user: JwtUser,
+    @Query('path') path?: string,
+  ) {
+    assertSameSchool(user, scId);
+    return {
+      flag: true,
+      data: await this.assistantBriefingService.build(scId, budgetYear, user, {
+        path,
+      }),
+    };
   }
 
   // ═══════════════════════════════════════════════════

@@ -10,9 +10,12 @@ import { ValidationService } from './services/validation.service';
 import { AnalysisService } from './services/analysis.service';
 import { MergeService } from './services/merge.service';
 import { ProjectExtractService } from './services/project-extract.service';
+import { AssistantCommandService } from './services/assistant-command.service';
+import { AssistantBriefingService } from './services/assistant-briefing.service';
+import { WorkAlertModule } from '../work-alert/work-alert.module';
 
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, WorkAlertModule],
   controllers: [AiController],
   providers: [
     // AI Providers
@@ -26,6 +29,8 @@ import { ProjectExtractService } from './services/project-extract.service';
     AnalysisService,
     MergeService,
     ProjectExtractService,
+    AssistantCommandService,
+    AssistantBriefingService,
   ],
   exports: [AiRouterService, ChatService, ValidationService, AnalysisService],
 })

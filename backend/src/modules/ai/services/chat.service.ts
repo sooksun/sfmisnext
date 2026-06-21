@@ -4,6 +4,10 @@ import { AiRouterService } from '../ai-router.service';
 import { ChatMessage } from '../providers/ai-provider.interface';
 import { ChatRequestDto } from '../dto/chat.dto';
 import { RegulatoryConfigService } from '../../regulatory-config/regulatory-config.service';
+import {
+  buildGlossaryPromptBlock,
+  suggestTerms,
+} from '../knowledge/sfmis-glossary';
 
 /** สรุปข้อมูลการเงิน */
 interface FinancialSummary {
@@ -57,7 +61,7 @@ export class ChatService {
     dto: ChatRequestDto,
     ctx: ChatContext,
   ): Promise<{ content: string; provider: string; model: string }> {
-    const systemPrompt = await this.buildSystemPrompt(ctx);
+    const systemPrompt = await this.buildSystemPrompt(ctx, dto.message);
     const messages = this.buildMessages(dto);
 
     const response = await this.aiRouter.chat('chat', messages, systemPrompt);
@@ -75,7 +79,7 @@ export class ChatService {
     dto: ChatRequestDto,
     ctx: ChatContext,
   ): AsyncGenerator<string> {
-    const systemPrompt = await this.buildSystemPrompt(ctx);
+    const systemPrompt = await this.buildSystemPrompt(ctx, dto.message);
     const messages = this.buildMessages(dto);
 
     yield* this.aiRouter.chatStream('chat', messages, systemPrompt);
@@ -98,7 +102,10 @@ export class ChatService {
   // Helper: สร้าง system prompt พร้อม context
   // ─────────────────────────────────────────────
 
-  private async buildSystemPrompt(ctx: ChatContext): Promise<string> {
+  private async buildSystemPrompt(
+    ctx: ChatContext,
+    userMessage?: string,
+  ): Promise<string> {
     const parts: string[] = [];
 
     // ── 1) บทบาท ──────────────────────────────────────────────────────────
@@ -129,11 +136,33 @@ export class ChatService {
       this.logger.warn('สร้างฐานความรู้ระเบียบไม่สำเร็จ', err);
     }
 
+    // ── 2.5) อภิธานศัพท์ + การตีความคำใกล้เคียง ───────────────────────────
+    parts.push(buildGlossaryPromptBlock());
+    const termHints = userMessage ? suggestTerms(userMessage, { limit: 3 }) : [];
+    if (termHints.length > 0) {
+      parts.push(
+        'หมายเหตุการตีความคำในคำถามนี้ (จากอภิธานศัพท์ — ผู้ใช้อาจพิมพ์ย่อ/สะกดผิด):',
+      );
+      for (const t of termHints) {
+        parts.push(`• น่าจะหมายถึง "${t.canonical}" — ${t.meaning}`);
+      }
+      parts.push(
+        'ให้ยืนยันคำที่เข้าใจไว้ต้นคำตอบ และถ้ามีหลายความหมายให้ถามผู้ใช้สั้น ๆ ก่อนตอบยาว',
+      );
+    }
+    parts.push('');
+
     // ── 3) แนวทางการตอบ ───────────────────────────────────────────────────
     parts.push('แนวทางการตอบ:');
-    parts.push('- ตอบเป็นภาษาไทย กระชับ ชัดเจน เป็นมืออาชีพ และนำไปใช้ได้จริง');
+    parts.push('- ตอบเป็นภาษาไทย เป็นมืออาชีพ ละเอียดพอใช้งานได้จริง แต่ไม่เยิ่นเย้อ');
     parts.push(
-      '- เมื่อให้คำปรึกษา ให้อ้างอิงระเบียบ/มาตรา/เกณฑ์ที่เกี่ยวข้องเสมอ (เช่น "ตามระเบียบฯ 2562 ต้องนำส่งภายใน...")',
+      '- จัดรูปแบบคำตอบให้อ่านง่าย: เริ่มด้วยสรุป/ตัวเลขสำคัญ 1-2 บรรทัด แล้วค่อยลงรายละเอียดเป็น bullet หรือข้อ ๆ',
+    );
+    parts.push(
+      '- สำหรับคำถามให้คำปรึกษา ใช้โครงสร้าง: (1) คำตอบ/ข้อสรุป (2) เหตุผล/การคำนวณ (3) ระเบียบ/เกณฑ์ที่อ้างอิง (4) ข้อควรระวัง/ความเสี่ยง (5) ขั้นตอนถัดไปที่แนะนำ — ข้ามข้อที่ไม่เกี่ยวได้',
+    );
+    parts.push(
+      '- อ้างอิงระเบียบ/มาตรา/เกณฑ์ที่เกี่ยวข้องพร้อมตัวเลขจริงเสมอ (เช่น "หักภาษี ณ ที่จ่ายเมื่อจ่าย ≥ 1,000 บาท") ไม่พูดลอย ๆ',
     );
     parts.push('- ตัวเลขเงินแสดงเป็นบาท เช่น 12,345.67 บาท');
     parts.push(
@@ -143,7 +172,10 @@ export class ChatService {
       '- ⚠️ ห้ามใช้ placeholder เช่น (จำนวนเงิน)/(ข้อมูล) เด็ดขาด — ถ้าไม่มีข้อมูลให้บอกตรงๆ ว่า "ไม่มีข้อมูลส่วนนี้ในระบบ"',
     );
     parts.push(
-      '- ถ้าพบความเสี่ยงผิดระเบียบ (เช่น เงินยืมเกินกำหนด, รายได้แผ่นดินค้างนำส่ง, เงินสดเกินวงเงิน) ให้เตือนและแนะนำวิธีแก้',
+      '- ถ้าพบความเสี่ยงผิดระเบียบ (เช่น เงินยืมเกินกำหนด, รายได้แผ่นดินค้างนำส่ง, เงินสดเกินวงเงิน) ให้เตือนและแนะนำวิธีแก้ที่ทำได้ทันที',
+    );
+    parts.push(
+      '- เมื่อเหมาะสม ให้ชี้เมนู/หน้าจอที่ผู้ใช้ควรไปทำต่อ (เช่น "ไปที่ จ่ายเงิน → สร้างใบสำคัญจ่าย") เพื่อให้ลงมือได้เลย',
     );
     parts.push('');
 

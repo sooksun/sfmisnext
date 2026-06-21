@@ -12,6 +12,7 @@ out/
 .env
 .env.local
 .env.*.local
+.env.production
 .env.smoke
 backend/.env
 # local credential / artifact dump (curl tests, manual login response, ฯลฯ)

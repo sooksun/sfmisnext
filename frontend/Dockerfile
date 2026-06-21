@@ -3,6 +3,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+# NEXT_PUBLIC_* ต้องมีตอน build เพราะ Next.js inline ค่าลง client bundle
+ARG NEXT_PUBLIC_API_URL=http://localhost:3000/api/
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 
 FROM node:20-alpine

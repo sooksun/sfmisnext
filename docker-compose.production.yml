@@ -1,0 +1,39 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Production stack — เชื่อม MariaDB ภายนอก (192.168.1.4:3306) ไม่สร้าง db ในตัว
+# ใช้งาน:  docker compose -f docker-compose.production.yml --env-file .env.production up -d --build
+# ──────────────────────────────────────────────────────────────────────────────
+services:
+  backend:
+    build: ./backend
+    image: sfmisystem-backend:prod
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # DB_* / JWT_SECRET / CORS_ORIGIN / AI_* มาจาก .env.production (env_file)
+    ports:
+      - '3000:3000'
+    # เข้าถึง MariaDB ที่ 192.168.1.4 (LAN) ได้ผ่าน bridge network ปกติ
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # NEXT_PUBLIC_* ต้องส่งตอน build เพราะ Next.js ฝังลง client bundle
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    image: sfmisystem-frontend:prod
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      # NEXTAUTH_URL / AUTH_SECRET / NEXT_PUBLIC_API_URL มาจาก .env.production
+    ports:
+      - '3001:3001'
+    depends_on:
+      - backend

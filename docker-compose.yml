@@ -37,7 +37,8 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-}
     ports:
-      - '3000:3000'
+      # host 9941 → container 3000 (API)
+      - '9941:3000'
     depends_on:
       db:
         condition: service_healthy
@@ -49,7 +50,8 @@ services:
       NEXTAUTH_URL: "${NEXTAUTH_URL:?NEXTAUTH_URL is required — production frontend URL}"
       AUTH_SECRET: "${AUTH_SECRET:?AUTH_SECRET is required — generate via node crypto.randomBytes(32).toString('base64url')}"
     ports:
-      - '3001:3001'
+      # host 9940 → container 3001 (Web)
+      - '9940:3001'
     depends_on:
       - backend
 

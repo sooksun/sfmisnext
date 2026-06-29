@@ -14,7 +14,8 @@ services:
       PORT: 3000
       # DB_* / JWT_SECRET / CORS_ORIGIN / AI_* มาจาก .env.production (env_file)
     ports:
-      - '3000:3000'
+      # host 9941 → container 3000 (API)
+      - '9941:3000'
     # เข้าถึง MariaDB ที่ 192.168.1.4 (LAN) ได้ผ่าน bridge network ปกติ
     extra_hosts:
       - 'host.docker.internal:host-gateway'
@@ -34,6 +35,7 @@ services:
       PORT: 3001
       # NEXTAUTH_URL / AUTH_SECRET / NEXT_PUBLIC_API_URL มาจาก .env.production
     ports:
-      - '3001:3001'
+      # host 9940 → container 3001 (Web)
+      - '9940:3001'
     depends_on:
       - backend

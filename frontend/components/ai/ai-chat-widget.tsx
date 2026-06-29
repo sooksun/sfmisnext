@@ -69,7 +69,7 @@ export function AiChatWidget() {
 
       {/* การ์ดคำแนะนำเชิงรุก — เด้งเองมุมขวาบนก่อนเปิดแชท */}
       {showPeek && (
-        <div className="fixed top-20 right-4 z-40 w-72 max-w-[calc(100vw-2rem)] space-y-1.5 rounded-xl border border-emerald-200 bg-white/95 p-2.5 shadow-xl backdrop-blur">
+        <div className="fixed bottom-24 right-6 z-40 w-72 max-w-[calc(100vw-2rem)] space-y-1.5 rounded-xl border border-emerald-200 bg-white/95 p-2.5 shadow-xl backdrop-blur">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
               <Sparkles className="h-3.5 w-3.5" />
@@ -111,8 +111,8 @@ export function AiChatWidget() {
       {!isOpen && (
         <button
           onClick={toggle}
-          className="fixed top-20 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 shadow-lg transition-all duration-300 hover:from-emerald-600 hover:to-teal-600"
-          style={{ marginTop: showPeek ? peekAlerts.length * 52 + 56 : 0 }}
+          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 shadow-lg transition-all duration-300 hover:from-emerald-600 hover:to-teal-600"
+          style={{}}
           title="เปิด AI ผู้ช่วยอัจฉริยะ"
         >
           <Sparkles className="h-6 w-6 text-white" />

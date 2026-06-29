@@ -51,11 +51,13 @@ interface SupplieLine {
   order_id: number
   supp_id: number
   pc_total: number
+  pc_price?: number
 }
 
 interface SupplieMaster {
   supp_id: number
   supp_name: string
+  supp_price?: number
 }
 
 interface ImportItem {
@@ -120,6 +122,7 @@ export default function ManageProjectPage() {
   // ฟอร์มเพิ่มพัสดุ
   const [newSuppId, setNewSuppId] = useState(0)
   const [newQty, setNewQty] = useState(1)
+  const [newPrice, setNewPrice] = useState(0)
   const [deleteLine, setDeleteLine] = useState<SupplieLine | null>(null)
   // นำเข้า Excel
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -169,6 +172,8 @@ export default function ManageProjectPage() {
   const lineList = Array.isArray(lines) ? lines : []
   const supplieName = (id: number) =>
     supplieList.find((s) => s.supp_id === id)?.supp_name ?? `#${id}`
+  const suppliePrice = (id: number) =>
+    supplieList.find((s) => s.supp_id === id)?.supp_price ?? 0
 
   const ordersByProject = useMemo(() => {
     const m = new Map<number, ParcelOrder>()
@@ -208,6 +213,7 @@ export default function ManageProjectPage() {
         order_id: activeOrder!.order_id,
         supp_id: newSuppId,
         pc_total: newQty,
+        pc_price: newPrice,
       }),
     onSuccess: (res: any) => {
       if (res?.flag) {
@@ -215,6 +221,7 @@ export default function ManageProjectPage() {
         qc.invalidateQueries({ queryKey: ['mp-lines', activeOrder?.order_id] })
         setNewSuppId(0)
         setNewQty(1)
+        setNewPrice(0)
       } else {
         toast.error(res?.ms || 'เพิ่มไม่สำเร็จ')
       }
@@ -508,40 +515,66 @@ export default function ManageProjectPage() {
                   <thead className="bg-gray-50 text-gray-600">
                     <tr>
                       <th className="text-left px-3 py-2">พัสดุ</th>
-                      <th className="text-right px-3 py-2 w-28">จำนวน</th>
+                      <th className="text-right px-3 py-2 w-32">ราคาต่อชิ้น</th>
+                      <th className="text-right px-3 py-2 w-24">จำนวน</th>
+                      <th className="text-right px-3 py-2 w-36">ราคารวม (บาท)</th>
                       <th className="px-3 py-2 w-16"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {lineList.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="text-center text-gray-400 py-4">
+                        <td colSpan={5} className="text-center text-gray-400 py-4">
                           ยังไม่มีรายการพัสดุ
                         </td>
                       </tr>
                     ) : (
-                      lineList.map((line) => (
-                        <tr key={line.pc_id} className="border-t">
-                          <td className="px-3 py-2">{supplieName(line.supp_id)}</td>
-                          <td className="px-3 py-2 text-right font-mono">
-                            {line.pc_total?.toLocaleString()}
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            {!locked && (
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => setDeleteLine(line)}
-                                title="ลบ"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))
+                      lineList.map((line) => {
+                        const unitPrice = line.pc_price ?? suppliePrice(line.supp_id)
+                        const total = unitPrice * (line.pc_total ?? 0)
+                        return (
+                          <tr key={line.pc_id} className="border-t">
+                            <td className="px-3 py-2">{supplieName(line.supp_id)}</td>
+                            <td className="px-3 py-2 text-right font-mono">
+                              {fmt(unitPrice)}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono">
+                              {line.pc_total?.toLocaleString()}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono font-medium">
+                              {fmt(total)}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {!locked && (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => setDeleteLine(line)}
+                                  title="ลบ"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })
                     )}
                   </tbody>
+                  {lineList.length > 0 && (
+                    <tfoot className="bg-gray-50 font-semibold text-gray-700">
+                      <tr className="border-t-2">
+                        <td className="px-3 py-2" colSpan={3}>รวมทั้งหมด</td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          {fmt(lineList.reduce((s, line) => {
+                            const p = line.pc_price ?? suppliePrice(line.supp_id)
+                            return s + p * (line.pc_total ?? 0)
+                          }, 0))}
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
 
@@ -552,7 +585,11 @@ export default function ManageProjectPage() {
                     <Label>เลือกพัสดุ</Label>
                     <Select
                       value={newSuppId > 0 ? String(newSuppId) : ''}
-                      onValueChange={(v) => setNewSuppId(Number(v))}
+                      onValueChange={(v) => {
+                        const id = Number(v)
+                        setNewSuppId(id)
+                        setNewPrice(suppliePrice(id))
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="เลือกพัสดุ" />
@@ -566,7 +603,17 @@ export default function ManageProjectPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="w-28">
+                  <div className="w-32">
+                    <Label>ราคาต่อชิ้น (บาท)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newPrice}
+                      onChange={(e) => setNewPrice(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="w-24">
                     <Label>จำนวน</Label>
                     <Input
                       type="number"
@@ -575,9 +622,15 @@ export default function ManageProjectPage() {
                       onChange={(e) => setNewQty(Number(e.target.value))}
                     />
                   </div>
+                  <div className="w-36">
+                    <Label>ราคารวม</Label>
+                    <div className="h-10 flex items-center px-3 border rounded-md bg-gray-50 font-mono text-sm font-medium">
+                      {fmt(newPrice * newQty)}
+                    </div>
+                  </div>
                   <Button
                     onClick={() => addLine.mutate()}
-                    disabled={newSuppId === 0 || newQty < 1 || addLine.isPending}
+                    disabled={newSuppId === 0 || newQty < 1 || newPrice < 0 || addLine.isPending}
                   >
                     <Plus className="h-4 w-4" />
                     เพิ่ม

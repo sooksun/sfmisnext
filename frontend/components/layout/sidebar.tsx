@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import {
   LayoutDashboard,
+  Compass,
   Users,
   CalendarRange,
   FolderOpen,
@@ -22,6 +23,7 @@ import {
   ChevronDown,
   ChevronRight,
   RotateCcw,
+  HardDriveDownload,
   School,
   GraduationCap,
   Wallet,
@@ -106,6 +108,12 @@ const navGroups: NavItem[] = [
     label: 'แดชบอร์ด',
     href: '/dashboard',
     icon: LayoutDashboard,
+    roles: ALL,
+  },
+  {
+    label: 'ภาพรวมระบบและคู่มือ',
+    href: '/sfmis',
+    icon: Compass,
     roles: ALL,
   },
   {
@@ -229,7 +237,8 @@ const navGroups: NavItem[] = [
       { label: '5.6.1 บันทึกกิจกรรมระบบ', href: '/sfmis/admin-tools/activity-log', icon: History,         roles: ADMIN },
       { label: '5.7 เกณฑ์ตามระเบียบ', href: '/sfmis/admin-tools/regulatory-config', icon: Settings,    roles: ADMIN },
       { label: '5.8 กรรมการเก็บรักษาเงิน', href: '/sfmis/admin-tools/cash-committee', icon: UserCheck, roles: ADMIN },
-      { label: '5.9 รีเซ็ต/ข้อมูลตัวอย่าง', href: '/sfmis/admin-tools/system-reset', icon: RotateCcw, roles: SUPER },
+      { label: '5.9 รีเซ็ต/ข้อมูลตัวอย่าง', href: '/sfmis/admin-tools/system-reset', icon: RotateCcw,          roles: SUPER },
+      { label: '5.10 สำรองข้อมูล',          href: '/sfmis/admin-tools/backup',       icon: HardDriveDownload, roles: SUPER },
     ],
   },
   {

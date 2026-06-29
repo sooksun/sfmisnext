@@ -4,11 +4,16 @@ import { NextResponse } from 'next/server'
 export const proxy = auth(function proxy(req) {
   const isAuthenticated = !!req.auth
   const isAuthPage = req.nextUrl.pathname.startsWith('/sign-in')
+  const isPublicPage = req.nextUrl.pathname === '/' || req.nextUrl.pathname === '/sfmis'
 
   if (isAuthPage) {
     if (isAuthenticated) {
       return NextResponse.redirect(new URL('/dashboard', req.url))
     }
+    return NextResponse.next()
+  }
+
+  if (isPublicPage) {
     return NextResponse.next()
   }
 

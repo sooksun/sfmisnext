@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "predev": "node scripts/kill-port.mjs 3001",
-    "dev": "next dev --port 3001 --webpack",
+    "dev": "next dev --port 3001 --webpack --hostname 0.0.0.0",
     "build": "next build",
     "postbuild": "node -e \"const fs=require('fs');fs.cpSync('.next/static','.next/standalone/.next/static',{recursive:true});fs.cpSync('public','.next/standalone/public',{recursive:true});if(fs.existsSync('.env.local'))fs.copyFileSync('.env.local','.next/standalone/.env.local');\"",
     "start": "set PORT=3001 && node .next/standalone/server.js",

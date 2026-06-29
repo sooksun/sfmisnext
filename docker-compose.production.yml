@@ -37,5 +37,9 @@ services:
     ports:
       # host 9940 → container 3001 (Web)
       - '9940:3001'
+    # NextAuth authorize() ฝั่ง server fetch ผ่านโดเมน — ให้ container resolve
+    # โดเมนตรงไป NPM บนโฮสต์ (192.168.1.4:443) เลี่ยง hairpin NAT ที่ทำให้ SSL fail
+    extra_hosts:
+      - 'sfmis.cnppai.com:192.168.1.4'
     depends_on:
       - backend

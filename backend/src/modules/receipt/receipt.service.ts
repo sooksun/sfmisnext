@@ -190,7 +190,7 @@ export class ReceiptService {
     }
 
     const receipt = await this.receiptRepository.findOne({
-      where: { rId: dto.r_id, status: '1' },
+      where: { rId: dto.r_id, scId: dto.sc_id, status: '1' },
     });
 
     if (!receipt) {

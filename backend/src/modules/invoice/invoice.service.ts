@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, Not, LessThan } from 'typeorm';
+import { Repository, IsNull, Not, LessThan, In } from 'typeorm';
 import { RequestWithdraw } from './entities/request-withdraw.entity';
 import { AddInvoiceDto } from './dto/add-invoice.dto';
 import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
@@ -272,7 +272,7 @@ export class InvoiceService {
         scId,
         acadYear: syId,
         del: 0,
-        orderStatus: 2, // Approved by plan
+        orderStatus: In([5, 6, 7]), // พร้อมออกใบเบิก (ผ่านขั้นตอนอนุมัติแล้ว)
       },
       order: { orderId: 'DESC' },
     });
@@ -310,7 +310,7 @@ export class InvoiceService {
     }));
   }
 
-  async loadBudgetType(scId: number, syId: number, _year: string) {
+  async loadBudgetType(scId: number, syId: number, year: string) {
     const budgetTypes = await this.budgetIncomeTypeRepository.find({
       where: { del: 0 },
       order: { bgTypeId: 'ASC' },
@@ -323,8 +323,8 @@ export class InvoiceService {
       .select('rw.bg_type_id', 'bgTypeId')
       .addSelect('SUM(rw.amount)', 'total')
       .where(
-        'rw.sc_id = :scId AND rw.sy_id = :syId AND rw.del = 0 AND rw.status >= 200',
-        { scId, syId },
+        'rw.sc_id = :scId AND rw.sy_id = :syId AND rw.year = :year AND rw.del = 0 AND rw.status >= 200',
+        { scId, syId, year },
       )
       .groupBy('rw.bg_type_id')
       .getRawMany<{ bgTypeId: number; total: string }>();

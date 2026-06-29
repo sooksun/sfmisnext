@@ -43,78 +43,83 @@ export class ReceiveService {
 
   async loadReceive(scId: number, syId: number, budgetYear: string) {
     const receives = await this.plnReceiveRepository.find({
-      where: {
-        scId,
-        syId,
-        budgetYear,
-        del: 0,
-      },
+      where: { scId, syId, budgetYear, del: 0 },
       order: { prId: 'DESC' },
     });
 
-    const result = await Promise.all(
-      receives.map(async (receive) => {
-        const details = await this.plnReceiveDetailRepository.find({
-          where: {
-            prId: receive.prId,
-            del: 0,
-          },
-        });
+    if (receives.length === 0) return [];
 
-        const totalBudget = details.reduce(
-          (sum, detail) => sum + (detail.prdBudget || 0),
-          0,
-        );
+    // batch-load details + budget types ใน 2 queries แทน 2N
+    const prIds = receives.map((r) => r.prId);
+    const allDetails = await this.plnReceiveDetailRepository.find({
+      where: { prId: In(prIds), del: 0 },
+    });
 
-        // Lookup budget type name
-        let budgetTypeName = '';
-        if (receive.receiveMoneyType) {
-          const bt = await this.budgetIncomeTypeRepository.findOne({
-            where: { bgTypeId: receive.receiveMoneyType },
-          });
-          if (bt) budgetTypeName = bt.budgetType;
-        }
+    const bgTypeIds = [
+      ...new Set(
+        receives
+          .map((r) => r.receiveMoneyType)
+          .filter((id): id is number => id != null),
+      ),
+    ];
+    const budgetTypes = bgTypeIds.length > 0
+      ? await this.budgetIncomeTypeRepository.find({
+          where: { bgTypeId: In(bgTypeIds) },
+        })
+      : [];
+    const btMap = new Map(budgetTypes.map((bt) => [bt.bgTypeId, bt.budgetType]));
 
-        return {
-          pr_id: receive.prId,
-          rw_id: receive.prId,
-          pr_no: receive.prNo,
-          sc_id: receive.scId,
-          receive_form: receive.receiveForm,
-          sy_id: receive.syId,
-          budget_year: receive.budgetYear,
-          user_receive: receive.userReceive,
-          receive_money_type: receive.receiveMoneyType,
-          budget_type_id: receive.receiveMoneyType,
-          budget_type_name: budgetTypeName,
-          receive_date: receive.receiveDate,
-          amount: totalBudget,
-          note: receive.receiveForm,
-          cf_transaction: receive.cfTransaction,
-          up_by: receive.upBy,
-          up_date: receive.updateDate,
-          del: receive.del,
-          create_date: receive.createDate,
-          update_date: receive.updateDate,
-          total_budget: totalBudget,
-          pln_receive_detail: {
-            data: details.map((detail) => ({
-              prd_id: detail.prdId,
-              pr_id: detail.prId,
-              bg_type_id: detail.bgTypeId,
-              prd_detail: detail.prdDetail,
-              prd_budget: detail.prdBudget,
-              up_by: detail.upBy,
-              del: detail.del,
-              create_date: detail.createDate,
-              update_date: detail.updateDate,
-            })),
-          },
-        };
-      }),
-    );
+    // group details by prId
+    const detailsByPr = new Map<number, PlnReceiveDetail[]>();
+    for (const d of allDetails) {
+      const list = detailsByPr.get(d.prId) ?? [];
+      list.push(d);
+      detailsByPr.set(d.prId, list);
+    }
 
-    return result;
+    return receives.map((receive) => {
+      const details = detailsByPr.get(receive.prId) ?? [];
+      const totalBudget = details.reduce((sum, d) => sum + (d.prdBudget || 0), 0);
+
+      return {
+        pr_id: receive.prId,
+        rw_id: receive.prId,
+        pr_no: receive.prNo,
+        sc_id: receive.scId,
+        receive_form: receive.receiveForm,
+        sy_id: receive.syId,
+        budget_year: receive.budgetYear,
+        user_receive: receive.userReceive,
+        receive_money_type: receive.receiveMoneyType,
+        budget_type_id: receive.receiveMoneyType,
+        budget_type_name: receive.receiveMoneyType != null
+          ? (btMap.get(receive.receiveMoneyType) ?? '')
+          : '',
+        receive_date: receive.receiveDate,
+        amount: totalBudget,
+        note: receive.receiveForm,
+        cf_transaction: receive.cfTransaction,
+        up_by: receive.upBy,
+        up_date: receive.updateDate,
+        del: receive.del,
+        create_date: receive.createDate,
+        update_date: receive.updateDate,
+        total_budget: totalBudget,
+        pln_receive_detail: {
+          data: details.map((d) => ({
+            prd_id: d.prdId,
+            pr_id: d.prId,
+            bg_type_id: d.bgTypeId,
+            prd_detail: d.prdDetail,
+            prd_budget: d.prdBudget,
+            up_by: d.upBy,
+            del: d.del,
+            create_date: d.createDate,
+            update_date: d.updateDate,
+          })),
+        },
+      };
+    });
   }
 
   async loadAutoAddReceive(scId: number, syId: number) {

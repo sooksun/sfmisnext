@@ -63,6 +63,14 @@ export const REGULATORY_DEFAULTS: RegulatoryDefault[] = [
     lawRef: 'พ.ร.บ.จัดซื้อจัดจ้างฯ 2560 ม.11',
   },
   {
+    key: 'procurement.security_bg_type_id',
+    value: 11,
+    unit: 'bg_type_id',
+    group: 'procurement',
+    label: 'bg_type_id ของประเภทเงิน "เงินประกันสัญญา" (master_budget_income_type)',
+    lawRef: 'ระเบียบกระทรวงการคลังฯ 2560 ข้อ 168',
+  },
+  {
     key: 'procurement.contract_security_pct',
     value: 5,
     unit: '%',

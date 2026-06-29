@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -73,6 +74,7 @@ import { PlanTraceModule } from './modules/plan-trace/plan-trace.module';
 import { IntraBankTransferModule } from './modules/intra-bank-transfer/intra-bank-transfer.module';
 import { SupplieRequestModule } from './modules/supplie-request/supplie-request.module';
 import { SchoolResetModule } from './modules/school-reset/school-reset.module';
+import { SchoolBackupModule } from './modules/school-backup/school-backup.module';
 import { RegulatoryConfigModule } from './modules/regulatory-config/regulatory-config.module';
 import { CrossDomainGuardModule } from './modules/cross-domain-guard/cross-domain-guard.module';
 import { FundBorrowingModule } from './modules/fund-borrowing/fund-borrowing.module';
@@ -110,7 +112,7 @@ import { AreaModule } from './modules/area/area.module';
         database: process.env.DB_NAME || 'sfmisystem',
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         synchronize: process.env.NODE_ENV !== 'production',
-        migrationsRun: false,
+        migrationsRun: process.env.NODE_ENV === 'production',
         autoLoadEntities: true,
       }),
     }),
@@ -178,6 +180,7 @@ import { AreaModule } from './modules/area/area.module';
     PlanTraceModule,
     IntraBankTransferModule,
     SchoolResetModule,
+    SchoolBackupModule,
     SupplieRequestModule,
     RegulatoryConfigModule,
     FundBorrowingModule,
@@ -189,7 +192,9 @@ import { AreaModule } from './modules/area/area.module';
   controllers: [AppController],
   providers: [
     AppService,
-    // Global Sentry exception filter — captures unhandled exceptions when SENTRY_DSN is set
+    // AllExceptionsFilter runs last (LIFO) — ส่ง JSON response ทุก unhandled error เสมอ
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    // SentryGlobalFilter runs first (registered last) — capture to Sentry แล้ว re-throw
     ...(process.env.SENTRY_DSN
       ? [{ provide: APP_FILTER, useClass: SentryGlobalFilter }]
       : []),

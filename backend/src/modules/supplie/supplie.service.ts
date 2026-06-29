@@ -545,6 +545,8 @@ export class SupplieService {
       await manager.save(ReceiveParcelOrder, receive);
 
       for (const detail of dto.detail) {
+        // NOTE: tb_transaction_supplies ไม่มีคอลัมน์ sc_id — วัสดุผูกโรงเรียนผ่าน supp_id
+        // (tb_supplies.sc_id) จึงกรองด้วย supp_id พอ ไม่ต้องกรอง trans.sc_id ที่ไม่มีจริง
         const lastTransaction = await manager
           .createQueryBuilder(TransactionSupplies, 'trans')
           .where('trans.supp_id = :suppId', { suppId: detail.supp_id })

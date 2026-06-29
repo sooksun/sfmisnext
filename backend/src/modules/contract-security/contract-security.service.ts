@@ -54,24 +54,21 @@ export class ContractSecurityService {
     private readonly regulatoryConfig: RegulatoryConfigService,
   ) {}
 
-  /** หาประเภทเงิน "เงินประกันสัญญา" สำหรับลงทะเบียนคุมเงินฝากส่วนราชการ */
-  private async resolveGuaranteeMoneyType(): Promise<{
-    id: number | null;
-    name: string | null;
-  }> {
-    const bt =
-      (await this.budgetTypeRepo
-        .createQueryBuilder('bt')
-        .where('bt.budget_type LIKE :n', { n: '%ประกันสัญญา%' })
-        .andWhere('bt.del = 0')
-        .orderBy('bt.bg_type_id', 'ASC')
-        .getOne()) ??
-      (await this.budgetTypeRepo
-        .createQueryBuilder('bt')
-        .where('bt.budget_type LIKE :n', { n: '%ประกัน%' })
-        .andWhere('bt.del = 0')
-        .orderBy('bt.bg_type_id', 'ASC')
-        .getOne());
+  /** หาประเภทเงิน "เงินประกันสัญญา" สำหรับลงทะเบียนคุมเงินฝากส่วนราชการ
+   *  ใช้ config key `procurement.security_bg_type_id` (default=11) แทน LIKE matching
+   *  เพื่อกันกรณีที่ admin เพิ่มประเภทเงินชื่อคล้ายกัน */
+  private async resolveGuaranteeMoneyType(
+    scId: number,
+  ): Promise<{ id: number | null; name: string | null }> {
+    const bgTypeId = await this.regulatoryConfig.getThreshold(
+      scId,
+      'procurement.security_bg_type_id',
+    );
+    if (!bgTypeId) return { id: null, name: null };
+
+    const bt = await this.budgetTypeRepo.findOne({
+      where: { bgTypeId, del: 0 },
+    });
     return { id: bt ? bt.bgTypeId : null, name: bt ? bt.budgetType : null };
   }
 
@@ -134,7 +131,7 @@ export class ContractSecurityService {
 
     // 1.5 หลักประกันสัญญาที่เป็นเงินสด → นำฝาก สพป. (ทะเบียนคุมเงินฝากส่วนราชการ)
     if (securityForm === 1) {
-      const mt = await this.resolveGuaranteeMoneyType();
+      const mt = await this.resolveGuaranteeMoneyType(dto.sc_id ?? 0);
       const smp = this.smpRepo.create({
         scId: dto.sc_id ?? 0,
         syId: dto.sy_id ?? 0,

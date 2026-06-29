@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { PlnProcurementPlan } from './entities/pln-procurement-plan.entity';
 import { PlnProcurementPlanItem } from './entities/pln-procurement-plan-item.entity';
 import { ParcelOrder } from '../project-approve/entities/parcel-order.entity';
@@ -327,28 +327,55 @@ export class ProcurementPlanService {
       order: { ppId: 'ASC' },
     });
 
+    if (plans.length === 0) {
+      return { data: [], summary: { grand_plan: 0, grand_actual: 0, grand_variance: 0, total_items: 0, completed_items: 0 } };
+    }
+
+    // batch-load: items ทุก plan ใน 1 query
+    const planIds = plans.map((p) => p.ppId);
+    const allItems = await this.itemRepo.find({
+      where: { ppId: In(planIds), del: 0 },
+      order: { ppId: 'ASC', ppiId: 'ASC' },
+    });
+
+    // batch-load: orders ทุก item ใน 1 query
+    const itemIds = allItems.map((i) => i.ppiId);
+    const allOrders = itemIds.length > 0
+      ? await this.orderRepo
+          .createQueryBuilder('o')
+          .where('o.ppi_id IN (:...ids)', { ids: itemIds })
+          .andWhere('o.del = 0')
+          .andWhere('o.sc_id = :scId', { scId })
+          .getMany()
+      : [];
+
+    // group in memory
+    const itemsByPlan = new Map<number, typeof allItems>();
+    for (const item of allItems) {
+      const list = itemsByPlan.get(item.ppId) ?? [];
+      list.push(item);
+      itemsByPlan.set(item.ppId, list);
+    }
+    const ordersByItem = new Map<number, typeof allOrders>();
+    for (const order of allOrders) {
+      if (order.ppiId == null) continue;
+      const list = ordersByItem.get(order.ppiId) ?? [];
+      list.push(order);
+      ordersByItem.set(order.ppiId, list);
+    }
+
     const result: any[] = [];
     let grandPlan = 0;
     let grandActual = 0;
 
     for (const plan of plans) {
-      const items = await this.itemRepo.find({
-        where: { ppId: plan.ppId, del: 0 },
-        order: { ppiId: 'ASC' },
-      });
-
+      const items = itemsByPlan.get(plan.ppId) ?? [];
       const itemRows: any[] = [];
       let planSubtotal = 0;
       let actualSubtotal = 0;
 
       for (const item of items) {
-        const orders = await this.orderRepo
-          .createQueryBuilder('o')
-          .where('o.ppi_id = :ppiId', { ppiId: item.ppiId })
-          .andWhere('o.del = 0')
-          .andWhere('o.sc_id = :scId', { scId })
-          .getMany();
-
+        const orders = ordersByItem.get(item.ppiId) ?? [];
         const latestOrder =
           orders.find((o) => o.orderStatus !== 9) ?? orders[0] ?? null;
         const actualBudget = latestOrder ? Number(latestOrder.budgets) || 0 : 0;

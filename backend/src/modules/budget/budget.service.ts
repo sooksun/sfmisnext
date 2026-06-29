@@ -716,23 +716,6 @@ export class BudgetService {
         return { flag: false, ms: 'กลุ่มงานนี้มีอยู่แล้วในปีงบประมาณนี้' };
       }
 
-      // Get estimate for percent calculation
-      const estimate = await this.tbEstimateAcadyearRepository.findOne({
-        where: {
-          scId: payload.sc_id,
-          syId: payload.sy_id,
-          budgetYear: payload.budget_year,
-          del: 0,
-        },
-      });
-
-      if (!estimate) {
-        return {
-          flag: false,
-          ms: 'ไม่พบข้อมูลงบประมาณรวมรายปี กรุณากำหนดงบประมาณรวมรายปีก่อน',
-        };
-      }
-
       // Create new budget category
       const plnBudget = new PlnBudgetCategory();
       plnBudget.scId = payload.sc_id;

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BankLedgerEntry } from './entities/bank-ledger-entry.entity';
 import { Admin } from '../admin/entities/admin.entity';
 import { DeleteLogService } from '../delete-log/delete-log.service';
@@ -17,6 +17,7 @@ export class BankLedgerService {
     @InjectRepository(Admin)
     private readonly adminRepo: Repository<Admin>,
     private readonly deleteLogService: DeleteLogService,
+    private readonly dataSource: DataSource,
   ) {}
 
   /** โหลดรายการของบัญชีธนาคาร 1 บัญชี พร้อม running balance */
@@ -141,7 +142,7 @@ export class BankLedgerService {
     note?: string;
     up_by?: number;
   }) {
-    // snapshot signer name
+    // snapshot signer name ก่อนเข้า transaction (ไม่เกี่ยวกับ ba_id lock)
     let signerName: string | null = null;
     if (dto.signer_id) {
       const admin = await this.adminRepo.findOne({
@@ -150,25 +151,36 @@ export class BankLedgerService {
       if (admin) signerName = admin.name ?? admin.username ?? null;
     }
 
-    const entry = this.repo.create({
-      scId: dto.sc_id,
-      syId: dto.sy_id,
-      baId: dto.ba_id,
-      entryType: dto.entry_type,
-      docNo: dto.doc_no ?? null,
-      entryDate: dto.entry_date ?? null,
-      detail: dto.detail ?? null,
-      amount: dto.amount,
-      refType: dto.ref_type ?? 'manual',
-      refId: dto.ref_id ?? null,
-      signerId: dto.signer_id ?? null,
-      signerName,
-      note: dto.note ?? null,
-      upBy: dto.up_by ?? 0,
-      del: 0,
+    return this.dataSource.transaction(async (manager) => {
+      // pessimistic lock บนแถวล่าสุดของบัญชีนี้ — serialize concurrent writes
+      // ป้องกัน TOCTOU ที่ caller check balance แล้วค่อย insert แยก request
+      await manager.query(
+        `SELECT ble_id FROM bank_ledger_entry
+         WHERE ba_id = ? AND sc_id = ? AND del = 0
+         ORDER BY ble_id DESC LIMIT 1 FOR UPDATE`,
+        [dto.ba_id, dto.sc_id],
+      );
+
+      const entry = manager.create(BankLedgerEntry, {
+        scId: dto.sc_id,
+        syId: dto.sy_id,
+        baId: dto.ba_id,
+        entryType: dto.entry_type,
+        docNo: dto.doc_no ?? null,
+        entryDate: dto.entry_date ?? null,
+        detail: dto.detail ?? null,
+        amount: dto.amount,
+        refType: dto.ref_type ?? 'manual',
+        refId: dto.ref_id ?? null,
+        signerId: dto.signer_id ?? null,
+        signerName,
+        note: dto.note ?? null,
+        upBy: dto.up_by ?? 0,
+        del: 0,
+      });
+      await manager.save(BankLedgerEntry, entry);
+      return { flag: true, ms: 'บันทึกรายการเรียบร้อยแล้ว' };
     });
-    await this.repo.save(entry);
-    return { flag: true, ms: 'บันทึกรายการเรียบร้อยแล้ว' };
   }
 
   async updateEntry(bleId: number, dto: any, user?: JwtUser) {

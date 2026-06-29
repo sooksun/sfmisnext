@@ -48,9 +48,10 @@ elif command -v mysqldump >/dev/null 2>&1; then
   mysqldump  -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" $DUMP_ARGS "$DB_NAME" | gzip > "$TMP"
 else
   log "ไม่พบ client บน host — ใช้ docker ($DOCKER_IMG)"
-  # shellcheck disable=SC2086
-  docker run --rm -e MYSQL_PWD "$DOCKER_IMG" \
-    mysqldump -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" $DUMP_ARGS "$DB_NAME" | gzip > "$TMP"
+  # MariaDB 11 เปลี่ยนชื่อ mysqldump → mariadb-dump; เลือกตัวที่มีอัตโนมัติ
+  docker run --rm -e MYSQL_PWD "$DOCKER_IMG" sh -c \
+    "exec \"\$(command -v mariadb-dump || command -v mysqldump)\" -h '$DB_HOST' -P '$DB_PORT' -u '$DB_USER' $DUMP_ARGS '$DB_NAME'" \
+    | gzip > "$TMP"
 fi
 
 # ตรวจไฟล์ไม่ว่าง + ไม่เสีย

@@ -286,17 +286,21 @@ GitHub Actions in `.github/workflows/`:
 - **Server path**: `/DATA/AppData/www/sfmisystem` (Linux host `payaprai-MS-7E41`, public IP `203.172.184.47`)
 - **DB**: external **MariaDB** at `192.168.1.4:3306`, database `sfmisystem` (not the in-compose MySQL)
 - **Compose file**: `docker-compose.production.yml` + `.env.production` (env_file). Helper: `deploy-production.sh`
-- **Published ports** (host → container): **API `9941`→3000**, **Web `9940`→3001**. Public URLs: web `http://203.172.184.47:9940`, API `http://203.172.184.47:9941/api/`
-- Backend log prints `localhost:3000` (internal container port) — this is correct; external access is via 9941/9940.
+- **Published ports** (host → container): **API `9941`→3000**, **Web `9940`→3001**. Direct URLs: web `http://203.172.184.47:9940`, API `http://203.172.184.47:9941/api/`
+- **Public URL = `https://sfmis.cnppai.com`** (behind Nginx Proxy Manager + Let's Encrypt) — see *Reverse proxy* below.
+- Backend log prints `localhost:3000` (internal container port) — this is correct; external access is via 9941/9940 or the domain.
 
-### Deploy command — `--env-file` is mandatory
+### Deploy command — needs a `.env` file for interpolation
 ```bash
 cd /DATA/AppData/www/sfmisystem
+ln -sf .env.production .env       # ONE-TIME: compose auto-reads .env (no --env-file needed)
 git pull origin main
-docker compose -f docker-compose.production.yml --env-file .env.production up -d --build
+docker compose -f docker-compose.production.yml up -d --build
 ```
-- ⚠️ **Always pass `--env-file .env.production`.** Without it, `${NEXT_PUBLIC_API_URL}` in the frontend build args resolves blank → `WARN ... not set` → login breaks (`CredentialsSignin`). `NEXT_PUBLIC_*` are baked at **build** time, so changing ports requires a frontend **rebuild**, not just restart.
-- **Ports live in 3 places that must match**: `docker-compose.production.yml` (port map), `.env.production` (`NEXT_PUBLIC_API_URL`/`NEXTAUTH_URL`/`CORS_ORIGIN`), and the URL opened in the browser. `frontend/auth.ts` logs in via `${NEXT_PUBLIC_API_URL}B_admin/login`.
+- ⚠️ Compose interpolates `${NEXT_PUBLIC_API_URL}` (frontend build arg) from `.env` in the project dir. **Without `.env` (or `--env-file .env.production`) it resolves blank** → `WARN ... not set` → the frontend bundle bakes a blank API URL → AI "Failed to fetch" + login `CredentialsSignin`. The `.env` symlink fixes this permanently. `WARN ... not set` appearing on any compose command means the symlink is missing.
+- `NEXT_PUBLIC_*` are baked at **build** time → changing the API URL/ports requires a frontend **`--build`**, not just restart. Backend-only env (`AI_*`, `CORS_ORIGIN`, `DB_*`) is runtime (`env_file`) → `up -d backend` (recreate) is enough.
+- **The API URL lives in places that must match**: `docker-compose.production.yml` (port map / extra_hosts), `.env.production` (`NEXT_PUBLIC_API_URL`/`NEXTAUTH_URL`/`CORS_ORIGIN`), NPM proxy, and the URL opened in the browser.
+- **Login endpoint `B_admin/login` expects field `email`** (holds the username value), not `username`. `frontend/auth.ts` posts `{email, password}` to `${NEXT_PUBLIC_API_URL}B_admin/login`.
 
 ### DB grant for Docker (one-time on MariaDB)
 The backend container reaches MariaDB from the Docker bridge gateway `172.17.0.1`. The DB user must be granted for that host or it fails with `Access denied for user '<user>'@'172.17.0.1'`:
@@ -306,5 +310,17 @@ GRANT ALL PRIVILEGES ON sfmisystem.* TO '<DB_USER>'@'172.17.0.%';
 FLUSH PRIVILEGES;
 ```
 
+### Reverse proxy (Nginx Proxy Manager → `sfmis.cnppai.com`)
+NPM (container `nginxproxymanager`, admin on host `:81`) maps `sfmis.cnppai.com` → frontend `192.168.1.4:9940` with Force-SSL. Because the browser page is HTTPS on the domain but `lib/api.ts` calls the absolute `NEXT_PUBLIC_API_URL`, the API must be served **same-origin over HTTPS** or it's blocked (mixed-content + CORS). Set `NEXT_PUBLIC_API_URL=https://sfmis.cnppai.com/api/`, `NEXTAUTH_URL=https://sfmis.cnppai.com`, `CORS_ORIGIN=https://sfmis.cnppai.com,http://203.172.184.47:9940`, `AUTH_TRUST_HOST=true`, then rebuild.
+- **Two custom locations** on the `sfmis.cnppai.com` proxy host (order by nginx longest-prefix): `/api/auth` → `192.168.1.4:9940` (NextAuth lives on the frontend), `/api` → `192.168.1.4:9941` (SFMIS backend). Without splitting `/api/auth`, login breaks.
+- NPM's **Custom Locations UI throws "Internal Error"** in v2.14 — use the host's **Advanced** tab (raw nginx `location` blocks) instead.
+- **`extra_hosts: ['sfmis.cnppai.com:192.168.1.4']` on the frontend service** (in `docker-compose.production.yml`) — NextAuth `authorize()` runs server-side in the container and fetches the public domain; without this the container hits hairpin-NAT and fails TLS (`tlsv1 unrecognized name`) → login fails. The mapping makes the container reach NPM directly.
+
+### AI provider — Gemini free tier runs out
+`AI_DEFAULT_PROVIDER=gemini` (free tier) hits daily/per-minute quota → AI replies "เกิดข้อผิดพลาดในการสร้างคำตอบ" (HTTP 429 `RESOURCE_EXHAUSTED` in backend logs). Switch to the already-configured OpenRouter: set `AI_DEFAULT_PROVIDER=openrouter` (uses `OPENROUTER_API_KEY` + `OPENROUTER_MODEL=google/gemini-2.5-flash`), then `up -d backend`. Startup logs `Default AI provider: openrouter`.
+
+### Backups — automated
+`backup-db.sh` (repo root) dumps MariaDB → `backups/*.sql.gz`, keeps 14 days. Runs via docker `mariadb:11` on the **same docker network as `sfmisystem-backend-1`** (default bridge can't reach `192.168.1.4`; the network also matches the `172.17.0.%` grant). Cron: `0 2 * * * /DATA/AppData/www/sfmisystem/backup-db.sh >> .../backups/backup.log 2>&1`. The MariaDB `--ssl-verify-server-cert ... passwordless` warning is harmless (password via `MYSQL_PWD`).
+
 ### Seeding a fresh production DB ⚠️
-Prod uses `synchronize:false` + `migrationsRun:true`, and migrations are **incremental only** (no base-schema migration). The old `sfmisystem_db/sfmisystem.sql` (Sep 2025 Angular dump, 55 tables) is a **different schema** (`project` vs `pln_project`, missing `budget_request`/`sup_contract_security`/`tb_fixed_asset`…) — importing it makes migrations fail. **Correct baseline = `mysqldump` the dev DB** (99 tables, schema matches entities) + append `INSERT INTO migrations(timestamp,name)` for all current migration classes so `migrationsRun` treats them as applied. Dev MySQL uses `utf8mb4_general_ci` (MariaDB-compatible).
+Prod uses `synchronize:false` + `migrationsRun:true`, and migrations are **incremental only** (no base-schema migration). The old `sfmisystem_db/sfmisystem.sql` (Sep 2025 Angular dump, 55 tables) is a **different schema** (`project` vs `pln_project`, missing `budget_request`/`sup_contract_security`/`tb_fixed_asset`…) — importing it makes migrations fail. **Correct baseline = `mysqldump` the dev DB** (99 tables, schema matches entities) + append `INSERT INTO migrations(timestamp,name)` for all current migration classes so `migrationsRun` treats them as applied. Dev MySQL uses `utf8mb4_general_ci` (MariaDB-compatible). Demo data is tenant `sc_id=2` — delete with `DELETE FROM <each table with sc_id> WHERE sc_id=2` (70 tables).

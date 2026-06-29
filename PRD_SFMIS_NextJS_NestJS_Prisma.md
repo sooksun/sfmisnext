@@ -1,6 +1,11 @@
 # PRD: SFMIS System Redesign
 ## School Financial Management Information System
-### Migration from Angular + NestJS + TypeORM + MySQL to NextJS + NestJS + Prisma + MySQL
+
+> ⚠️ **หมายเหตุ (มิ.ย. 2569):** เอกสารนี้ร่างไว้ตั้งแต่ต้นโปรเจกต์โดยใช้ **Prisma** เป็น ORM เป้าหมาย
+> แต่ **repo จริงใช้ TypeORM 0.3 (ไม่ใช่ Prisma)** ตลอดโปรเจกต์ การ migrate ไป Prisma ถูก defer ออกไป
+> ข้อมูล schema/entity ที่ถูกต้องดูได้จาก `backend/src/modules/**/*.entity.ts` และ `backend/src/migrations/`
+
+### Migration from Angular + NestJS + TypeORM + MySQL to NextJS + NestJS + TypeORM + MySQL
 
 ---
 

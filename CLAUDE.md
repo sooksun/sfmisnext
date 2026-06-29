@@ -280,3 +280,31 @@ GitHub Actions in `.github/workflows/`:
 - `backend/Dockerfile` — multi-stage build with health check
 - `frontend/Dockerfile` — standalone Next.js output
 - `docker-compose.yml` — full stack (MySQL + Backend + Frontend)
+
+## Production Deployment (live server)
+
+- **Server path**: `/DATA/AppData/www/sfmisystem` (Linux host `payaprai-MS-7E41`, public IP `203.172.184.47`)
+- **DB**: external **MariaDB** at `192.168.1.4:3306`, database `sfmisystem` (not the in-compose MySQL)
+- **Compose file**: `docker-compose.production.yml` + `.env.production` (env_file). Helper: `deploy-production.sh`
+- **Published ports** (host → container): **API `9941`→3000**, **Web `9940`→3001**. Public URLs: web `http://203.172.184.47:9940`, API `http://203.172.184.47:9941/api/`
+- Backend log prints `localhost:3000` (internal container port) — this is correct; external access is via 9941/9940.
+
+### Deploy command — `--env-file` is mandatory
+```bash
+cd /DATA/AppData/www/sfmisystem
+git pull origin main
+docker compose -f docker-compose.production.yml --env-file .env.production up -d --build
+```
+- ⚠️ **Always pass `--env-file .env.production`.** Without it, `${NEXT_PUBLIC_API_URL}` in the frontend build args resolves blank → `WARN ... not set` → login breaks (`CredentialsSignin`). `NEXT_PUBLIC_*` are baked at **build** time, so changing ports requires a frontend **rebuild**, not just restart.
+- **Ports live in 3 places that must match**: `docker-compose.production.yml` (port map), `.env.production` (`NEXT_PUBLIC_API_URL`/`NEXTAUTH_URL`/`CORS_ORIGIN`), and the URL opened in the browser. `frontend/auth.ts` logs in via `${NEXT_PUBLIC_API_URL}B_admin/login`.
+
+### DB grant for Docker (one-time on MariaDB)
+The backend container reaches MariaDB from the Docker bridge gateway `172.17.0.1`. The DB user must be granted for that host or it fails with `Access denied for user '<user>'@'172.17.0.1'`:
+```sql
+CREATE USER IF NOT EXISTS '<DB_USER>'@'172.17.0.%' IDENTIFIED BY '<DB_PASS matching .env.production>';
+GRANT ALL PRIVILEGES ON sfmisystem.* TO '<DB_USER>'@'172.17.0.%';
+FLUSH PRIVILEGES;
+```
+
+### Seeding a fresh production DB ⚠️
+Prod uses `synchronize:false` + `migrationsRun:true`, and migrations are **incremental only** (no base-schema migration). The old `sfmisystem_db/sfmisystem.sql` (Sep 2025 Angular dump, 55 tables) is a **different schema** (`project` vs `pln_project`, missing `budget_request`/`sup_contract_security`/`tb_fixed_asset`…) — importing it makes migrations fail. **Correct baseline = `mysqldump` the dev DB** (99 tables, schema matches entities) + append `INSERT INTO migrations(timestamp,name)` for all current migration classes so `migrationsRun` treats them as applied. Dev MySQL uses `utf8mb4_general_ci` (MariaDB-compatible).

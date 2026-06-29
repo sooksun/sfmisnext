@@ -47,9 +47,15 @@ elif command -v mysqldump >/dev/null 2>&1; then
   # shellcheck disable=SC2086
   mysqldump  -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" $DUMP_ARGS "$DB_NAME" | gzip > "$TMP"
 else
-  log "ไม่พบ client บน host — ใช้ docker ($DOCKER_IMG)"
+  # ใช้ network เดียวกับ backend container — default bridge วิ่งไป DB ภายนอกไม่ถึง
+  # และสิทธิ์ DB ถูก grant ตาม IP ของ network นั้น (172.17.0.%)
+  BACKEND_CT="${BACKEND_CONTAINER:-sfmisystem-backend-1}"
+  NET="$(docker inspect -f '{{range $k,$_ := .NetworkSettings.Networks}}{{$k}} {{end}}' "$BACKEND_CT" 2>/dev/null | awk '{print $1}')"
+  NETOPT=""; [ -n "$NET" ] && NETOPT="--network $NET"
+  log "ไม่พบ client บน host — ใช้ docker ($DOCKER_IMG) network=${NET:-default}"
   # MariaDB 11 เปลี่ยนชื่อ mysqldump → mariadb-dump; เลือกตัวที่มีอัตโนมัติ
-  docker run --rm -e MYSQL_PWD "$DOCKER_IMG" sh -c \
+  # shellcheck disable=SC2086
+  timeout 600 docker run --rm $NETOPT -e MYSQL_PWD "$DOCKER_IMG" sh -c \
     "exec \"\$(command -v mariadb-dump || command -v mysqldump)\" -h '$DB_HOST' -P '$DB_PORT' -u '$DB_USER' $DUMP_ARGS '$DB_NAME'" \
     | gzip > "$TMP"
 fi

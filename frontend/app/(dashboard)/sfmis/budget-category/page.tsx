@@ -341,8 +341,8 @@ export default function BudgetCategoryPage() {
               <tbody className="divide-y divide-gray-100">
                 {rows.map((row) => {
                   const income = Number(row.budget_income ?? row.total ?? 0)
-                  // สัดส่วน = เทียบกับยอดที่กระจายจริง (= งบทั้งหมด) → รวมเป็น 100% เป๊ะ
-                  const pct = totalReceive > 0 ? ((income * 100) / totalReceive).toFixed(2) : '0.00'
+                  // สัดส่วน = เทียบกับวงเงินทั้งหมด (totalBudget จากยอดประมาณการหน้า 1.6)
+                  const pct = totalBudget > 0 ? ((income * 100) / totalBudget).toFixed(2) : '0.00'
                   return (
                     <tr key={row.pbc_id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3 font-medium">{row.budget_cate}</td>
@@ -379,7 +379,7 @@ export default function BudgetCategoryPage() {
                   <td className="px-4 py-3">รวมทั้งหมด</td>
                   <td className="px-4 py-3 text-right tabular-nums">{fmt(totalReceive)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">
-                    {totalReceive > 0 ? '100.00' : '0.00'} %
+                    {totalBudget > 0 ? ((totalReceive * 100) / totalBudget).toFixed(2) : '0.00'} %
                   </td>
                   <td />
                 </tr>
@@ -507,8 +507,8 @@ export default function BudgetCategoryPage() {
                         // คงเหลือต่อประเภท = ยอดประมาณการ - หมวดอื่นจองแล้ว
                         const rowAvailable = Math.max(0, b.estimated_amount - b.other_allocated)
                         const rowOver = b.budget > rowAvailable
-                        // สัดส่วน = เทียบกับยอดที่กระจายจริง (ตัวหารเดียวกับตารางหลัก) ให้ % ตรงกันทุกที่
-                        const pct = totalReceive > 0 ? (b.budget * 100 / totalReceive) : 0
+                        // สัดส่วน = เทียบกับวงเงินทั้งหมด (ตัวหารเดียวกับตารางหลัก) ให้ % ตรงกันทุกที่
+                        const pct = totalBudget > 0 ? (b.budget * 100 / totalBudget) : 0
                         return (
                           <tr key={b.bg_type_id} className="hover:bg-gray-50">
                             <td className="px-3 py-2">{b.budget_type}</td>
@@ -558,7 +558,7 @@ export default function BudgetCategoryPage() {
                           {fmt(currentTotal)}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums text-gray-500">
-                          {totalReceive > 0 ? `${(currentTotal * 100 / totalReceive).toFixed(2)}%` : '—'}
+                          {totalBudget > 0 ? `${(currentTotal * 100 / totalBudget).toFixed(2)}%` : '—'}
                         </td>
                       </tr>
                     </tfoot>

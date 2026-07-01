@@ -304,17 +304,20 @@ export default function BudgetCategoryPage() {
           </div>
         )}
 
-        {/* สรุปยอด — งบทั้งหมด = ยอดที่กระจายจริง (ปัดให้พอดี) → คงเหลือ 0 เสมอ
-            (เพดานกรอกต่อหมวด/ประเภทยังคุมด้วยยอดประมาณการจริงไว้ในหน้ากรอก) */}
+        {/* สรุปยอด — วงเงินทั้งหมด (จากยอดประมาณการหน้า 1.6) เทียบกับยอดที่กระจายแล้วและคงเหลือจริง */}
         {hasEstimate && (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-blue-50 rounded-lg p-4 text-center border border-blue-100">
+              <div className="text-xs text-blue-600 mb-1">วงเงินทั้งหมด (จากประมาณการ)</div>
+              <div className="font-bold text-blue-700 text-lg">{fmt(totalBudget)} บาท</div>
+            </div>
             <div className="bg-green-50 rounded-lg p-4 text-center border border-green-100">
-              <div className="text-xs text-green-600 mb-1">งบประมาณทั้งหมด (กระจายแล้ว)</div>
+              <div className="text-xs text-green-600 mb-1">กระจายแล้ว</div>
               <div className="font-bold text-green-700 text-lg">{fmt(totalReceive)} บาท</div>
             </div>
             <div className="bg-orange-50 rounded-lg p-4 text-center border border-orange-100">
               <div className="text-xs text-orange-600 mb-1">คงเหลือ</div>
-              <div className="font-bold text-orange-700 text-lg">{fmt(0)} บาท</div>
+              <div className="font-bold text-orange-700 text-lg">{fmt(Math.max(0, totalBudget - totalReceive))} บาท</div>
             </div>
           </div>
         )}
